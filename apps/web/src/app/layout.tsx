@@ -11,7 +11,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Zano",
-  description: "Collaborative human-AI platform",
+  description: "Human-AI collaboration platform",
 };
 
 export default function RootLayout({
