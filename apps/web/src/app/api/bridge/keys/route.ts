@@ -108,6 +108,46 @@ export async function POST(request: NextRequest) {
 }
 
 /**
+ * PATCH /api/bridge/keys
+ * Update a machine API key's name.
+ */
+export async function PATCH(request: NextRequest) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const body = await request.json();
+  const { id, name } = body;
+
+  if (!id) {
+    return NextResponse.json({ error: "id is required" }, { status: 400 });
+  }
+
+  if (!name || typeof name !== "string") {
+    return NextResponse.json({ error: "name is required" }, { status: 400 });
+  }
+
+  const { data, error } = await supabase
+    .from("machine_keys")
+    .update({ name: name.trim() })
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .select("id, key_prefix, name, created_at, last_used_at")
+    .single();
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ key: data });
+}
+
+/**
  * DELETE /api/bridge/keys?id=...
  * Revoke a machine API key.
  */

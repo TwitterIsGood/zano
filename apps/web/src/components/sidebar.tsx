@@ -7,6 +7,7 @@ import { CreateAgentDialog } from "./create-agent-dialog";
 import { CreateChannelDialog } from "./create-channel-dialog";
 import { CreateServerDialog } from "./create-server-dialog";
 import { EditChannelDialog } from "./edit-channel-dialog";
+import { MachineDetailDialog } from "./machine-detail-dialog";
 import { ContextMenu } from "./context-menu";
 import { useAgentActivity } from "@/hooks/use-agent-activity";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -71,6 +72,7 @@ export function Sidebar({
   // Heartbeat-based online status (bridge updates last_used_at every 30s)
   const [bridgeOnline, setBridgeOnline] = useState(false);
   const [editingChannel, setEditingChannel] = useState<Channel | null>(null);
+  const [selectedMachine, setSelectedMachine] = useState<MachineKey | null>(null);
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -497,9 +499,10 @@ export function Sidebar({
             </div>
             <div className="flex flex-col gap-[2px]">
               {machineKeys.map((mk) => (
-                  <div
+                  <button
                     key={mk.id}
-                    className="flex w-full items-center gap-2 rounded-lg px-2 h-[32px] text-[13px] text-muted-foreground"
+                    onClick={() => setSelectedMachine(mk)}
+                    className="flex w-full items-center gap-2 rounded-lg px-2 h-[32px] text-[13px] text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
                   >
                     <div className="relative flex-shrink-0">
                       <MonitorIcon className="size-4 text-muted-foreground/60" />
@@ -510,8 +513,8 @@ export function Sidebar({
                         title={bridgeOnline ? "Online" : "Offline"}
                       />
                     </div>
-                    <span className="truncate">{mk.name || mk.key_prefix}</span>
-                  </div>
+                    <span className="truncate text-left">{mk.name || mk.key_prefix}</span>
+                  </button>
               ))}
             </div>
           </div>
@@ -555,6 +558,15 @@ export function Sidebar({
           channel={editingChannel}
           open={!!editingChannel}
           onClose={() => setEditingChannel(null)}
+          onUpdated={loadData}
+        />
+      )}
+      {selectedMachine && (
+        <MachineDetailDialog
+          open={!!selectedMachine}
+          onClose={() => setSelectedMachine(null)}
+          machine={selectedMachine}
+          serverId={serverId}
           onUpdated={loadData}
         />
       )}
