@@ -198,6 +198,18 @@ export function Sidebar({
 
   // Set up realtime subscriptions (stable across navigations, only recreate on server change)
   useEffect(() => {
+    let presenceChannel: ReturnType<typeof supabase.channel> | null = null;
+
+    function refreshPresence() {
+      if (!presenceChannel) return;
+      const state = presenceChannel.presenceState();
+      const entries = Object.values(state).flat() as Array<{
+        hostname?: string;
+        agentIds?: string[];
+      }>;
+      setBridgeOnline(entries.length > 0);
+    }
+
     const realtimeSub = supabase
       .channel("sidebar-realtime")
       .on(
@@ -225,7 +237,6 @@ export function Sidebar({
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "agents" },
         () => {
-          // Delay reload to allow DM channel + membership creation to complete
           setTimeout(() => loadData(), 1500);
         }
       )
@@ -248,10 +259,25 @@ export function Sidebar({
           );
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          // WebSocket is fully established — now safe to subscribe to Presence
+          presenceChannel = supabase.channel(`bridge-presence:${serverId}`);
+          presenceChannel
+            .on("presence", { event: "sync" }, refreshPresence)
+            .on("presence", { event: "join" }, refreshPresence)
+            .on("presence", { event: "leave" }, refreshPresence)
+            .subscribe();
+        }
+      });
 
-    // Poll machine heartbeat every 15s for online status (bridge updates last_used_at every 30s)
+    // Heartbeat polling fallback: check last_used_at every 15s
     async function checkHeartbeat() {
+      // Skip if Presence is working (entries exist or bridge just went offline via Presence)
+      if (presenceChannel) {
+        refreshPresence();
+        return;
+      }
       const { data: keys } = await supabase
         .from("machine_keys")
         .select("last_used_at")
@@ -272,6 +298,7 @@ export function Sidebar({
     return () => {
       clearInterval(heartbeatInterval);
       supabase.removeChannel(realtimeSub);
+      if (presenceChannel) supabase.removeChannel(presenceChannel);
     };
   }, [serverId]);
 
