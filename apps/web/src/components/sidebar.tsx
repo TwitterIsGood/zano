@@ -184,9 +184,9 @@ export function Sidebar({
   useEffect(() => {
     loadData();
 
-    // Subscribe to agent status changes
-    const agentSub = supabase
-      .channel("agent-status")
+    // Subscribe to agent status changes + machine key updates on one channel
+    const realtimeSub = supabase
+      .channel("sidebar-realtime")
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "agents" },
@@ -204,10 +204,22 @@ export function Sidebar({
           );
         }
       )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "machine_keys" },
+        (payload) => {
+          const updated = payload.new as MachineKey & { id: string };
+          setMachineKeys((prev) =>
+            prev.map((mk) =>
+              mk.id === updated.id ? { ...mk, ...updated } : mk
+            )
+          );
+        }
+      )
       .subscribe();
 
     return () => {
-      supabase.removeChannel(agentSub);
+      supabase.removeChannel(realtimeSub);
     };
   }, [serverId]);
 
@@ -309,42 +321,6 @@ export function Sidebar({
       </div>
 
       <div className="flex-1 overflow-y-auto px-2 py-2 space-y-4">
-        {/* Machines */}
-        {machineKeys.length > 0 && (
-          <div>
-            <div className="mb-1.5 px-2 flex items-center justify-between h-[22px]">
-              <span className="text-[12px] font-medium text-muted-foreground">
-                Machines
-              </span>
-            </div>
-            <div className="flex flex-col gap-[2px]">
-              {machineKeys.map((mk) => {
-                // Machine is "online" if any agent in the server is online
-                const hasOnlineAgent = agents.some(
-                  (a) => a.status === "online" || a.status === "active"
-                );
-                return (
-                  <div
-                    key={mk.id}
-                    className="flex w-full items-center gap-2 rounded-lg px-2 h-[32px] text-[13px] text-muted-foreground"
-                  >
-                    <div className="relative flex-shrink-0">
-                      <MonitorIcon className="size-4 text-muted-foreground/60" />
-                      <div
-                        className={`absolute -bottom-0.5 -right-0.5 h-1.5 w-1.5 rounded-full border-[1.5px] border-background ${
-                          hasOnlineAgent ? "bg-green-500" : "bg-muted-foreground/40"
-                        }`}
-                        title={hasOnlineAgent ? "Online" : "Offline"}
-                      />
-                    </div>
-                    <span className="truncate">{mk.name || mk.key_prefix}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
         {/* DM Conversations */}
         <div>
           <div className="mb-1.5 px-2 flex items-center justify-between h-[22px]">
@@ -431,6 +407,42 @@ export function Sidebar({
             ))}
           </div>
         </div>
+
+        {/* Machines */}
+        {machineKeys.length > 0 && (
+          <div>
+            <div className="mb-1.5 px-2 flex items-center justify-between h-[22px]">
+              <span className="text-[12px] font-medium text-muted-foreground">
+                Machines
+              </span>
+            </div>
+            <div className="flex flex-col gap-[2px]">
+              {machineKeys.map((mk) => {
+                // Machine is "online" if any agent in the server is online
+                const hasOnlineAgent = agents.some(
+                  (a) => a.status === "online" || a.status === "active"
+                );
+                return (
+                  <div
+                    key={mk.id}
+                    className="flex w-full items-center gap-2 rounded-lg px-2 h-[32px] text-[13px] text-muted-foreground"
+                  >
+                    <div className="relative flex-shrink-0">
+                      <MonitorIcon className="size-4 text-muted-foreground/60" />
+                      <div
+                        className={`absolute -bottom-0.5 -right-0.5 h-1.5 w-1.5 rounded-full border-[1.5px] border-background ${
+                          hasOnlineAgent ? "bg-green-500" : "bg-muted-foreground/40"
+                        }`}
+                        title={hasOnlineAgent ? "Online" : "Offline"}
+                      />
+                    </div>
+                    <span className="truncate">{mk.name || mk.key_prefix}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* User footer */}

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { hostname, platform, arch } from "os";
 import { Bridge } from "./bridge.js";
 
 // Default server URL (can be overridden)
@@ -88,7 +89,12 @@ async function authenticate(
   const res = await fetch(`${serverUrl}/api/bridge/connect`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ apiKey }),
+    body: JSON.stringify({
+      apiKey,
+      hostname: hostname(),
+      platform: platform(),
+      arch: arch(),
+    }),
   });
 
   if (!res.ok) {

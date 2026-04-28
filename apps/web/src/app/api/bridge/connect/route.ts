@@ -14,7 +14,7 @@ import { signBridgeJwt } from "@/lib/jwt";
  * Response: { supabaseUrl, supabaseAnonKey, token, userId, serverId, serverName, agents }
  */
 export async function POST(request: NextRequest) {
-  let body: { apiKey?: string };
+  let body: { apiKey?: string; hostname?: string; platform?: string; arch?: string };
   try {
     body = await request.json();
   } catch {
@@ -41,10 +41,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid API key" }, { status: 401 });
   }
 
-  // Update last_used_at
+  // Update last_used_at and machine name (from hostname if provided)
+  const keyUpdate: Record<string, string> = {
+    last_used_at: new Date().toISOString(),
+  };
+  if (body.hostname) {
+    // Use hostname as a friendly machine name (e.g. "Zayns-MacBook-Pro")
+    keyUpdate.name = body.hostname;
+  }
   await admin
     .from("machine_keys")
-    .update({ last_used_at: new Date().toISOString() })
+    .update(keyUpdate)
     .eq("id", keyRecord.id);
 
   // Load server info
