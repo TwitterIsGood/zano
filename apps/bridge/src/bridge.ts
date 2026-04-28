@@ -56,6 +56,8 @@ export class Bridge {
         headers: { Authorization: `Bearer ${config.authToken}` },
       },
     });
+    // Set auth token for Realtime WebSocket (global headers only cover REST)
+    this.supabase.realtime.setAuth(config.authToken);
     this.agentManager = new AgentManager(
       config.agentsDir,
       this.supabase,
@@ -75,6 +77,7 @@ export class Bridge {
         headers: { Authorization: `Bearer ${token}` },
       },
     });
+    this.supabase.realtime.setAuth(token);
     // Update agent manager's client too
     this.agentManager.updateSupabaseClient(this.supabase, token);
   }
