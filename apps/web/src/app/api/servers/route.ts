@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomBytes, createHash } from "crypto";
 import { createClient } from "@/lib/supabase/server";
 
 // GET /api/servers — list servers the user belongs to
@@ -104,5 +105,19 @@ export async function POST(request: NextRequest) {
     role: "owner",
   });
 
-  return NextResponse.json({ server });
+  // Auto-generate a bridge API key for onboarding
+  const rawKey = randomBytes(32).toString("hex");
+  const apiKey = `zk_${rawKey}`;
+  const keyPrefix = `zk_${rawKey.substring(0, 8)}`;
+  const keyHash = createHash("sha256").update(apiKey).digest("hex");
+
+  await supabase.from("machine_keys").insert({
+    key_prefix: keyPrefix,
+    key_hash: keyHash,
+    user_id: user.id,
+    server_id: server.id,
+    name: "Default",
+  });
+
+  return NextResponse.json({ server, apiKey });
 }

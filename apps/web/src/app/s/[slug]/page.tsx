@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ApiKeysSection } from "@/components/api-keys-section";
+import { SetupWizard } from "@/components/setup-wizard";
 
 interface ServerStats {
   id: string;
@@ -17,9 +18,21 @@ interface ServerStats {
 
 export default function ServerHomePage() {
   const params = useParams();
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const slug = params.slug as string;
   const [stats, setStats] = useState<ServerStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showSetup, setShowSetup] = useState(false);
+
+  // Show setup wizard when redirected from onboarding
+  useEffect(() => {
+    if (searchParams.get("setup") === "true") {
+      setShowSetup(true);
+      // Clean up URL without triggering navigation
+      window.history.replaceState({}, "", `/s/${slug}`);
+    }
+  }, [searchParams, slug]);
 
   useEffect(() => {
     async function loadStats() {
@@ -129,6 +142,15 @@ export default function ServerHomePage() {
           <ApiKeysSection serverId={stats.id} />
         </div>
       </div>
+
+      {/* Setup wizard (shown after workspace creation) */}
+      {showSetup && stats && (
+        <SetupWizard
+          serverId={stats.id}
+          serverSlug={slug}
+          onComplete={() => setShowSetup(false)}
+        />
+      )}
     </div>
   );
 }

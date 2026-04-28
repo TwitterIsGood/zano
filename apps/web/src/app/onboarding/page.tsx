@@ -79,8 +79,12 @@ export default function OnboardingPage() {
         throw new Error(data.error || "Failed to create workspace");
       }
 
-      const { server } = await res.json();
-      router.push(`/s/${server.slug}`);
+      const { server, apiKey } = await res.json();
+      // Store the auto-generated API key for the setup wizard
+      if (apiKey) {
+        sessionStorage.setItem("zano_setup_key", apiKey);
+      }
+      router.push(`/s/${server.slug}?setup=true`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create workspace");
       setCreating(false);

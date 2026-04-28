@@ -11,7 +11,7 @@ import { ContextMenu } from "./context-menu";
 import { useAgentActivity } from "@/hooks/use-agent-activity";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
-import { ChevronDownIcon, CheckIcon, PlusIcon, PencilIcon, LogOutIcon } from "lucide-react";
+import { ChevronDownIcon, CheckIcon, PlusIcon, PencilIcon, LogOutIcon, MonitorIcon } from "lucide-react";
 import { GeneratedAvatar } from "./generated-avatar";
 
 interface Server {
@@ -34,6 +34,13 @@ interface Agent {
   status: string;
   avatar_url: string | null;
   description: string | null;
+}
+
+interface MachineKey {
+  id: string;
+  name: string;
+  key_prefix: string;
+  last_used_at: string | null;
 }
 
 interface DmChannel extends Channel {
@@ -60,6 +67,7 @@ export function Sidebar({
   const [showCreateServer, setShowCreateServer] = useState(false);
   const [showServerMenu, setShowServerMenu] = useState(false);
   const [servers, setServers] = useState<Server[]>([]);
+  const [machineKeys, setMachineKeys] = useState<MachineKey[]>([]);
   const [editingChannel, setEditingChannel] = useState<Channel | null>(null);
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -107,6 +115,15 @@ export function Sidebar({
         .order("created_at");
       if (allServers) setServers(allServers as Server[]);
     }
+
+    // Load machine keys for this server
+    const { data: keys } = await supabase
+      .from("machine_keys")
+      .select("id, name, key_prefix, last_used_at")
+      .eq("server_id", serverId)
+      .eq("user_id", user.id)
+      .order("created_at");
+    if (keys) setMachineKeys(keys as MachineKey[]);
 
     // Get all channels in this server that the user is a member of
     const { data: memberships } = await supabase
@@ -292,6 +309,42 @@ export function Sidebar({
       </div>
 
       <div className="flex-1 overflow-y-auto px-2 py-2 space-y-4">
+        {/* Machines */}
+        {machineKeys.length > 0 && (
+          <div>
+            <div className="mb-1.5 px-2 flex items-center justify-between h-[22px]">
+              <span className="text-[12px] font-medium text-muted-foreground">
+                Machines
+              </span>
+            </div>
+            <div className="flex flex-col gap-[2px]">
+              {machineKeys.map((mk) => {
+                // Machine is "online" if any agent in the server is online
+                const hasOnlineAgent = agents.some(
+                  (a) => a.status === "online" || a.status === "active"
+                );
+                return (
+                  <div
+                    key={mk.id}
+                    className="flex w-full items-center gap-2 rounded-lg px-2 h-[32px] text-[13px] text-muted-foreground"
+                  >
+                    <div className="relative flex-shrink-0">
+                      <MonitorIcon className="size-4 text-muted-foreground/60" />
+                      <div
+                        className={`absolute -bottom-0.5 -right-0.5 h-1.5 w-1.5 rounded-full border-[1.5px] border-background ${
+                          hasOnlineAgent ? "bg-green-500" : "bg-muted-foreground/40"
+                        }`}
+                        title={hasOnlineAgent ? "Online" : "Offline"}
+                      />
+                    </div>
+                    <span className="truncate">{mk.name || mk.key_prefix}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* DM Conversations */}
         <div>
           <div className="mb-1.5 px-2 flex items-center justify-between h-[22px]">
