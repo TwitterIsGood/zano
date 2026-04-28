@@ -219,8 +219,8 @@ export function Sidebar({
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "agents" },
         () => {
-          // New agent created — reload sidebar data
-          loadData();
+          // New agent created — delay reload to allow DM channel + membership to be created
+          setTimeout(() => loadData(), 1500);
         }
       )
       .on(

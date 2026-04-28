@@ -192,6 +192,7 @@ create policy "Channel members can manage tasks" on public.tasks for all using (
 -- -----------------------------------------------------------
 -- Realtime
 -- -----------------------------------------------------------
--- Enable realtime for messages table
+-- Enable realtime for messages, agents, and channel_members tables
 alter publication supabase_realtime add table public.messages;
 alter publication supabase_realtime add table public.agents;
+alter publication supabase_realtime add table public.channel_members;
