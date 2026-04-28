@@ -9,7 +9,11 @@ interface BridgeConfig {
   supabaseKey: string;    // anon key
   authToken: string;       // JWT for authenticated Supabase operations
   userId: string;
+  serverId: string;
   agentsDir: string;
+  hostname?: string;
+  platform?: string;
+  arch?: string;
 }
 
 interface DbMessage {
@@ -52,6 +56,8 @@ export class Bridge {
   private agentRecords = new Map<string, DbAgent>();
   // Realtime channel for workspace file RPC (web UI ↔ bridge)
   private workspaceRpcChannel: RealtimeChannel | null = null;
+  // Presence channel for online status (auto-offline on disconnect)
+  private presenceChannel: RealtimeChannel | null = null;
 
   constructor(config: BridgeConfig) {
     this.config = config;
@@ -75,10 +81,14 @@ export class Bridge {
   /** Update the auth token (called on periodic refresh) */
   updateAuthToken(token: string) {
     this.config.authToken = token;
-    // Remove old workspace RPC channel before recreating client
+    // Remove old channels before recreating client
     if (this.workspaceRpcChannel) {
       this.supabase.removeChannel(this.workspaceRpcChannel);
       this.workspaceRpcChannel = null;
+    }
+    if (this.presenceChannel) {
+      this.supabase.removeChannel(this.presenceChannel);
+      this.presenceChannel = null;
     }
     // Recreate the Supabase client with the new token
     this.supabase = createClient(this.config.supabaseUrl, this.config.supabaseKey, {
@@ -90,8 +100,9 @@ export class Bridge {
     this.supabase.realtime.setAuth(token);
     // Update agent manager's client too
     this.agentManager.updateSupabaseClient(this.supabase, token);
-    // Re-subscribe workspace RPC on new client
+    // Re-subscribe workspace RPC and presence on new client
     this.subscribeToWorkspaceRpc();
+    this.trackPresence();
   }
 
   async start() {
@@ -106,7 +117,7 @@ export class Bridge {
       await this.agentManager.initAgent(agentId, agent);
     }
 
-    // 4. Update agent statuses to 'active'
+    // 4. Update agent statuses to 'online' (best-effort DB backup)
     const agentIds = Array.from(this.agentRecords.keys());
     if (agentIds.length > 0) {
       await this.supabase
@@ -123,6 +134,9 @@ export class Bridge {
 
     // 7. Subscribe to workspace file RPC (web UI requests files via Realtime)
     this.subscribeToWorkspaceRpc();
+
+    // 8. Track presence (auto-offline on disconnect — no SIGINT needed)
+    this.trackPresence();
 
     console.log(
       `  Bridge ready. Listening for messages across ${this.channelAgents.size} channel(s).`
@@ -400,11 +414,14 @@ export class Bridge {
           this.agentRecords.set(agent.id, agent);
           await this.agentManager.initAgent(agent.id, agent);
 
-          // Mark as active
+          // Mark as active (best-effort DB backup)
           await this.supabase
             .from("agents")
             .update({ status: "online" })
             .eq("id", agent.id);
+
+          // Update presence with new agent list
+          this.updatePresence();
         }
       )
       .on(
@@ -446,6 +463,33 @@ export class Bridge {
         }
       )
       .subscribe();
+  }
+
+  /**
+   * Track this bridge's presence. Supabase automatically removes presence
+   * when the WebSocket disconnects (crash, network loss, terminal close).
+   */
+  private trackPresence() {
+    const channelName = `bridge-presence:${this.config.serverId}`;
+    this.presenceChannel = this.supabase
+      .channel(channelName)
+      .subscribe(async (status) => {
+        if (status === "SUBSCRIBED") {
+          await this.updatePresence();
+          console.log("  Bridge presence tracked.");
+        }
+      });
+  }
+
+  /** Update the presence payload (e.g. when new agents are added). */
+  private async updatePresence() {
+    if (!this.presenceChannel) return;
+    await this.presenceChannel.track({
+      hostname: this.config.hostname || "unknown",
+      platform: this.config.platform || "",
+      arch: this.config.arch || "",
+      agentIds: Array.from(this.agentRecords.keys()),
+    });
   }
 
   /**
@@ -624,8 +668,9 @@ export class Bridge {
     // Stop all agent sessions
     this.agentManager.stopAll();
 
-    // Disconnect from Supabase (removes all channels including workspace RPC)
+    // Disconnect from Supabase (removes all channels including workspace RPC + presence)
     this.workspaceRpcChannel = null;
+    this.presenceChannel = null;
     await this.supabase.removeAllChannels();
 
     console.log("  Bridge stopped.");

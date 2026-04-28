@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter, useParams, usePathname } from "next/navigation";
 import { CreateAgentDialog } from "./create-agent-dialog";
@@ -68,6 +69,10 @@ export function Sidebar({
   const [showServerMenu, setShowServerMenu] = useState(false);
   const [servers, setServers] = useState<Server[]>([]);
   const [machineKeys, setMachineKeys] = useState<MachineKey[]>([]);
+  // Presence-based online status (auto-offline on bridge disconnect)
+  const [bridgeOnline, setBridgeOnline] = useState(false);
+  const [onlineAgentIds, setOnlineAgentIds] = useState<Set<string>>(new Set());
+  const presenceRef = useRef<RealtimeChannel | null>(null);
   const [editingChannel, setEditingChannel] = useState<Channel | null>(null);
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -240,8 +245,31 @@ export function Sidebar({
       )
       .subscribe();
 
+    // Subscribe to bridge presence (auto-offline on disconnect)
+    const presenceChannel = supabase.channel(`bridge-presence:${serverId}`);
+    presenceChannel
+      .on("presence", { event: "sync" }, () => {
+        const state = presenceChannel.presenceState();
+        const entries = Object.values(state).flat() as Array<{
+          hostname?: string;
+          agentIds?: string[];
+        }>;
+        setBridgeOnline(entries.length > 0);
+        const ids = new Set<string>();
+        for (const entry of entries) {
+          for (const id of entry.agentIds || []) {
+            ids.add(id);
+          }
+        }
+        setOnlineAgentIds(ids);
+      })
+      .subscribe();
+    presenceRef.current = presenceChannel;
+
     return () => {
       supabase.removeChannel(realtimeSub);
+      supabase.removeChannel(presenceChannel);
+      presenceRef.current = null;
     };
   }, [serverId]);
 
@@ -264,15 +292,15 @@ export function Sidebar({
     loadData();
   }
 
-  function getStatusDot(agentId: string, status: string) {
+  function getStatusDot(agentId: string) {
     const activityState = agentActivities.get(agentId);
     const activity = activityState?.activity;
+    const isOnline = onlineAgentIds.has(agentId);
 
-    if ((status === "online" || status === "active") && (activity === "thinking" || activity === "working")) {
+    if (isOnline && (activity === "thinking" || activity === "working")) {
       return "bg-green-500 animate-status-pulse";
     }
-    if (status === "online" || status === "active") return "bg-green-500";
-    if (status === "sleeping") return "bg-yellow-500";
+    if (isOnline) return "bg-green-500";
     if (activity === "error") return "bg-red-500";
     return "bg-muted-foreground/40";
   }
@@ -373,13 +401,13 @@ export function Sidebar({
                   <GeneratedAvatar id={dm.agent?.id || dm.id} name={dm.agent?.display_name || dm.name} size="xs" />
                   {/* Status dot */}
                   <div
-                    className={`absolute bottom-0 right-0 h-1.5 w-1.5 translate-x-[1px] translate-y-[1px] rounded-full border-[1.5px] border-background ${getStatusDot(dm.agent?.id || "", dm.agent?.status || "offline")}`}
+                    className={`absolute bottom-0 right-0 h-1.5 w-1.5 translate-x-[1px] translate-y-[1px] rounded-full border-[1.5px] border-background ${getStatusDot(dm.agent?.id || "")}`}
                     title={(() => {
                       const act = agentActivities.get(dm.agent?.id || "");
                       if (act?.label && act.activity !== "idle") {
                         return act.detail ? `${act.label}: ${act.detail}` : act.label;
                       }
-                      return dm.agent?.status === "online" || dm.agent?.status === "active" ? "Online" : dm.agent?.status || "Offline";
+                      return onlineAgentIds.has(dm.agent?.id || "") ? "Online" : "Offline";
                     })()}
                   />
                 </div>
@@ -439,12 +467,7 @@ export function Sidebar({
               </span>
             </div>
             <div className="flex flex-col gap-[2px]">
-              {machineKeys.map((mk) => {
-                // Machine is "online" if any agent in the server is online
-                const hasOnlineAgent = agents.some(
-                  (a) => a.status === "online" || a.status === "active"
-                );
-                return (
+              {machineKeys.map((mk) => (
                   <div
                     key={mk.id}
                     className="flex w-full items-center gap-2 rounded-lg px-2 h-[32px] text-[13px] text-muted-foreground"
@@ -453,15 +476,14 @@ export function Sidebar({
                       <MonitorIcon className="size-4 text-muted-foreground/60" />
                       <div
                         className={`absolute -bottom-0.5 -right-0.5 h-1.5 w-1.5 rounded-full border-[1.5px] border-background ${
-                          hasOnlineAgent ? "bg-green-500" : "bg-muted-foreground/40"
+                          bridgeOnline ? "bg-green-500" : "bg-muted-foreground/40"
                         }`}
-                        title={hasOnlineAgent ? "Online" : "Offline"}
+                        title={bridgeOnline ? "Online" : "Offline"}
                       />
                     </div>
                     <span className="truncate">{mk.name || mk.key_prefix}</span>
                   </div>
-                );
-              })}
+              ))}
             </div>
           </div>
         )}

@@ -137,7 +137,11 @@ async function main() {
     supabaseKey: creds.supabaseAnonKey,
     authToken: creds.token,
     userId: creds.userId,
+    serverId: creds.serverId,
     agentsDir,
+    hostname: hostname(),
+    platform: platform(),
+    arch: arch(),
   });
 
   bridge.start();
