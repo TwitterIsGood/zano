@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import {
   X,
   FloppyDisk,
@@ -435,6 +436,69 @@ function WorkspaceTab({ agentId }: { agentId: string }) {
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState('');
   const [isRemote, setIsRemote] = useState(false);
+  const [bridgeOnline, setBridgeOnline] = useState(true);
+
+  // Realtime RPC state for remote workspace
+  const rpcChannelRef = useRef<RealtimeChannel | null>(null);
+  const rpcCallbacksRef = useRef(new Map<string, (payload: Record<string, unknown>) => void>());
+
+  // Clean up RPC channel on unmount
+  useEffect(() => {
+    return () => {
+      rpcChannelRef.current?.unsubscribe();
+      rpcChannelRef.current = null;
+    };
+  }, []);
+
+  const ensureRpcChannel = useCallback(async (): Promise<RealtimeChannel> => {
+    if (rpcChannelRef.current) return rpcChannelRef.current;
+
+    const supabase = createClient();
+    return new Promise<RealtimeChannel>((resolve) => {
+      const channel = supabase
+        .channel('workspace-rpc')
+        .on('broadcast', { event: 'workspace:response' }, ({ payload }) => {
+          const cb = rpcCallbacksRef.current.get(payload.requestId as string);
+          if (cb) {
+            rpcCallbacksRef.current.delete(payload.requestId as string);
+            cb(payload as Record<string, unknown>);
+          }
+        })
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            rpcChannelRef.current = channel;
+            resolve(channel);
+          }
+        });
+    });
+  }, []);
+
+  const rpcRequest = useCallback(
+    async (action: string, extra?: Record<string, unknown>): Promise<Record<string, unknown>> => {
+      const channel = await ensureRpcChannel();
+      const requestId = crypto.randomUUID();
+
+      return new Promise<Record<string, unknown>>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          rpcCallbacksRef.current.delete(requestId);
+          reject(new Error('bridge_offline'));
+        }, 8000);
+
+        rpcCallbacksRef.current.set(requestId, (payload) => {
+          clearTimeout(timeout);
+          if (payload.error) reject(new Error(payload.error as string));
+          else resolve(payload);
+        });
+
+        channel.send({
+          type: 'broadcast',
+          event: 'workspace:request',
+          payload: { requestId, agentId, action, ...extra },
+        });
+      });
+    },
+    [agentId, ensureRpcChannel]
+  );
 
   useEffect(() => {
     loadWorkspace();
@@ -444,24 +508,39 @@ function WorkspaceTab({ agentId }: { agentId: string }) {
     setLoading(true);
     setError('');
     setIsRemote(false);
+    setBridgeOnline(true);
     try {
       const res = await fetch(`/api/agents/${agentId}/workspace`);
-      if (!res.ok) {
-        const data = await res.json();
-        if (data.error === 'remote_workspace') {
-          setIsRemote(true);
-          setWorkspacePath(data.workspace_path || '');
-          return;
-        }
-        throw new Error(data.error || 'Failed to load workspace');
+      const data = await res.json();
+
+      if (res.ok) {
+        // Local mode — API can read files directly
+        setWorkspacePath(data.workspace_path || '');
+        setFiles(data.files || []);
+        setNotesFiles(data.notes_files || []);
+        return;
       }
 
-      const data = await res.json();
-      setWorkspacePath(data.workspace_path || '');
-      setFiles(data.files || []);
-      setNotesFiles(data.notes_files || []);
+      if (data.error === 'remote_workspace') {
+        // Remote mode — try RPC to bridge
+        setIsRemote(true);
+        setWorkspacePath(data.workspace_path || '');
+        try {
+          const rpcData = await rpcRequest('list');
+          setWorkspacePath((rpcData.workspace_path as string) || data.workspace_path || '');
+          setFiles((rpcData.files as FileEntry[]) || []);
+          setNotesFiles((rpcData.notes_files as FileEntry[]) || []);
+        } catch {
+          setBridgeOnline(false);
+        }
+        return;
+      }
+
+      throw new Error(data.error || 'Failed to load workspace');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load workspace');
+      if (!isRemote) {
+        setError(err instanceof Error ? err.message : 'Failed to load workspace');
+      }
     } finally {
       setLoading(false);
     }
@@ -472,10 +551,15 @@ function WorkspaceTab({ agentId }: { agentId: string }) {
     setSelectedFile(filePath);
     setFileContent(null);
     try {
-      const res = await fetch(`/api/agents/${agentId}/workspace?file=${encodeURIComponent(filePath)}`);
-      if (!res.ok) throw new Error('Failed to read file');
-      const data = await res.json();
-      setFileContent(data.content);
+      if (isRemote) {
+        const data = await rpcRequest('read', { filePath });
+        setFileContent(data.content as string);
+      } else {
+        const res = await fetch(`/api/agents/${agentId}/workspace?file=${encodeURIComponent(filePath)}`);
+        if (!res.ok) throw new Error('Failed to read file');
+        const data = await res.json();
+        setFileContent(data.content);
+      }
     } catch {
       setFileContent('[Failed to read file]');
     } finally {
@@ -503,14 +587,14 @@ function WorkspaceTab({ agentId }: { agentId: string }) {
     );
   }
 
-  if (isRemote) {
+  if (isRemote && !bridgeOnline) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-4 px-6">
         <FolderOpen size={32} className="text-muted-foreground/40" />
         <div className="text-center space-y-1.5">
-          <p className="text-sm font-medium text-foreground">Workspace is on your local machine</p>
+          <p className="text-sm font-medium text-foreground">Bridge is offline</p>
           <p className="text-xs text-muted-foreground leading-relaxed max-w-[280px]">
-            This agent&apos;s workspace files are stored where the bridge is running and can&apos;t be browsed from the cloud.
+            The workspace files are on the machine running the bridge. Start the bridge to browse them here.
           </p>
         </div>
         {workspacePath && (
@@ -518,6 +602,10 @@ function WorkspaceTab({ agentId }: { agentId: string }) {
             {workspacePath}
           </code>
         )}
+        <Button variant="link" size="sm" onClick={loadWorkspace}>
+          <ArrowClockwise size={14} />
+          Retry
+        </Button>
       </div>
     );
   }

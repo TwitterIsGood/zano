@@ -1,4 +1,6 @@
-import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { createClient, SupabaseClient, RealtimeChannel } from "@supabase/supabase-js";
+import { readdir, readFile, stat } from "fs/promises";
+import { join } from "path";
 import { AgentManager } from "./agent-manager.js";
 
 interface BridgeConfig {
@@ -47,6 +49,8 @@ export class Bridge {
   private channelNames = new Map<string, string>();
   // Maps agent_id -> agent DB record
   private agentRecords = new Map<string, DbAgent>();
+  // Realtime channel for workspace file RPC (web UI ↔ bridge)
+  private workspaceRpcChannel: RealtimeChannel | null = null;
 
   constructor(config: BridgeConfig) {
     this.config = config;
@@ -70,6 +74,11 @@ export class Bridge {
   /** Update the auth token (called on periodic refresh) */
   updateAuthToken(token: string) {
     this.config.authToken = token;
+    // Remove old workspace RPC channel before recreating client
+    if (this.workspaceRpcChannel) {
+      this.supabase.removeChannel(this.workspaceRpcChannel);
+      this.workspaceRpcChannel = null;
+    }
     // Recreate the Supabase client with the new token
     this.supabase = createClient(this.config.supabaseUrl, this.config.supabaseKey, {
       auth: { autoRefreshToken: false, persistSession: false },
@@ -80,6 +89,8 @@ export class Bridge {
     this.supabase.realtime.setAuth(token);
     // Update agent manager's client too
     this.agentManager.updateSupabaseClient(this.supabase, token);
+    // Re-subscribe workspace RPC on new client
+    this.subscribeToWorkspaceRpc();
   }
 
   async start() {
@@ -108,6 +119,9 @@ export class Bridge {
 
     // 6. Subscribe to new agents and channel memberships (for agents created via UI)
     this.subscribeToNewAgents();
+
+    // 7. Subscribe to workspace file RPC (web UI requests files via Realtime)
+    this.subscribeToWorkspaceRpc();
 
     console.log(
       `  Bridge ready. Listening for messages across ${this.channelAgents.size} channel(s).`
@@ -433,6 +447,119 @@ export class Bridge {
       .subscribe();
   }
 
+  /**
+   * Subscribe to workspace file RPC requests from the web UI.
+   * The web UI sends broadcast events; the bridge reads local files and responds.
+   */
+  private subscribeToWorkspaceRpc() {
+    this.workspaceRpcChannel = this.supabase
+      .channel("workspace-rpc")
+      .on(
+        "broadcast",
+        { event: "workspace:request" },
+        async ({ payload }) => {
+          const { requestId, agentId, action, filePath } = payload;
+          if (!requestId || !agentId) return;
+
+          // Only respond for agents we manage
+          if (!this.agentRecords.has(agentId)) return;
+
+          const workDir = this.agentManager.getWorkspaceDir(agentId);
+          if (!workDir) return;
+
+          try {
+            let responsePayload: Record<string, unknown>;
+
+            if (action === "list") {
+              responsePayload = await this.listWorkspaceFiles(workDir);
+            } else if (action === "read" && filePath) {
+              responsePayload = await this.readWorkspaceFile(
+                workDir,
+                filePath
+              );
+            } else {
+              responsePayload = { error: "Unknown action" };
+            }
+
+            this.workspaceRpcChannel!.send({
+              type: "broadcast",
+              event: "workspace:response",
+              payload: { requestId, ...responsePayload },
+            });
+          } catch (err) {
+            this.workspaceRpcChannel!.send({
+              type: "broadcast",
+              event: "workspace:response",
+              payload: {
+                requestId,
+                error:
+                  err instanceof Error ? err.message : "Unknown error",
+              },
+            });
+          }
+        }
+      )
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          console.log("  Workspace RPC channel ready.");
+        }
+      });
+  }
+
+  private async listWorkspaceFiles(workDir: string) {
+    const files: Array<{
+      name: string;
+      type: "file" | "directory";
+      size: number;
+      modified: string;
+    }> = [];
+
+    const entries = await readdir(workDir);
+    for (const entry of entries) {
+      if (entry.startsWith(".")) continue;
+      const entryPath = join(workDir, entry);
+      const entryStat = await stat(entryPath);
+      files.push({
+        name: entry,
+        type: entryStat.isDirectory() ? "directory" : "file",
+        size: entryStat.size,
+        modified: entryStat.mtime.toISOString(),
+      });
+    }
+
+    // Also list files inside notes/
+    const notesDir = join(workDir, "notes");
+    const notesFiles: typeof files = [];
+    try {
+      const notesEntries = await readdir(notesDir);
+      for (const entry of notesEntries) {
+        if (entry.startsWith(".")) continue;
+        const entryPath = join(notesDir, entry);
+        const entryStat = await stat(entryPath);
+        notesFiles.push({
+          name: `notes/${entry}`,
+          type: entryStat.isDirectory() ? "directory" : "file",
+          size: entryStat.size,
+          modified: entryStat.mtime.toISOString(),
+        });
+      }
+    } catch {
+      // notes/ may not exist yet
+    }
+
+    return { workspace_path: workDir, files, notes_files: notesFiles };
+  }
+
+  private async readWorkspaceFile(workDir: string, filePath: string) {
+    // Security: prevent path traversal
+    const resolvedPath = join(workDir, filePath);
+    if (!resolvedPath.startsWith(workDir)) {
+      throw new Error("Invalid file path");
+    }
+    const content = await readFile(resolvedPath, "utf-8");
+    return { file: filePath, content };
+  }
+
   async stop() {
     // Mark agents as offline
     const agentIds = Array.from(this.agentRecords.keys());
@@ -446,7 +573,8 @@ export class Bridge {
     // Stop all agent sessions
     this.agentManager.stopAll();
 
-    // Disconnect from Supabase
+    // Disconnect from Supabase (removes all channels including workspace RPC)
+    this.workspaceRpcChannel = null;
     await this.supabase.removeAllChannels();
 
     console.log("  Bridge stopped.");

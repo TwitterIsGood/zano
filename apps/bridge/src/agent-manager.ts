@@ -653,6 +653,11 @@ ${agent.description || agent.display_name}
     }
   }
 
+  /** Get the workspace directory for an agent */
+  getWorkspaceDir(agentId: string): string | null {
+    return this.sessions.get(agentId)?.workDir ?? null;
+  }
+
   stopAll() {
     // Kill all running processes and clean up heartbeats
     for (const [agentId, agentProc] of this.processes) {
