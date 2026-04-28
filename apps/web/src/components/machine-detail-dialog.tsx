@@ -13,7 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field, FieldLabel } from "@/components/ui/field";
-import { CheckIcon, CopyIcon, MonitorIcon } from "lucide-react";
+import { CheckIcon, CopyIcon, MonitorIcon, RefreshCwIcon } from "lucide-react";
 
 interface MachineKey {
   id: string;
@@ -40,10 +40,12 @@ export function MachineDetailDialog({
 }: MachineDetailDialogProps) {
   const [name, setName] = useState(machine.name);
   const [saving, setSaving] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
+  const [keyValue, setKeyValue] = useState(machine.key_value);
   const [copied, setCopied] = useState(false);
   const nameChanged = name.trim() !== machine.name;
 
-  const apiKeyDisplay = machine.key_value || `${machine.key_prefix}...`;
+  const apiKeyDisplay = keyValue || `${machine.key_prefix}...`;
   const npxCommand = `npx @fehey/zano-bridge --api-key ${apiKeyDisplay}`;
 
   async function handleSaveName() {
@@ -60,6 +62,30 @@ export function MachineDetailDialog({
       }
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleRegenerate() {
+    setRegenerating(true);
+    try {
+      // Delete old key
+      await fetch(`/api/bridge/keys?id=${machine.id}`, { method: "DELETE" });
+      // Create new key with same name
+      const res = await fetch("/api/bridge/keys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          server_id: serverId,
+          name: name.trim() || machine.name,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setKeyValue(data.apiKey);
+        onUpdated();
+      }
+    } finally {
+      setRegenerating(false);
     }
   }
 
@@ -123,7 +149,25 @@ export function MachineDetailDialog({
                   )}
                 </button>
               </div>
+              {!keyValue && (
+                <p className="text-xs text-muted-foreground mt-1.5">
+                  这是旧版 key，完整值未存储。点击下方按钮重新生成即可看到完整命令。
+                </p>
+              )}
             </Field>
+
+            {!keyValue && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRegenerate}
+                loading={regenerating}
+                className="w-full"
+              >
+                <RefreshCwIcon className="size-3.5 mr-1.5" />
+                Regenerate API Key
+              </Button>
+            )}
 
             <div className="flex items-center justify-between text-xs text-muted-foreground pt-1">
               <span>Key: {machine.key_prefix}...</span>
