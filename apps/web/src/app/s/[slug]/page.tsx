@@ -4,8 +4,10 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { ApiKeysSection } from "@/components/api-keys-section";
 
 interface ServerStats {
+  id: string;
   name: string;
   description: string | null;
   agentCount: number;
@@ -51,6 +53,7 @@ export default function ServerHomePage() {
         ]);
 
       setStats({
+        id: server.id,
         name: server.name,
         description: server.description,
         agentCount: agentCount ?? 0,
@@ -117,9 +120,14 @@ export default function ServerHomePage() {
           </div>
         </div>
 
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-muted-foreground mb-8">
           Select an agent or channel from the sidebar to start a conversation.
         </p>
+
+        {/* API Keys Section */}
+        <div className="flex justify-center">
+          <ApiKeysSection serverId={stats.id} />
+        </div>
       </div>
     </div>
   );

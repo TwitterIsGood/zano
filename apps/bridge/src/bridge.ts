@@ -3,7 +3,8 @@ import { AgentManager } from "./agent-manager.js";
 
 interface BridgeConfig {
   supabaseUrl: string;
-  supabaseKey: string;
+  supabaseKey: string;    // anon key
+  authToken: string;       // JWT for authenticated Supabase operations
   userId: string;
   agentsDir: string;
 }
@@ -51,13 +52,31 @@ export class Bridge {
     this.config = config;
     this.supabase = createClient(config.supabaseUrl, config.supabaseKey, {
       auth: { autoRefreshToken: false, persistSession: false },
+      global: {
+        headers: { Authorization: `Bearer ${config.authToken}` },
+      },
     });
     this.agentManager = new AgentManager(
       config.agentsDir,
       this.supabase,
       config.supabaseUrl,
-      config.supabaseKey
+      config.supabaseKey,
+      config.authToken
     );
+  }
+
+  /** Update the auth token (called on periodic refresh) */
+  updateAuthToken(token: string) {
+    this.config.authToken = token;
+    // Recreate the Supabase client with the new token
+    this.supabase = createClient(this.config.supabaseUrl, this.config.supabaseKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+      global: {
+        headers: { Authorization: `Bearer ${token}` },
+      },
+    });
+    // Update agent manager's client too
+    this.agentManager.updateSupabaseClient(this.supabase, token);
   }
 
   async start() {

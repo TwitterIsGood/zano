@@ -34,6 +34,7 @@ import { join } from "path";
 const AGENT_ID = process.env.ZANO_AGENT_ID;
 const SUPABASE_URL = process.env.ZANO_SUPABASE_URL;
 const SUPABASE_KEY = process.env.ZANO_SUPABASE_KEY;
+const AUTH_TOKEN = process.env.ZANO_AUTH_TOKEN;
 
 function fail(code: string, message: string): never {
   process.stderr.write(JSON.stringify({ ok: false, code, message }) + "\n");
@@ -46,6 +47,9 @@ if (!SUPABASE_KEY) fail("MISSING_SUPABASE_KEY", "ZANO_SUPABASE_KEY is not set");
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
+  ...(AUTH_TOKEN
+    ? { global: { headers: { Authorization: `Bearer ${AUTH_TOKEN}` } } }
+    : {}),
 });
 
 // ---------------------------------------------------------------------------

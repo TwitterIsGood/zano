@@ -56,24 +56,42 @@ export class AgentManager {
   private supabase: SupabaseClient;
   private supabaseUrl: string;
   private supabaseKey: string;
+  private authToken: string;
   private activityChannel: RealtimeChannel;
 
   constructor(
     agentsDir: string,
     supabase: SupabaseClient,
     supabaseUrl: string,
-    supabaseKey: string
+    supabaseKey: string,
+    authToken: string = ""
   ) {
     this.agentsDir = agentsDir;
     this.supabase = supabase;
     this.supabaseUrl = supabaseUrl;
     this.supabaseKey = supabaseKey;
+    this.authToken = authToken;
 
     if (!existsSync(agentsDir)) {
       mkdirSync(agentsDir, { recursive: true });
     }
 
     // Set up Realtime Broadcast channel for agent activity
+    this.activityChannel = this.supabase.channel("agent-activity", {
+      config: { broadcast: { self: false } },
+    });
+    this.activityChannel.subscribe();
+  }
+
+  /** Update the Supabase client and auth token (called on token refresh) */
+  updateSupabaseClient(supabase: SupabaseClient, authToken: string) {
+    // Remove old activity channel
+    this.supabase.removeChannel(this.activityChannel);
+
+    this.supabase = supabase;
+    this.authToken = authToken;
+
+    // Re-subscribe activity channel on new client
     this.activityChannel = this.supabase.channel("agent-activity", {
       config: { broadcast: { self: false } },
     });
@@ -481,6 +499,7 @@ exec '${process.execPath.replace(/'/g, "'\\''")}' '${tsxPath.replace(/'/g, "'\\'
         ZANO_AGENT_ID: agentId,
         ZANO_SUPABASE_URL: this.supabaseUrl,
         ZANO_SUPABASE_KEY: this.supabaseKey,
+        ZANO_AUTH_TOKEN: this.authToken,
         // Prepend .zano/ to PATH so `zano` command is available
         PATH: `${zanoDir}:${process.env.PATH ?? ""}`,
       },
