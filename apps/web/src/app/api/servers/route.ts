@@ -114,6 +114,7 @@ export async function POST(request: NextRequest) {
   await supabase.from("machine_keys").insert({
     key_prefix: keyPrefix,
     key_hash: keyHash,
+    key_value: apiKey,
     user_id: user.id,
     server_id: server.id,
     name: "Default",

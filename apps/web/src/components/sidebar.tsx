@@ -41,6 +41,7 @@ interface MachineKey {
   id: string;
   name: string;
   key_prefix: string;
+  key_value: string | null;
   last_used_at: string | null;
 }
 
@@ -123,7 +124,7 @@ export function Sidebar({
     // Load machine keys for this server
     const { data: keys } = await supabase
       .from("machine_keys")
-      .select("id, name, key_prefix, last_used_at")
+      .select("id, name, key_prefix, key_value, last_used_at")
       .eq("server_id", serverId)
       .eq("user_id", user.id)
       .order("created_at");

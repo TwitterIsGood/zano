@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS public.machine_keys (
   id uuid DEFAULT uuid_generate_v4() PRIMARY KEY,
   key_prefix text NOT NULL,          -- first 8 chars of key (for display: "zk_a1b2...")
   key_hash text NOT NULL UNIQUE,     -- SHA-256 hash of the full key
+  key_value text,                    -- full key (stored for user convenience, RLS-protected)
   user_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   server_id uuid NOT NULL REFERENCES public.servers(id) ON DELETE CASCADE,
   name text NOT NULL DEFAULT 'Default',

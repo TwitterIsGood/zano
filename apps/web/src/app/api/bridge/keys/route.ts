@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
 
   const { data, error } = await supabase
     .from("machine_keys")
-    .select("id, key_prefix, name, created_at, last_used_at")
+    .select("id, key_prefix, key_value, name, created_at, last_used_at")
     .eq("user_id", user.id)
     .eq("server_id", serverId)
     .order("created_at", { ascending: false });
@@ -89,11 +89,12 @@ export async function POST(request: NextRequest) {
     .insert({
       key_prefix: keyPrefix,
       key_hash: keyHash,
+      key_value: apiKey,
       user_id: user.id,
       server_id,
       name: name?.trim() || "Default",
     })
-    .select("id, key_prefix, name, created_at")
+    .select("id, key_prefix, key_value, name, created_at")
     .single();
 
   if (error) {

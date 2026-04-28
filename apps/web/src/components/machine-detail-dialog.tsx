@@ -13,12 +13,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field, FieldLabel } from "@/components/ui/field";
-import { CheckIcon, CopyIcon, MonitorIcon, RefreshCwIcon } from "lucide-react";
+import { CheckIcon, CopyIcon, MonitorIcon } from "lucide-react";
 
 interface MachineKey {
   id: string;
   name: string;
   key_prefix: string;
+  key_value: string | null;
   last_used_at: string | null;
 }
 
@@ -39,14 +40,11 @@ export function MachineDetailDialog({
 }: MachineDetailDialogProps) {
   const [name, setName] = useState(machine.name);
   const [saving, setSaving] = useState(false);
-  const [regenerating, setRegenerating] = useState(false);
-  const [newApiKey, setNewApiKey] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const nameChanged = name.trim() !== machine.name;
 
-  const npxCommand = newApiKey
-    ? `npx @fehey/zano-bridge --api-key ${newApiKey}`
-    : `npx @fehey/zano-bridge --api-key ${machine.key_prefix}...`;
+  const apiKeyDisplay = machine.key_value || `${machine.key_prefix}...`;
+  const npxCommand = `npx @fehey/zano-bridge --api-key ${apiKeyDisplay}`;
 
   async function handleSaveName() {
     if (!nameChanged) return;
@@ -62,30 +60,6 @@ export function MachineDetailDialog({
       }
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function handleRegenerate() {
-    setRegenerating(true);
-    try {
-      // Delete old key
-      await fetch(`/api/bridge/keys?id=${machine.id}`, { method: "DELETE" });
-      // Create new key with same name
-      const res = await fetch("/api/bridge/keys", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          server_id: serverId,
-          name: name.trim() || machine.name,
-        }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setNewApiKey(data.apiKey);
-        onUpdated();
-      }
-    } finally {
-      setRegenerating(false);
     }
   }
 
@@ -149,30 +123,7 @@ export function MachineDetailDialog({
                   )}
                 </button>
               </div>
-              {!newApiKey && (
-                <p className="text-xs text-muted-foreground mt-1.5">
-                  API key is hidden. Regenerate to get a new key with the full command.
-                </p>
-              )}
-              {newApiKey && (
-                <p className="text-xs text-primary mt-1.5">
-                  New key generated. Copy the command above — the key won't be shown again.
-                </p>
-              )}
             </Field>
-
-            {!newApiKey && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleRegenerate}
-                loading={regenerating}
-                className="w-full"
-              >
-                <RefreshCwIcon className="size-3.5 mr-1.5" />
-                Regenerate API Key
-              </Button>
-            )}
 
             <div className="flex items-center justify-between text-xs text-muted-foreground pt-1">
               <span>Key: {machine.key_prefix}...</span>
