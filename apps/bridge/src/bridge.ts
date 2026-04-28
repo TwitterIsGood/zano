@@ -1,6 +1,7 @@
 import { createClient, SupabaseClient, RealtimeChannel } from "@supabase/supabase-js";
-import { readdir, readFile, stat } from "fs/promises";
-import { join } from "path";
+import { readdir, readFile, stat, lstat } from "fs/promises";
+import { join, resolve } from "path";
+import { homedir } from "os";
 import { AgentManager } from "./agent-manager.js";
 
 interface BridgeConfig {
@@ -453,43 +454,47 @@ export class Bridge {
    */
   private subscribeToWorkspaceRpc() {
     this.workspaceRpcChannel = this.supabase
-      .channel("workspace-rpc")
+      .channel("bridge-rpc")
       .on(
         "broadcast",
-        { event: "workspace:request" },
+        { event: "rpc:request" },
         async ({ payload }) => {
           const { requestId, agentId, action, filePath } = payload;
-          if (!requestId || !agentId) return;
-
-          // Only respond for agents we manage
-          if (!this.agentRecords.has(agentId)) return;
-
-          const workDir = this.agentManager.getWorkspaceDir(agentId);
-          if (!workDir) return;
+          if (!requestId) return;
 
           try {
             let responsePayload: Record<string, unknown>;
 
-            if (action === "list") {
-              responsePayload = await this.listWorkspaceFiles(workDir);
-            } else if (action === "read" && filePath) {
-              responsePayload = await this.readWorkspaceFile(
-                workDir,
-                filePath
-              );
+            if (action === "skills:list") {
+              // Skills are machine-wide, no agentId needed
+              responsePayload = await this.listSkills();
+            } else if (agentId && this.agentRecords.has(agentId)) {
+              const workDir = this.agentManager.getWorkspaceDir(agentId);
+              if (!workDir) {
+                responsePayload = { error: "Agent workspace not found" };
+              } else if (action === "list") {
+                responsePayload = await this.listWorkspaceFiles(workDir);
+              } else if (action === "read" && filePath) {
+                responsePayload = await this.readWorkspaceFile(
+                  workDir,
+                  filePath
+                );
+              } else {
+                responsePayload = { error: "Unknown action" };
+              }
             } else {
-              responsePayload = { error: "Unknown action" };
+              responsePayload = { error: "Unknown action or agent" };
             }
 
             this.workspaceRpcChannel!.send({
               type: "broadcast",
-              event: "workspace:response",
+              event: "rpc:response",
               payload: { requestId, ...responsePayload },
             });
           } catch (err) {
             this.workspaceRpcChannel!.send({
               type: "broadcast",
-              event: "workspace:response",
+              event: "rpc:response",
               payload: {
                 requestId,
                 error:
@@ -501,7 +506,7 @@ export class Bridge {
       )
       .subscribe((status) => {
         if (status === "SUBSCRIBED") {
-          console.log("  Workspace RPC channel ready.");
+          console.log("  Bridge RPC channel ready.");
         }
       });
   }
@@ -558,6 +563,52 @@ export class Bridge {
     }
     const content = await readFile(resolvedPath, "utf-8");
     return { file: filePath, content };
+  }
+
+  private async listSkills() {
+    const skillsDir = join(homedir(), ".claude", "skills");
+    const skills: Array<{ name: string; description: string }> = [];
+
+    try {
+      const entries = await readdir(skillsDir);
+      for (const entry of entries) {
+        if (entry.startsWith(".")) continue;
+        const entryPath = join(skillsDir, entry);
+        const entryStat = await lstat(entryPath);
+        const resolvedPath = entryStat.isSymbolicLink()
+          ? resolve(skillsDir, entry)
+          : entryPath;
+
+        for (const filename of ["SKILL.md", "skill.md"]) {
+          try {
+            const content = await readFile(
+              join(resolvedPath, filename),
+              "utf-8"
+            );
+            const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+            let description = "";
+            if (fmMatch) {
+              const descMatch = fmMatch[1].match(
+                /^description:\s*(.+)$/m
+              );
+              if (descMatch) {
+                description = descMatch[1]
+                  .trim()
+                  .replace(/^['"]|['"]$/g, "");
+              }
+            }
+            skills.push({ name: entry, description: description || entry });
+            break;
+          } catch {
+            // File doesn't exist, try next
+          }
+        }
+      }
+    } catch {
+      // Skills directory doesn't exist
+    }
+
+    return { skills };
   }
 
   async stop() {

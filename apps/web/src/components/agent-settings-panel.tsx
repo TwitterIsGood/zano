@@ -61,6 +61,8 @@ const MODEL_ITEMS = [
   { value: 'haiku', label: 'Haiku' },
 ];
 
+type BridgeRpcFn = (action: string, extra?: Record<string, unknown>) => Promise<Record<string, unknown>>;
+
 export function AgentSettingsPanel({
   agent,
   onClose,
@@ -72,6 +74,59 @@ export function AgentSettingsPanel({
   onDeleted: () => void;
   onUpdated: (updated: AgentInfo) => void;
 }) {
+  // Shared RPC channel for bridge communication (workspace + skills)
+  const rpcChannelRef = useRef<RealtimeChannel | null>(null);
+  const rpcCallbacksRef = useRef(new Map<string, (payload: Record<string, unknown>) => void>());
+
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel('bridge-rpc')
+      .on('broadcast', { event: 'rpc:response' }, ({ payload }) => {
+        const cb = rpcCallbacksRef.current.get(payload.requestId as string);
+        if (cb) {
+          rpcCallbacksRef.current.delete(payload.requestId as string);
+          cb(payload as Record<string, unknown>);
+        }
+      })
+      .subscribe();
+
+    rpcChannelRef.current = channel;
+
+    return () => {
+      channel.unsubscribe();
+      rpcChannelRef.current = null;
+    };
+  }, []);
+
+  const bridgeRpc: BridgeRpcFn = useCallback(
+    async (action, extra = {}) => {
+      const channel = rpcChannelRef.current;
+      if (!channel) throw new Error('bridge_offline');
+
+      const requestId = crypto.randomUUID();
+      return new Promise<Record<string, unknown>>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          rpcCallbacksRef.current.delete(requestId);
+          reject(new Error('bridge_offline'));
+        }, 8000);
+
+        rpcCallbacksRef.current.set(requestId, (payload) => {
+          clearTimeout(timeout);
+          if (payload.error) reject(new Error(payload.error as string));
+          else resolve(payload);
+        });
+
+        channel.send({
+          type: 'broadcast',
+          event: 'rpc:request',
+          payload: { requestId, action, ...extra },
+        });
+      });
+    },
+    []
+  );
+
   return (
     <div className="flex h-full w-[360px] flex-shrink-0 flex-col border-l bg-card animate-slide-in-right">
       {/* Tab content */}
@@ -93,10 +148,10 @@ export function AgentSettingsPanel({
         </div>
 
         <TabsPanel value="settings" className="flex-1 min-h-0 overflow-y-auto">
-          <SettingsTab agent={agent} onDeleted={onDeleted} onUpdated={onUpdated} />
+          <SettingsTab agent={agent} onDeleted={onDeleted} onUpdated={onUpdated} bridgeRpc={bridgeRpc} />
         </TabsPanel>
         <TabsPanel value="workspace" className="flex-1 min-h-0 overflow-y-auto">
-          <WorkspaceTab agentId={agent.id} />
+          <WorkspaceTab agentId={agent.id} bridgeRpc={bridgeRpc} />
         </TabsPanel>
       </Tabs>
     </div>
@@ -109,10 +164,12 @@ function SettingsTab({
   agent,
   onDeleted,
   onUpdated,
+  bridgeRpc,
 }: {
   agent: AgentInfo;
   onDeleted: () => void;
   onUpdated: (updated: AgentInfo) => void;
+  bridgeRpc: BridgeRpcFn;
 }) {
   const [loading, setLoading] = useState(true);
   const [displayName, setDisplayName] = useState('');
@@ -158,11 +215,26 @@ function SettingsTab({
     try {
       const res = await fetch('/api/skills');
       if (res.ok) {
-        const { skills: data } = await res.json();
-        setSkills(data || []);
+        const data = await res.json();
+        if (data.skills && data.skills.length > 0) {
+          setSkills(data.skills);
+          return;
+        }
+        // API returned empty — might be remote, try bridge RPC
+        if (data.remote) {
+          const rpcData = await bridgeRpc('skills:list');
+          setSkills((rpcData.skills as Skill[]) || []);
+          return;
+        }
       }
     } catch {
-      // Skills loading is non-critical
+      // Skills loading is non-critical — try RPC as last resort
+      try {
+        const rpcData = await bridgeRpc('skills:list');
+        setSkills((rpcData.skills as Skill[]) || []);
+      } catch {
+        // Bridge offline or no skills — leave empty
+      }
     }
   }
 
@@ -425,7 +497,7 @@ function SettingsTab({
 
 // ─── Workspace Tab ──────────────────────────────────────────────────────────
 
-function WorkspaceTab({ agentId }: { agentId: string }) {
+function WorkspaceTab({ agentId, bridgeRpc }: { agentId: string; bridgeRpc: BridgeRpcFn }) {
   const [loading, setLoading] = useState(true);
   const [workspacePath, setWorkspacePath] = useState('');
   const [files, setFiles] = useState<FileEntry[]>([]);
@@ -437,68 +509,6 @@ function WorkspaceTab({ agentId }: { agentId: string }) {
   const [error, setError] = useState('');
   const [isRemote, setIsRemote] = useState(false);
   const [bridgeOnline, setBridgeOnline] = useState(true);
-
-  // Realtime RPC state for remote workspace
-  const rpcChannelRef = useRef<RealtimeChannel | null>(null);
-  const rpcCallbacksRef = useRef(new Map<string, (payload: Record<string, unknown>) => void>());
-
-  // Clean up RPC channel on unmount
-  useEffect(() => {
-    return () => {
-      rpcChannelRef.current?.unsubscribe();
-      rpcChannelRef.current = null;
-    };
-  }, []);
-
-  const ensureRpcChannel = useCallback(async (): Promise<RealtimeChannel> => {
-    if (rpcChannelRef.current) return rpcChannelRef.current;
-
-    const supabase = createClient();
-    return new Promise<RealtimeChannel>((resolve) => {
-      const channel = supabase
-        .channel('workspace-rpc')
-        .on('broadcast', { event: 'workspace:response' }, ({ payload }) => {
-          const cb = rpcCallbacksRef.current.get(payload.requestId as string);
-          if (cb) {
-            rpcCallbacksRef.current.delete(payload.requestId as string);
-            cb(payload as Record<string, unknown>);
-          }
-        })
-        .subscribe((status) => {
-          if (status === 'SUBSCRIBED') {
-            rpcChannelRef.current = channel;
-            resolve(channel);
-          }
-        });
-    });
-  }, []);
-
-  const rpcRequest = useCallback(
-    async (action: string, extra?: Record<string, unknown>): Promise<Record<string, unknown>> => {
-      const channel = await ensureRpcChannel();
-      const requestId = crypto.randomUUID();
-
-      return new Promise<Record<string, unknown>>((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          rpcCallbacksRef.current.delete(requestId);
-          reject(new Error('bridge_offline'));
-        }, 8000);
-
-        rpcCallbacksRef.current.set(requestId, (payload) => {
-          clearTimeout(timeout);
-          if (payload.error) reject(new Error(payload.error as string));
-          else resolve(payload);
-        });
-
-        channel.send({
-          type: 'broadcast',
-          event: 'workspace:request',
-          payload: { requestId, agentId, action, ...extra },
-        });
-      });
-    },
-    [agentId, ensureRpcChannel]
-  );
 
   useEffect(() => {
     loadWorkspace();
@@ -526,7 +536,7 @@ function WorkspaceTab({ agentId }: { agentId: string }) {
         setIsRemote(true);
         setWorkspacePath(data.workspace_path || '');
         try {
-          const rpcData = await rpcRequest('list');
+          const rpcData = await bridgeRpc('list', { agentId });
           setWorkspacePath((rpcData.workspace_path as string) || data.workspace_path || '');
           setFiles((rpcData.files as FileEntry[]) || []);
           setNotesFiles((rpcData.notes_files as FileEntry[]) || []);
@@ -552,7 +562,7 @@ function WorkspaceTab({ agentId }: { agentId: string }) {
     setFileContent(null);
     try {
       if (isRemote) {
-        const data = await rpcRequest('read', { filePath });
+        const data = await bridgeRpc('read', { agentId, filePath });
         setFileContent(data.content as string);
       } else {
         const res = await fetch(`/api/agents/${agentId}/workspace?file=${encodeURIComponent(filePath)}`);

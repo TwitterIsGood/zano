@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { readdir, readFile, lstat } from "fs/promises";
+import { readdir, readFile, lstat, access } from "fs/promises";
 import { join, resolve } from "path";
 import { homedir } from "os";
 
@@ -12,6 +12,13 @@ interface Skill {
 export async function GET() {
   const skillsDir = join(homedir(), ".claude", "skills");
   const skills: Skill[] = [];
+
+  // Check if skills directory is accessible (won't exist on cloud deployments)
+  try {
+    await access(skillsDir);
+  } catch {
+    return NextResponse.json({ skills: [], remote: true });
+  }
 
   try {
     const entries = await readdir(skillsDir);
