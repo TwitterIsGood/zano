@@ -184,7 +184,7 @@ export function Sidebar({
   useEffect(() => {
     loadData();
 
-    // Subscribe to agent status changes + machine key updates on one channel
+    // Subscribe to agent/channel/machine changes for real-time sidebar updates
     const realtimeSub = supabase
       .channel("sidebar-realtime")
       .on(
@@ -192,9 +192,15 @@ export function Sidebar({
         { event: "UPDATE", schema: "public", table: "agents" },
         (payload) => {
           const updated = payload.new as Agent;
-          setAgents((prev) =>
-            prev.map((a) => (a.id === updated.id ? { ...a, ...updated } : a))
-          );
+          setAgents((prev) => {
+            // If agent is already known, update in-place
+            if (prev.some((a) => a.id === updated.id)) {
+              return prev.map((a) => (a.id === updated.id ? { ...a, ...updated } : a));
+            }
+            // Unknown agent went online — reload everything
+            loadData();
+            return prev;
+          });
           setDmChannels((prev) =>
             prev.map((dm) =>
               dm.agent?.id === updated.id
@@ -202,6 +208,22 @@ export function Sidebar({
                 : dm
             )
           );
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "agents" },
+        () => {
+          // New agent created — reload sidebar data
+          loadData();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "channel_members" },
+        () => {
+          // New channel membership — reload to pick up new channels/DMs
+          loadData();
         }
       )
       .on(
