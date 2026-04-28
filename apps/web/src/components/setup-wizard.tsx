@@ -2,8 +2,6 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
-import type { RealtimeChannel } from "@supabase/supabase-js";
 import {
   Dialog,
   DialogPopup,
@@ -55,7 +53,7 @@ export function SetupWizard({ serverId, serverSlug, onComplete }: SetupWizardPro
   const [agentError, setAgentError] = useState("");
 
   const router = useRouter();
-  const presenceRef = useRef<RealtimeChannel | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval>>(null);
 
   // Load API key from sessionStorage
   useEffect(() => {
@@ -66,31 +64,37 @@ export function SetupWizard({ serverId, serverSlug, onComplete }: SetupWizardPro
     }
   }, []);
 
-  // Listen for bridge connection via Presence (instant, no polling)
+  // Poll for bridge connection (check if the key's last_used_at becomes non-null)
   useEffect(() => {
-    if (step !== "connect") return;
+    if (step !== "connect" || !apiKey) return;
 
-    const supabase = createClient();
-    const channel = supabase.channel(`bridge-presence:${serverId}`);
-    channel
-      .on("presence", { event: "sync" }, () => {
-        const state = channel.presenceState();
-        const entries = Object.values(state).flat() as Array<{
-          hostname?: string;
-        }>;
-        if (entries.length > 0) {
-          setMachineName(entries[0].hostname || "");
+    const keyPrefix = apiKey.substring(0, 11); // "zk_" + first 8 hex chars
+
+    async function checkConnection() {
+      try {
+        const res = await fetch(`/api/bridge/keys?server_id=${serverId}`);
+        if (!res.ok) return;
+        const { keys } = await res.json();
+        const matchedKey = keys.find(
+          (k: { key_prefix: string; last_used_at: string | null }) =>
+            k.key_prefix === keyPrefix
+        );
+        if (matchedKey?.last_used_at) {
+          setMachineName(matchedKey.name || "");
           setStep("connected");
         }
-      })
-      .subscribe();
-    presenceRef.current = channel;
+      } catch {
+        // Ignore poll errors
+      }
+    }
 
+    // Check immediately, then poll every 3 seconds
+    checkConnection();
+    pollRef.current = setInterval(checkConnection, 3000);
     return () => {
-      supabase.removeChannel(channel);
-      presenceRef.current = null;
+      if (pollRef.current) clearInterval(pollRef.current);
     };
-  }, [step, serverId]);
+  }, [step, apiKey, serverId]);
 
   const npxCommand = apiKey
     ? `npx @fehey/zano-bridge --api-key ${apiKey}`
