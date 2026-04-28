@@ -58,6 +58,8 @@ export class Bridge {
   private workspaceRpcChannel: RealtimeChannel | null = null;
   // Presence channel for online status (auto-offline on disconnect)
   private presenceChannel: RealtimeChannel | null = null;
+  // Heartbeat timer for machine_keys.last_used_at (polling fallback for online status)
+  private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor(config: BridgeConfig) {
     this.config = config;
@@ -137,6 +139,9 @@ export class Bridge {
 
     // 8. Track presence (auto-offline on disconnect — no SIGINT needed)
     this.trackPresence();
+
+    // 9. Start heartbeat (updates machine_keys.last_used_at every 30s for polling-based status)
+    this.startHeartbeat();
 
     console.log(
       `  Bridge ready. Listening for messages across ${this.channelAgents.size} channel(s).`
@@ -481,6 +486,27 @@ export class Bridge {
       });
   }
 
+  /** Periodically update machine_keys.last_used_at as a heartbeat for polling-based status. */
+  private startHeartbeat() {
+    if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
+
+    const sendHeartbeat = async () => {
+      try {
+        await this.supabase
+          .from("machine_keys")
+          .update({ last_used_at: new Date().toISOString() })
+          .eq("user_id", this.config.userId)
+          .eq("server_id", this.config.serverId);
+      } catch {
+        // Ignore heartbeat errors
+      }
+    };
+
+    // Send immediately, then every 30 seconds
+    sendHeartbeat();
+    this.heartbeatInterval = setInterval(sendHeartbeat, 30_000);
+  }
+
   /** Update the presence payload (e.g. when new agents are added). */
   private async updatePresence() {
     if (!this.presenceChannel) return;
@@ -656,6 +682,12 @@ export class Bridge {
   }
 
   async stop() {
+    // Stop heartbeat
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
+
     // Mark agents as offline
     const agentIds = Array.from(this.agentRecords.keys());
     if (agentIds.length > 0) {

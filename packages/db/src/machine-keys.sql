@@ -25,6 +25,10 @@ CREATE POLICY "Users can create own keys"
   ON public.machine_keys FOR INSERT
   WITH CHECK (auth.uid() = user_id);
 
+CREATE POLICY "Users can update own keys"
+  ON public.machine_keys FOR UPDATE
+  USING (auth.uid() = user_id);
+
 CREATE POLICY "Users can delete own keys"
   ON public.machine_keys FOR DELETE
   USING (auth.uid() = user_id);

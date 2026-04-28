@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
-import type { RealtimeChannel } from "@supabase/supabase-js";
+import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter, useParams, usePathname } from "next/navigation";
 import { CreateAgentDialog } from "./create-agent-dialog";
@@ -69,10 +68,8 @@ export function Sidebar({
   const [showServerMenu, setShowServerMenu] = useState(false);
   const [servers, setServers] = useState<Server[]>([]);
   const [machineKeys, setMachineKeys] = useState<MachineKey[]>([]);
-  // Presence-based online status (auto-offline on bridge disconnect)
+  // Heartbeat-based online status (bridge updates last_used_at every 30s)
   const [bridgeOnline, setBridgeOnline] = useState(false);
-  const [onlineAgentIds, setOnlineAgentIds] = useState<Set<string>>(new Set());
-  const presenceRef = useRef<RealtimeChannel | null>(null);
   const [editingChannel, setEditingChannel] = useState<Channel | null>(null);
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -128,7 +125,15 @@ export function Sidebar({
       .eq("server_id", serverId)
       .eq("user_id", user.id)
       .order("created_at");
-    if (keys) setMachineKeys(keys as MachineKey[]);
+    if (keys) {
+      setMachineKeys(keys as MachineKey[]);
+      // Check online status based on heartbeat (last_used_at within 60 seconds = online)
+      const now = Date.now();
+      const hasRecentHeartbeat = (keys as MachineKey[]).some(
+        (k) => k.last_used_at && now - new Date(k.last_used_at).getTime() < 60_000
+      );
+      setBridgeOnline(hasRecentHeartbeat);
+    }
 
     // Get all channels in this server that the user is a member of
     const { data: memberships } = await supabase
@@ -184,23 +189,6 @@ export function Sidebar({
 
     setDmChannels(dms);
     setGroupChannels(groups);
-
-    // Refresh presence state from existing subscription (catches missed sync events)
-    if (presenceRef.current) {
-      const state = presenceRef.current.presenceState();
-      const entries = Object.values(state).flat() as Array<{
-        hostname?: string;
-        agentIds?: string[];
-      }>;
-      setBridgeOnline(entries.length > 0);
-      const ids = new Set<string>();
-      for (const entry of entries) {
-        for (const id of (entry.agentIds || [])) {
-          ids.add(id);
-        }
-      }
-      setOnlineAgentIds(ids);
-    }
   }, [supabase, serverId]);
 
   // Reload sidebar data when pathname changes (e.g. wizard navigates to new DM)
@@ -262,40 +250,28 @@ export function Sidebar({
       )
       .subscribe();
 
-    // Subscribe to bridge presence (auto-offline on disconnect)
-    const presenceChannel = supabase.channel(`bridge-presence:${serverId}`);
-
-    function refreshPresence() {
-      const state = presenceChannel.presenceState();
-      const entries = Object.values(state).flat() as Array<{
-        hostname?: string;
-        agentIds?: string[];
-      }>;
-      setBridgeOnline(entries.length > 0);
-      const ids = new Set<string>();
-      for (const entry of entries) {
-        for (const id of entry.agentIds || []) {
-          ids.add(id);
-        }
+    // Poll machine heartbeat every 15s for online status (bridge updates last_used_at every 30s)
+    async function checkHeartbeat() {
+      const { data: keys } = await supabase
+        .from("machine_keys")
+        .select("last_used_at")
+        .eq("server_id", serverId);
+      if (keys) {
+        const now = Date.now();
+        setBridgeOnline(
+          keys.some(
+            (k: { last_used_at: string | null }) =>
+              k.last_used_at && now - new Date(k.last_used_at).getTime() < 60_000
+          )
+        );
       }
-      setOnlineAgentIds(ids);
     }
 
-    presenceChannel
-      .on("presence", { event: "sync" }, refreshPresence)
-      .on("presence", { event: "join" }, refreshPresence)
-      .on("presence", { event: "leave" }, refreshPresence)
-      .subscribe();
-    presenceRef.current = presenceChannel;
-
-    // Periodic fallback: re-check presence state every 10s in case events were missed
-    const presenceInterval = setInterval(refreshPresence, 10_000);
+    const heartbeatInterval = setInterval(checkHeartbeat, 15_000);
 
     return () => {
-      clearInterval(presenceInterval);
+      clearInterval(heartbeatInterval);
       supabase.removeChannel(realtimeSub);
-      supabase.removeChannel(presenceChannel);
-      presenceRef.current = null;
     };
   }, [serverId]);
 
@@ -321,7 +297,8 @@ export function Sidebar({
   function getStatusDot(agentId: string) {
     const activityState = agentActivities.get(agentId);
     const activity = activityState?.activity;
-    const isOnline = onlineAgentIds.has(agentId);
+    // Agent is online when the bridge is online (bridge manages all agents)
+    const isOnline = bridgeOnline;
 
     if (isOnline && (activity === "thinking" || activity === "working")) {
       return "bg-green-500 animate-status-pulse";
@@ -433,7 +410,7 @@ export function Sidebar({
                       if (act?.label && act.activity !== "idle") {
                         return act.detail ? `${act.label}: ${act.detail}` : act.label;
                       }
-                      return onlineAgentIds.has(dm.agent?.id || "") ? "Online" : "Offline";
+                      return bridgeOnline ? "Online" : "Offline";
                     })()}
                   />
                 </div>
