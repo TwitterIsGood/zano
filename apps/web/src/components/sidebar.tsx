@@ -184,12 +184,32 @@ export function Sidebar({
 
     setDmChannels(dms);
     setGroupChannels(groups);
+
+    // Refresh presence state from existing subscription (catches missed sync events)
+    if (presenceRef.current) {
+      const state = presenceRef.current.presenceState();
+      const entries = Object.values(state).flat() as Array<{
+        hostname?: string;
+        agentIds?: string[];
+      }>;
+      setBridgeOnline(entries.length > 0);
+      const ids = new Set<string>();
+      for (const entry of entries) {
+        for (const id of (entry.agentIds || [])) {
+          ids.add(id);
+        }
+      }
+      setOnlineAgentIds(ids);
+    }
   }, [supabase, serverId]);
 
+  // Reload sidebar data when pathname changes (e.g. wizard navigates to new DM)
   useEffect(() => {
     loadData();
+  }, [loadData, pathname]);
 
-    // Subscribe to agent/channel/machine changes for real-time sidebar updates
+  // Set up realtime subscriptions (stable across navigations, only recreate on server change)
+  useEffect(() => {
     const realtimeSub = supabase
       .channel("sidebar-realtime")
       .on(
@@ -198,11 +218,9 @@ export function Sidebar({
         (payload) => {
           const updated = payload.new as Agent;
           setAgents((prev) => {
-            // If agent is already known, update in-place
             if (prev.some((a) => a.id === updated.id)) {
               return prev.map((a) => (a.id === updated.id ? { ...a, ...updated } : a));
             }
-            // Unknown agent went online — reload everything
             loadData();
             return prev;
           });
@@ -219,7 +237,7 @@ export function Sidebar({
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "agents" },
         () => {
-          // New agent created — delay reload to allow DM channel + membership to be created
+          // Delay reload to allow DM channel + membership creation to complete
           setTimeout(() => loadData(), 1500);
         }
       )
@@ -227,7 +245,6 @@ export function Sidebar({
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "channel_members" },
         () => {
-          // New channel membership — reload to pick up new channels/DMs
           loadData();
         }
       )
