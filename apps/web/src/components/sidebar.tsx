@@ -264,26 +264,35 @@ export function Sidebar({
 
     // Subscribe to bridge presence (auto-offline on disconnect)
     const presenceChannel = supabase.channel(`bridge-presence:${serverId}`);
-    presenceChannel
-      .on("presence", { event: "sync" }, () => {
-        const state = presenceChannel.presenceState();
-        const entries = Object.values(state).flat() as Array<{
-          hostname?: string;
-          agentIds?: string[];
-        }>;
-        setBridgeOnline(entries.length > 0);
-        const ids = new Set<string>();
-        for (const entry of entries) {
-          for (const id of entry.agentIds || []) {
-            ids.add(id);
-          }
+
+    function refreshPresence() {
+      const state = presenceChannel.presenceState();
+      const entries = Object.values(state).flat() as Array<{
+        hostname?: string;
+        agentIds?: string[];
+      }>;
+      setBridgeOnline(entries.length > 0);
+      const ids = new Set<string>();
+      for (const entry of entries) {
+        for (const id of entry.agentIds || []) {
+          ids.add(id);
         }
-        setOnlineAgentIds(ids);
-      })
+      }
+      setOnlineAgentIds(ids);
+    }
+
+    presenceChannel
+      .on("presence", { event: "sync" }, refreshPresence)
+      .on("presence", { event: "join" }, refreshPresence)
+      .on("presence", { event: "leave" }, refreshPresence)
       .subscribe();
     presenceRef.current = presenceChannel;
 
+    // Periodic fallback: re-check presence state every 10s in case events were missed
+    const presenceInterval = setInterval(refreshPresence, 10_000);
+
     return () => {
+      clearInterval(presenceInterval);
       supabase.removeChannel(realtimeSub);
       supabase.removeChannel(presenceChannel);
       presenceRef.current = null;
