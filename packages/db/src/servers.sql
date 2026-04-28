@@ -26,6 +26,18 @@ CREATE TABLE IF NOT EXISTS public.server_members (
 );
 
 -- -----------------------------------------------------------
+-- Helper function (SECURITY DEFINER bypasses RLS, breaks recursion)
+-- -----------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION public.user_is_server_member(server_uuid uuid)
+RETURNS boolean AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.server_members
+    WHERE server_id = server_uuid AND member_id = auth.uid()
+  );
+$$ LANGUAGE sql SECURITY DEFINER STABLE;
+
+-- -----------------------------------------------------------
 -- RLS
 -- -----------------------------------------------------------
 
@@ -38,10 +50,7 @@ CREATE POLICY "Users can view their servers"
   ON public.servers FOR SELECT
   USING (
     owner_id = auth.uid()
-    OR id IN (
-      SELECT server_id FROM public.server_members
-      WHERE member_id = auth.uid() AND member_type = 'human'
-    )
+    OR public.user_is_server_member(id)
   );
 
 -- Servers: authenticated users can create servers (must be owner)
@@ -66,12 +75,7 @@ CREATE POLICY "Owner can delete server"
 DROP POLICY IF EXISTS "Members can view server members" ON public.server_members;
 CREATE POLICY "Members can view server members"
   ON public.server_members FOR SELECT
-  USING (
-    server_id IN (
-      SELECT server_id FROM public.server_members
-      WHERE member_id = auth.uid() AND member_type = 'human'
-    )
-  );
+  USING (public.user_is_server_member(server_id));
 
 -- Server members: server owner or self-add
 DROP POLICY IF EXISTS "Users can join servers" ON public.server_members;
@@ -81,11 +85,8 @@ CREATE POLICY "Users can join servers"
     -- User adding themselves
     (auth.uid() = member_id AND member_type = 'human')
     OR
-    -- Server owner adding anyone
-    EXISTS (
-      SELECT 1 FROM public.servers
-      WHERE id = server_id AND owner_id = auth.uid()
-    )
+    -- Server owner adding anyone (use SECURITY DEFINER function to avoid cross-table recursion)
+    auth.uid() = (SELECT owner_id FROM public.servers WHERE id = server_id)
   );
 
 -- Server members: owner can remove members, or members can leave
@@ -94,15 +95,5 @@ CREATE POLICY "Users can leave servers"
   ON public.server_members FOR DELETE
   USING (
     auth.uid() = member_id
-    OR EXISTS (
-      SELECT 1 FROM public.servers
-      WHERE id = server_id AND owner_id = auth.uid()
-    )
+    OR auth.uid() = (SELECT owner_id FROM public.servers WHERE id = server_id)
   );
-
--- -----------------------------------------------------------
--- Realtime
--- -----------------------------------------------------------
--- Enable realtime for servers table (optional, for live updates)
--- ALTER PUBLICATION supabase_realtime ADD TABLE public.servers;
--- ALTER PUBLICATION supabase_realtime ADD TABLE public.server_members;
