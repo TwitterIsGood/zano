@@ -1,6 +1,7 @@
 import { mkdirSync, existsSync, writeFileSync, readFileSync } from "fs";
 import { join, resolve, dirname } from "path";
 import { fileURLToPath } from "url";
+import { createRequire } from "node:module";
 import { spawn, ChildProcess } from "child_process";
 import { SupabaseClient, RealtimeChannel } from "@supabase/supabase-js";
 import { buildSystemPrompt } from "./system-prompt.js";
@@ -437,19 +438,26 @@ ${agent.description || agent.display_name}
       mkdirSync(zanoDir, { recursive: true });
     }
 
-    // Resolve the CLI entry point: packages/cli/src/index.ts
-    const bridgeRoot = resolve(__dirname, "..");
-    const cliPath = resolve(bridgeRoot, "..", "..", "packages", "cli", "src", "index.ts");
-    // Use tsx's actual JS entry point (not the shell wrapper in .bin/)
-    const tsxPath = join(bridgeRoot, "node_modules", "tsx", "dist", "cli.mjs");
-
-    // Write bash wrapper script
     const wrapperPath = join(zanoDir, "zano");
-    const wrapperBody = `#!/usr/bin/env bash
-exec '${process.execPath.replace(/'/g, "'\\''")}' '${tsxPath.replace(/'/g, "'\\''")}' '${cliPath.replace(/'/g, "'\\''")}' "$@"
-`;
-    writeFileSync(wrapperPath, wrapperBody, { mode: 0o755 });
+    let wrapperBody: string;
 
+    // Try to resolve the compiled CLI from @fehey/zano-cli npm package first
+    try {
+      const req = createRequire(import.meta.url);
+      const cliPath = req.resolve("@fehey/zano-cli/dist/index.js");
+      // Published mode: use node to run compiled JS directly
+      wrapperBody = `#!/usr/bin/env bash\nexec node '${cliPath.replace(/'/g, "'\\''")}' "$@"\n`;
+      console.log(`  [${session.displayName}] CLI resolved from npm package: ${cliPath}`);
+    } catch {
+      // Fall back to monorepo dev path (TypeScript source via tsx)
+      const bridgeRoot = resolve(__dirname, "..");
+      const cliPath = resolve(bridgeRoot, "..", "..", "packages", "cli", "src", "index.ts");
+      const tsxPath = join(bridgeRoot, "node_modules", "tsx", "dist", "cli.mjs");
+      wrapperBody = `#!/usr/bin/env bash\nexec '${process.execPath.replace(/'/g, "'\\''")}' '${tsxPath.replace(/'/g, "'\\''")}' '${cliPath.replace(/'/g, "'\\''")}' "$@"\n`;
+      console.log(`  [${session.displayName}] CLI resolved from monorepo dev path: ${cliPath}`);
+    }
+
+    writeFileSync(wrapperPath, wrapperBody, { mode: 0o755 });
     console.log(`  [${session.displayName}] CLI wrapper written: ${wrapperPath}`);
     return zanoDir;
   }
