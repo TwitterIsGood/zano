@@ -434,6 +434,7 @@ function WorkspaceTab({ agentId }: { agentId: string }) {
   const [loadingFile, setLoadingFile] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState('');
+  const [isRemote, setIsRemote] = useState(false);
 
   useEffect(() => {
     loadWorkspace();
@@ -442,10 +443,16 @@ function WorkspaceTab({ agentId }: { agentId: string }) {
   async function loadWorkspace() {
     setLoading(true);
     setError('');
+    setIsRemote(false);
     try {
       const res = await fetch(`/api/agents/${agentId}/workspace`);
       if (!res.ok) {
         const data = await res.json();
+        if (data.error === 'remote_workspace') {
+          setIsRemote(true);
+          setWorkspacePath(data.workspace_path || '');
+          return;
+        }
         throw new Error(data.error || 'Failed to load workspace');
       }
 
@@ -492,6 +499,25 @@ function WorkspaceTab({ agentId }: { agentId: string }) {
     return (
       <div className="flex-1 flex items-center justify-center">
         <div className="text-sm text-muted-foreground">Loading workspace...</div>
+      </div>
+    );
+  }
+
+  if (isRemote) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-4 px-6">
+        <FolderOpen size={32} className="text-muted-foreground/40" />
+        <div className="text-center space-y-1.5">
+          <p className="text-sm font-medium text-foreground">Workspace is on your local machine</p>
+          <p className="text-xs text-muted-foreground leading-relaxed max-w-[280px]">
+            This agent&apos;s workspace files are stored where the bridge is running and can&apos;t be browsed from the cloud.
+          </p>
+        </div>
+        {workspacePath && (
+          <code className="text-[11px] font-mono text-muted-foreground bg-muted rounded px-2 py-1 max-w-full truncate">
+            {workspacePath}
+          </code>
+        )}
       </div>
     );
   }

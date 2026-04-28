@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { readdir, readFile, stat } from "fs/promises";
+import { readdir, readFile, stat, access } from "fs/promises";
 import { join } from "path";
 
 interface FileEntry {
@@ -41,6 +41,22 @@ export async function GET(
   }
 
   const workspacePath = agent.workspace_path as string;
+
+  // Check if workspace path is accessible from this server
+  try {
+    await access(workspacePath);
+  } catch {
+    return NextResponse.json(
+      {
+        error: "remote_workspace",
+        message:
+          "Workspace files are stored on the machine running the bridge and cannot be browsed from the cloud.",
+        workspace_path: workspacePath,
+      },
+      { status: 422 }
+    );
+  }
+
   const filePath = request.nextUrl.searchParams.get("file");
 
   // If ?file= is specified, read that file's content
