@@ -40,13 +40,15 @@ create or replace trigger on_auth_user_created
 -- -----------------------------------------------------------
 create table public.agents (
   id uuid default uuid_generate_v4() primary key,
-  name text not null unique,
+  name text not null,
   display_name text not null,
   description text,
   system_prompt text,
   status text default 'offline' check (status in ('online', 'sleeping', 'offline')),
   owner_id uuid references public.profiles(id) on delete cascade not null,
-  created_at timestamptz default now() not null
+  server_id uuid references public.servers(id) on delete cascade not null,
+  created_at timestamptz default now() not null,
+  unique(server_id, name)
 );
 
 -- -----------------------------------------------------------
@@ -58,8 +60,9 @@ create table public.channels (
   description text,
   type text default 'public' check (type in ('public', 'private', 'dm')),
   created_by uuid references public.profiles(id) on delete set null,
+  server_id uuid references public.servers(id) on delete cascade not null,
   created_at timestamptz default now() not null,
-  unique(name)
+  unique(server_id, name)
 );
 
 -- -----------------------------------------------------------

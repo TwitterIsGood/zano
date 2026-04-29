@@ -46,13 +46,14 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Generate a unique agent name from display name
+  // Generate a unique agent name from display name + user id prefix + random suffix
   const baseName = display_name
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
-  const name = `${baseName}-${user.id.substring(0, 8)}`;
+  const randomSuffix = Math.random().toString(36).substring(2, 6);
+  const name = `${baseName}-${user.id.substring(0, 8)}-${randomSuffix}`;
 
   // 1. Create the agent
   // Validate model if provided
