@@ -162,7 +162,8 @@ export function MessageArea({
     return () => {
       supabase.removeChannel(subscription);
     };
-  }, [channel, supabase]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- channel is memoized; only re-run when channel ID changes
+  }, [channel?.id, supabase]);
 
   useEffect(() => {
     if (!agentTyping || !channel) return;

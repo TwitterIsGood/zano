@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { useParams } from "next/navigation";
 import { MessageArea } from "@/components/message-area";
 import { AgentSettingsPanel } from "@/components/agent-settings-panel";
@@ -18,7 +18,10 @@ export default function DmPage() {
   const [settingsAgent, setSettingsAgent] = useState<AgentInfo | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  const channel = { id: channelId, name: "", type: "dm", description: null };
+  const channel = useMemo(
+    () => ({ id: channelId, name: "", type: "dm" as const, description: null }),
+    [channelId]
+  );
 
   const handleToggleSettings = useCallback((agent: AgentInfo | null) => {
     setSettingsAgent((prev) => (prev?.id === agent?.id ? null : agent));
