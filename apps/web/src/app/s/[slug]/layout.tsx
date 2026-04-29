@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Sidebar } from "@/components/sidebar";
+import { AgentActivityProvider } from "@/hooks/use-agent-activity";
 
 interface Server {
   id: string;
@@ -66,11 +67,13 @@ export default function ServerLayout({
   if (!server) return null;
 
   return (
-    <div className="flex h-full bg-background p-2">
-      <Sidebar serverSlug={server.slug} serverId={server.id} serverName={server.name} />
-      <div className="flex flex-1 overflow-hidden rounded-xl bg-card shadow-border">
-        {children}
+    <AgentActivityProvider>
+      <div className="flex h-full bg-background p-2">
+        <Sidebar serverSlug={server.slug} serverId={server.id} serverName={server.name} />
+        <div className="flex flex-1 overflow-hidden rounded-xl bg-card shadow-border">
+          {children}
+        </div>
       </div>
-    </div>
+    </AgentActivityProvider>
   );
 }

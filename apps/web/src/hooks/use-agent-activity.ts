@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { createContext, useContext, useEffect, useState, useRef, type ReactNode } from "react";
 import { createClient } from "@/lib/supabase/client";
+import React from "react";
 
 export type AgentActivity = "idle" | "thinking" | "working" | "error";
 
-interface ActivityState {
+export interface ActivityState {
   activity: AgentActivity;
   /** Human-readable label: "Thinking", "Reading file", "Sending message", etc. */
   label: string;
@@ -13,18 +14,18 @@ interface ActivityState {
   detail: string;
 }
 
+type ActivitiesMap = Map<string, ActivityState>;
+
+const AgentActivityContext = createContext<ActivitiesMap>(new Map());
+
 /**
- * Subscribe to real-time agent activity broadcasts.
- * Returns a Map of agentId -> { activity, detail }.
- * Falls back to "idle" if no heartbeat received within timeout.
+ * Provider that manages a single Supabase broadcast subscription
+ * for agent activity. Mount once in a shared layout so all consumers
+ * share the same subscription — no channel conflicts on unmount.
  */
-export function useAgentActivity() {
-  const [activities, setActivities] = useState<Map<string, ActivityState>>(
-    new Map()
-  );
-  const timeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(
-    new Map()
-  );
+export function AgentActivityProvider({ children }: { children: ReactNode }) {
+  const [activities, setActivities] = useState<ActivitiesMap>(new Map());
+  const timeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   useEffect(() => {
     const supabase = createClient();
@@ -65,7 +66,7 @@ export function useAgentActivity() {
                 return next;
               });
               timeoutsRef.current.delete(agentId);
-            }, 90_000) // 90s timeout (heartbeat is 60s)
+            }, 90_000)
           );
         } else {
           timeoutsRef.current.delete(agentId);
@@ -80,5 +81,14 @@ export function useAgentActivity() {
     };
   }, []);
 
-  return activities;
+  return React.createElement(AgentActivityContext.Provider, { value: activities }, children);
+}
+
+/**
+ * Subscribe to real-time agent activity broadcasts.
+ * Returns a Map of agentId -> { activity, label, detail }.
+ * Must be used within an AgentActivityProvider.
+ */
+export function useAgentActivity() {
+  return useContext(AgentActivityContext);
 }

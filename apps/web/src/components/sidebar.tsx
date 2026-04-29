@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { useRouter, useParams, usePathname } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
 import { CreateAgentDialog } from "./create-agent-dialog";
 import { CreateChannelDialog } from "./create-channel-dialog";
 import { CreateServerDialog } from "./create-server-dialog";
@@ -82,7 +82,6 @@ export function Sidebar({
   const supabase = createClient();
   const router = useRouter();
   const params = useParams();
-  const pathname = usePathname();
   const agentActivities = useAgentActivity();
 
   // Determine active channel from URL
@@ -194,10 +193,10 @@ export function Sidebar({
     setGroupChannels(groups);
   }, [supabase, serverId]);
 
-  // Reload sidebar data when pathname changes (e.g. wizard navigates to new DM)
+  // Load sidebar data on mount (realtime subscriptions handle subsequent updates)
   useEffect(() => {
     loadData();
-  }, [loadData, pathname]);
+  }, [loadData]);
 
   // Set up realtime subscriptions (stable across navigations, only recreate on server change)
   useEffect(() => {
