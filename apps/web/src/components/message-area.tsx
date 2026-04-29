@@ -343,7 +343,7 @@ export function MessageArea({
   }
 
   return (
-    <div className="flex flex-1 flex-col bg-card">
+    <div className="flex flex-1 flex-col bg-card max-w-full text-pretty">
       {/* Channel header */}
       <div className="flex items-center gap-3 border-b-[0.5px] py-2 px-3">
         {channel.type === 'dm' && agentInfo ? (
@@ -442,10 +442,10 @@ export function MessageArea({
           return (
             <div
               key={msg.id}
-              className={`group flex gap-3 rounded-lg px-2 py-1.5 transition-colors hover:bg-accent/50 ${
+              className={`group flex gap-3 rounded-lg px-2 py-1.5 transition-colors ${
                 sameSender ? '' : 'mt-5 first:mt-0'
               }`}>
-              <div className="w-8 flex-shrink-0 pt-0.5">
+              <div className="w-8 shrink-0 pt-0.5">
                 {!sameSender && <GeneratedAvatar id={msg.sender_id} name={getSenderName(msg)} size="md" />}
               </div>
 
@@ -461,7 +461,9 @@ export function MessageArea({
                     <span className="text-[11px] text-muted-foreground">{formatTime(msg.created_at)}</span>
                   </div>
                 )}
-                <div className="prose-message text-[15px] break-words" style={{ lineHeight: '1.54' }}>
+                <div
+                  className="prose-message text-[15px] wrap-break-word subpixel-antialiased prose-headings:antialiased"
+                  style={{ lineHeight: '1.54' }}>
                   {msg.sender_type === 'agent' ? (
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
                   ) : (
