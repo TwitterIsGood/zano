@@ -3,6 +3,7 @@
 @import 'shadcn/tailwind.css';
 
 @import 'tailwindcss-radix-colors/dist/sand.css';
+@import 'tailwindcss-radix-colors/dist/sanda.css';
 
 @custom-variant dark (&:is(.dark *));
 

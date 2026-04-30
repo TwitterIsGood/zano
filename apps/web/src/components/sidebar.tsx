@@ -423,8 +423,8 @@ export function Sidebar({
                 onClick={() => navigateToChannel(dm)}
                 className={`flex w-full items-center gap-2 rounded-lg px-2 h-[32px] text-[13px] transition-all ${
                   activeChannelId === dm.id
-                    ? "bg-accent text-accent-foreground font-medium"
-                    : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                    ? "bg-sanda-3 text-accent-foreground font-medium"
+                    : "text-muted-foreground hover:bg-sanda-3 hover:text-accent-foreground"
                 }`}
               >
                 {/* Agent avatar */}
@@ -478,8 +478,8 @@ export function Sidebar({
                 }}
                 className={`flex w-full items-center gap-2 rounded-lg px-2 h-[32px] text-[13px] transition-all ${
                   activeChannelId === channel.id
-                    ? "bg-accent text-accent-foreground font-medium"
-                    : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                    ? "bg-sanda-3 text-accent-foreground font-medium"
+                    : "text-muted-foreground hover:bg-sanda-3 hover:text-accent-foreground"
                 }`}
               >
                 <span className="text-muted-foreground">#</span>
@@ -502,7 +502,7 @@ export function Sidebar({
                   <button
                     key={mk.id}
                     onClick={() => setSelectedMachine(mk)}
-                    className="flex w-full items-center gap-2 rounded-lg px-2 h-[32px] text-[13px] text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                    className="flex w-full items-center gap-2 rounded-lg px-2 h-[32px] text-[13px] text-muted-foreground transition-colors hover:bg-sanda-3 hover:text-accent-foreground"
                   >
                     <div className="relative flex-shrink-0">
                       <MonitorIcon className="size-4 text-muted-foreground/60" />
