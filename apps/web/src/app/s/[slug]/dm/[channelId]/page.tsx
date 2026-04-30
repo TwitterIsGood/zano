@@ -24,7 +24,7 @@ export default function DmPage() {
   );
 
   const handleToggleSettings = useCallback((agent: AgentInfo | null) => {
-    setSettingsAgent((prev) => (prev?.id === agent?.id ? null : agent));
+    setSettingsAgent(agent);
   }, []);
 
   const handleAgentDeleted = useCallback(() => {

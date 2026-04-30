@@ -392,7 +392,7 @@ export function MessageArea({
             </div>
             {onToggleSettings && (
               <Button
-                onClick={() => onToggleSettings(agentInfo)}
+                onClick={() => onToggleSettings(showSettings ? null : agentInfo)}
                 variant={showSettings ? 'secondary' : 'ghost'}
                 size="icon-xs"
                 aria-label="Agent Settings">
