@@ -56,6 +56,9 @@ importers:
       '@phosphor-icons/react':
         specifier: ^2.1.10
         version: 2.1.10(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      '@radix-ui/colors':
+        specifier: ^3.0.0
+        version: 3.0.0
       '@supabase/ssr':
         specifier: ^0.10.2
         version: 0.10.2(@supabase/supabase-js@2.104.1)
@@ -119,6 +122,9 @@ importers:
       tailwind-merge:
         specifier: ^3.5.0
         version: 3.5.0
+      tailwindcss-radix-colors:
+        specifier: ^2.1.0
+        version: 2.1.0(tailwindcss@4.2.4)
       tiptap-markdown:
         specifier: ^0.9.0
         version: 0.9.0(@tiptap/core@3.22.4(@tiptap/pm@3.22.4))
@@ -1728,6 +1734,9 @@ packages:
         optional: true
       webpack-plugin-serve:
         optional: true
+
+  '@radix-ui/colors@3.0.0':
+    resolution: {integrity: sha512-FUOsGBkHrYJwCSEtWRCIfQbZG7q1e6DgxCIOe1SUQzDe/7rXXeA47s8yCn6fuTNQAj1Zq4oTFi9Yjp3wzElcxg==}
 
   '@rollup/plugin-babel@5.3.1':
     resolution: {integrity: sha512-WFfdLWU/xVWKeRQnKmIAQULUI7Il0gZnBIH/ZFO069wYIfPu+8zrfp/KMW0atmELoRDq8FbiP3VCss9MhCut7Q==}
@@ -7307,6 +7316,11 @@ packages:
   tailwind-merge@3.5.0:
     resolution: {integrity: sha512-I8K9wewnVDkL1NTGoqWmVEIlUcB9gFriAEkXkfCjX5ib8ezGxtR3xD7iZIxrfArjEsH7F1CHD4RFUtxefdqV/A==}
 
+  tailwindcss-radix-colors@2.1.0:
+    resolution: {integrity: sha512-xh2bDBvYacUbMFfg6TINGN30K+GfeP33sEd1+27xHeBskODc2cNiSPOOfaHjB78LN7l4l8BNPZfXcGmhsRsUJQ==}
+    peerDependencies:
+      tailwindcss: '>=4.0.0'
+
   tailwindcss@3.4.19:
     resolution: {integrity: sha512-3ofp+LL8E+pK/JuPLPggVAIaEuhvIz4qNcf3nA1Xn2o/7fb7s/TYpHhwGDv1ZU3PkBluUVaF8PyCHcm48cKLWQ==}
     engines: {node: '>=14.0.0'}
@@ -9680,6 +9694,8 @@ snapshots:
     optionalDependencies:
       type-fest: 0.21.3
       webpack-dev-server: 4.15.2(webpack@5.106.2)
+
+  '@radix-ui/colors@3.0.0': {}
 
   '@rollup/plugin-babel@5.3.1(@babel/core@7.29.0)(@types/babel__core@7.20.5)(rollup@2.80.0)':
     dependencies:
@@ -16484,6 +16500,10 @@ snapshots:
   tagged-tag@1.0.0: {}
 
   tailwind-merge@3.5.0: {}
+
+  tailwindcss-radix-colors@2.1.0(tailwindcss@4.2.4):
+    dependencies:
+      tailwindcss: 4.2.4
 
   tailwindcss@3.4.19(tsx@4.21.0):
     dependencies:
