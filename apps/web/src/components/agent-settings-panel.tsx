@@ -15,7 +15,10 @@ import {
   Folder,
   Copy,
   ArrowClockwise,
+  Eye,
 } from '@phosphor-icons/react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -25,6 +28,7 @@ import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectTrigger, SelectValue, SelectPopup, SelectItem } from '@/components/ui/select';
+import { Dialog, DialogPopup, DialogHeader, DialogTitle, DialogPanel } from '@/components/ui/dialog';
 
 interface AgentInfo {
   id: string;
@@ -509,6 +513,7 @@ function WorkspaceTab({ agentId, bridgeRpc }: { agentId: string; bridgeRpc: Brid
   const [error, setError] = useState('');
   const [isRemote, setIsRemote] = useState(false);
   const [bridgeOnline, setBridgeOnline] = useState(true);
+  const [showPreview, setShowPreview] = useState(false);
 
   useEffect(() => {
     loadWorkspace();
@@ -719,17 +724,28 @@ function WorkspaceTab({ agentId, bridgeRpc }: { agentId: string; bridgeRpc: Brid
       {selectedFile && (
         <div className="border-t">
           <div className="flex items-center justify-between px-4 py-2 bg-muted/50">
-            <span className="text-[11px] font-medium text-muted-foreground font-mono">{selectedFile}</span>
-            <Button
-              onClick={() => {
-                setSelectedFile(null);
-                setFileContent(null);
-              }}
-              variant="ghost"
-              size="icon-xs"
-              aria-label="Close preview">
-              <X size={14} />
-            </Button>
+            <span className="text-[11px] font-medium text-muted-foreground font-mono truncate">{selectedFile}</span>
+            <div className="flex items-center gap-0.5 flex-shrink-0">
+              {selectedFile.endsWith('.md') && fileContent && !loadingFile && (
+                <Button
+                  onClick={() => setShowPreview(true)}
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label="Preview Markdown">
+                  <Eye size={14} />
+                </Button>
+              )}
+              <Button
+                onClick={() => {
+                  setSelectedFile(null);
+                  setFileContent(null);
+                }}
+                variant="ghost"
+                size="icon-xs"
+                aria-label="Close preview">
+                <X size={14} />
+              </Button>
+            </div>
           </div>
           <div className="px-4 py-3 max-h-[400px] overflow-y-auto">
             {loadingFile ? (
@@ -742,6 +758,20 @@ function WorkspaceTab({ agentId, bridgeRpc }: { agentId: string; bridgeRpc: Brid
           </div>
         </div>
       )}
+
+      {/* Markdown preview dialog */}
+      <Dialog open={showPreview} onOpenChange={setShowPreview}>
+        <DialogPopup className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-base font-mono">{selectedFile}</DialogTitle>
+          </DialogHeader>
+          <DialogPanel>
+            <div className="prose-message text-[15px]" style={{ lineHeight: '1.54' }}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{fileContent || ''}</ReactMarkdown>
+            </div>
+          </DialogPanel>
+        </DialogPopup>
+      </Dialog>
 
       {/* Info footer */}
       <div className="px-5 py-3 border-t">
