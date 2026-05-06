@@ -761,7 +761,7 @@ function WorkspaceTab({ agentId, bridgeRpc }: { agentId: string; bridgeRpc: Brid
 
       {/* Markdown preview dialog */}
       <Dialog open={showPreview} onOpenChange={setShowPreview}>
-        <DialogPopup className="max-w-2xl">
+        <DialogPopup className="max-w-[1080px]">
           <DialogHeader>
             <DialogTitle className="text-base font-mono">{selectedFile}</DialogTitle>
           </DialogHeader>
