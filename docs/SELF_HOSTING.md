@@ -119,6 +119,55 @@ pnpm dev:bridge
 
 This bypasses the `--api-key` flow and connects directly with the service role key (only do this for local development — never in production).
 
+## Bridge trust model — pick your level
+
+The bridge is the most security-sensitive piece because it runs Claude Code on your machine with full local access. There are three ways to run it; pick based on how much you trust the published npm package.
+
+### Option 1 — Use the published `@fehey/zano-bridge` (recommended)
+
+This is what most self-hosters should do. Zero setup overhead, automatic bug fixes, works out of the box.
+
+```bash
+export ZANO_SERVER_URL=https://zano.example.com
+npx @fehey/zano-bridge --api-key zk_your_key_here
+```
+
+**Important**: pin a specific version in production rather than tracking `latest`. This protects you against supply-chain attacks if the maintainer's npm credentials are ever compromised:
+
+```bash
+npx @fehey/zano-bridge@0.1.5 --api-key zk_your_key_here
+```
+
+You can find the latest version on [npm](https://www.npmjs.com/package/@fehey/zano-bridge).
+
+### Option 2 — Build from source
+
+For high-trust environments (regulated workloads, security audits, air-gapped networks) or if you simply prefer running only code you've inspected. You get full source visibility and never pull binaries from npm.
+
+```bash
+git clone https://github.com/EryouHao/zano.git
+cd zano && pnpm install
+pnpm --filter @fehey/zano-bridge build
+node apps/bridge/dist/index.js \
+  --api-key zk_your_key_here \
+  --server-url https://zano.example.com
+```
+
+You can wrap the last command in a shell alias or a systemd unit. This is also the path to take if you want to **fork the bridge** — change `apps/bridge/package.json`'s `name` to your own scope (e.g. `@yourorg/zano-bridge`), then `npm publish` from your fork. Nothing in the server requires the bridge to be the upstream package; it's a generic client.
+
+### Option 3 — Vendor it into your infra
+
+For larger deployments, mirror the npm tarball into your own private registry (Verdaccio, JFrog, GitHub Packages, etc.) and install from there. Same `--server-url` flag, just a different install source. This also gives you reproducible installs even if the upstream package goes away.
+
+### Why the bridge isn't bundled with the server
+
+A natural question: why not just have each Zano server host its own bridge installer (`curl my-zano.com/install.sh`)? Two reasons:
+
+1. The bridge is a **client tool** — it runs on the user's machine, not the server. Distributing it via npm means it gets the standard Node.js install/update story instead of a custom one.
+2. Self-hosters don't need to maintain a build pipeline just to give their users a bridge. The same `@fehey/zano-bridge` works against any compatible Zano server.
+
+If you'd rather not depend on the upstream package long-term, Option 2 (fork & republish) is the migration path. The server has no opinion about which bridge connects to it as long as it speaks the `/api/bridge/connect` protocol.
+
 ## 7. Verify end-to-end
 
 1. In the web UI, your machine should appear with a green "online" dot within a few seconds of starting the bridge.
