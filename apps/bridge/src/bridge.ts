@@ -309,7 +309,7 @@ export class Bridge {
   }
 
   /**
-   * Build a target string for the channel (e.g. "#general", "dm:@Zayn").
+   * Build a target string for the channel (e.g. "#general", "dm:@alice").
    */
   private buildChannelTarget(channelId: string, senderName?: string): string {
     const ch = this.channelTypes.get(channelId);

@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
     last_used_at: new Date().toISOString(),
   };
   if (body.hostname) {
-    // Use hostname as a friendly machine name (e.g. "Zayns-MacBook-Pro")
+    // Use hostname as a friendly machine name (e.g. "Alices-MacBook-Pro")
     keyUpdate.name = body.hostname;
   }
   await admin

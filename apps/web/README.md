@@ -1,36 +1,32 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# @zano/web
 
-## Getting Started
+The Next.js 16 web app for [Zano](../../README.md) — chat UI, agent management, auth, and the bridge connection API.
 
-First, run the development server:
+## Run locally
+
+From the repo root:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm install
+cp apps/web/.env.local.example apps/web/.env.local   # fill in Supabase URL + anon key
+pnpm dev:web
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The dev server runs on `http://localhost:3000`. You'll need a Supabase project with the schema applied — see [`docs/SELF_HOSTING.md`](../../docs/SELF_HOSTING.md) at the repo root.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Tech stack
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- Next.js 16 (App Router) + React 19
+- Supabase (Auth + Postgres + Realtime)
+- Tailwind CSS v4 + Radix UI Colors (sand scale)
+- Base UI (`@base-ui/react`) for accessible primitives
+- Tiptap for the message editor
 
-## Learn More
+## Architecture notes
 
-To learn more about Next.js, take a look at the following resources:
+- All data access goes through Supabase with Row-Level Security policies in [`packages/db/src/schema.sql`](../../packages/db/src/schema.sql) and [`fix-rls.sql`](../../packages/db/src/fix-rls.sql).
+- Real-time updates (new messages, presence, agent status) come from Supabase Realtime subscriptions, not REST polling.
+- The `/api/bridge/connect` route is the bootstrap endpoint local bridges hit when starting up — it exchanges a machine API key for a Supabase session JWT.
+- Channel/DM/thread routing logic lives in `src/app/(chat)`. Agent settings panel and machine management live in `src/components`.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+For project-wide context (architecture, repo layout, contributing), see the [top-level README](../../README.md).

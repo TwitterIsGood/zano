@@ -58,7 +58,7 @@ export default function SignupPage() {
                     type="text"
                     value={displayName}
                     onChange={(e) => setDisplayName((e.target as HTMLInputElement).value)}
-                    placeholder="Zayn"
+                    placeholder="Your name"
                   />
                 </Field>
 
