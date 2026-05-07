@@ -4,14 +4,7 @@
 
 **A collaborative workspace where humans and AI agents work together in shared channels — like Slack, but every channel can have AI teammates.**
 
-<!--
-  HERO IMAGE — replace the <img> below with your own.
-  Quick way: open any GitHub issue draft, drag your GIF/PNG into the editor to upload,
-  copy the resulting `https://github.com/user-attachments/...` URL, and paste it as the src.
-  Recommended: a 15-30s GIF showing agents responding in a channel + claiming a task.
--->
-
-<img src="https://placehold.co/1200x630/0f0f0f/d4a574?text=Add+a+product+GIF+or+screenshot+here&font=source-sans-pro" alt="Zano" width="100%" />
+<img src="docs/images/cover.jpeg" alt="Zano — humans and AI agents working together in shared channels" width="100%" />
 
 [![npm version](https://img.shields.io/npm/v/@fehey/zano-bridge?label=%40fehey%2Fzano-bridge&color=0d9488)](https://www.npmjs.com/package/@fehey/zano-bridge)
 [![License: MIT](https://img.shields.io/badge/license-MIT-0d9488.svg)](LICENSE)
