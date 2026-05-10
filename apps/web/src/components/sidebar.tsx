@@ -49,29 +49,69 @@ interface DmChannel extends Channel {
   agent?: Agent;
 }
 
+export interface SidebarInitialData {
+  user: {
+    id: string;
+    email: string;
+    display_name: string;
+  };
+  servers: Server[];
+  machineKeys: MachineKey[];
+  channels: Channel[];
+  agents: Agent[];
+  dmMembers: Array<{ channel_id: string; member_id: string }>;
+}
+
+function splitChannels(channels: Channel[], agents: Agent[], dmMembers: SidebarInitialData["dmMembers"]) {
+  const dms: DmChannel[] = [];
+  const groups: Channel[] = [];
+
+  for (const ch of channels) {
+    if (ch.type === "dm") {
+      const agentMember = dmMembers.find((member) => member.channel_id === ch.id);
+      const agent = agentMember
+        ? agents.find((a) => a.id === agentMember.member_id)
+        : undefined;
+      dms.push({ ...ch, agent });
+    } else {
+      groups.push(ch);
+    }
+  }
+
+  return { dms, groups };
+}
+
 export function Sidebar({
   serverSlug,
   serverId,
   serverName,
+  initialData,
 }: {
   serverSlug: string;
   serverId: string;
   serverName: string;
+  initialData: SidebarInitialData;
 }) {
-  const [dmChannels, setDmChannels] = useState<DmChannel[]>([]);
-  const [groupChannels, setGroupChannels] = useState<Channel[]>([]);
-  const [agents, setAgents] = useState<Agent[]>([]);
-  const [userId, setUserId] = useState("");
-  const [userEmail, setUserEmail] = useState("");
-  const [userName, setUserName] = useState("");
+  const initialChannels = splitChannels(initialData.channels, initialData.agents, initialData.dmMembers);
+  const [dmChannels, setDmChannels] = useState<DmChannel[]>(initialChannels.dms);
+  const [groupChannels, setGroupChannels] = useState<Channel[]>(initialChannels.groups);
+  const [agents, setAgents] = useState<Agent[]>(initialData.agents);
+  const [userId, setUserId] = useState(initialData.user.id);
+  const [userEmail, setUserEmail] = useState(initialData.user.email);
+  const [userName, setUserName] = useState(initialData.user.display_name);
   const [showCreateAgent, setShowCreateAgent] = useState(false);
   const [showCreateChannel, setShowCreateChannel] = useState(false);
   const [showCreateServer, setShowCreateServer] = useState(false);
   const [showServerMenu, setShowServerMenu] = useState(false);
-  const [servers, setServers] = useState<Server[]>([]);
-  const [machineKeys, setMachineKeys] = useState<MachineKey[]>([]);
+  const [servers, setServers] = useState<Server[]>(initialData.servers);
+  const [machineKeys, setMachineKeys] = useState<MachineKey[]>(initialData.machineKeys);
   // Heartbeat-based online status (bridge updates last_used_at every 30s)
-  const [bridgeOnline, setBridgeOnline] = useState(false);
+  const [bridgeOnline, setBridgeOnline] = useState(() => {
+    const now = Date.now();
+    return initialData.machineKeys.some(
+      (k) => k.last_used_at && now - new Date(k.last_used_at).getTime() < 60_000
+    );
+  });
   const [editingChannel, setEditingChannel] = useState<Channel | null>(null);
   const [selectedMachine, setSelectedMachine] = useState<MachineKey | null>(null);
   const [contextMenu, setContextMenu] = useState<{
@@ -88,115 +128,29 @@ export function Sidebar({
   const activeChannelId = params.channelId as string | undefined;
 
   const loadData = useCallback(async () => {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return;
-    setUserId(user.id);
-    setUserEmail(user.email ?? "");
+    const res = await fetch(`/api/sidebar?server_id=${serverId}`);
+    if (!res.ok) return;
 
-    // Get user profile
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("display_name")
-      .eq("id", user.id)
-      .single();
-    if (profile) setUserName(profile.display_name);
+    const data = await res.json() as SidebarInitialData;
+    setUserId(data.user.id);
+    setUserEmail(data.user.email);
+    setUserName(data.user.display_name);
+    setServers(data.servers as Server[]);
+    setMachineKeys(data.machineKeys as MachineKey[]);
 
-    // Load user's servers for the switcher
-    const { data: serverMemberships } = await supabase
-      .from("server_members")
-      .select("server_id")
-      .eq("member_id", user.id)
-      .eq("member_type", "human");
+    const now = Date.now();
+    const hasRecentHeartbeat = (data.machineKeys as MachineKey[]).some(
+      (k) => k.last_used_at && now - new Date(k.last_used_at).getTime() < 60_000
+    );
+    setBridgeOnline(hasRecentHeartbeat);
 
-    if (serverMemberships && serverMemberships.length > 0) {
-      const serverIds = serverMemberships.map((m) => m.server_id);
-      const { data: allServers } = await supabase
-        .from("servers")
-        .select("id, name, slug")
-        .in("id", serverIds)
-        .order("created_at");
-      if (allServers) setServers(allServers as Server[]);
-    }
-
-    // Load machine keys for this server
-    const { data: keys } = await supabase
-      .from("machine_keys")
-      .select("id, name, key_prefix, key_value, last_used_at")
-      .eq("server_id", serverId)
-      .eq("user_id", user.id)
-      .order("created_at");
-    if (keys) {
-      setMachineKeys(keys as MachineKey[]);
-      // Check online status based on heartbeat (last_used_at within 60 seconds = online)
-      const now = Date.now();
-      const hasRecentHeartbeat = (keys as MachineKey[]).some(
-        (k) => k.last_used_at && now - new Date(k.last_used_at).getTime() < 60_000
-      );
-      setBridgeOnline(hasRecentHeartbeat);
-    }
-
-    // Get all channels in this server that the user is a member of
-    const { data: memberships } = await supabase
-      .from("channel_members")
-      .select("channel_id")
-      .eq("member_id", user.id);
-
-    if (!memberships || memberships.length === 0) return;
-
-    const channelIds = memberships.map((m) => m.channel_id);
-    const { data: channels } = await supabase
-      .from("channels")
-      .select("*")
-      .eq("server_id", serverId)
-      .in("id", channelIds)
-      .order("created_at");
-
-    if (!channels) return;
-
-    // Get all agents in this server
-    const { data: allAgents } = await supabase
-      .from("agents")
-      .select("*")
-      .eq("server_id", serverId)
-      .order("created_at");
-
-    const agentList = (allAgents || []) as Agent[];
+    const agentList = (data.agents || []) as Agent[];
     setAgents(agentList);
 
-    // Separate DM and group channels
-    const dms: DmChannel[] = [];
-    const groups: Channel[] = [];
-
-    for (const ch of channels) {
-      if (ch.type === "dm") {
-        // Find which agent is in this DM
-        const { data: members } = await supabase
-          .from("channel_members")
-          .select("member_id, member_type")
-          .eq("channel_id", ch.id)
-          .eq("member_type", "agent");
-
-        const agentMember = members?.[0];
-        const agent = agentMember
-          ? agentList.find((a) => a.id === agentMember.member_id)
-          : undefined;
-
-        dms.push({ ...ch, agent });
-      } else {
-        groups.push(ch);
-      }
-    }
-
-    setDmChannels(dms);
-    setGroupChannels(groups);
-  }, [supabase, serverId]);
-
-  // Load sidebar data on mount (realtime subscriptions handle subsequent updates)
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+    const split = splitChannels(data.channels as Channel[], agentList, data.dmMembers);
+    setDmChannels(split.dms);
+    setGroupChannels(split.groups);
+  }, [serverId]);
 
   // Set up realtime subscriptions (stable across navigations, only recreate on server change)
   useEffect(() => {
@@ -263,35 +217,35 @@ export function Sidebar({
       )
       .subscribe((status) => {
         if (status === "SUBSCRIBED") {
-          // WebSocket is fully established — now safe to subscribe to Presence
           presenceChannel = supabase.channel(`bridge-presence:${serverId}`);
           presenceChannel
             .on("presence", { event: "sync" }, refreshPresence)
             .on("presence", { event: "join" }, refreshPresence)
-            .on("presence", { event: "leave" }, refreshPresence)
-            .subscribe();
+            .on("presence", { event: "leave" }, refreshPresence);
+          presenceChannel.subscribe();
         }
       });
 
-    // Heartbeat polling fallback: check last_used_at every 15s
+    // Heartbeat polling: check last_used_at every 15s via API
     async function checkHeartbeat() {
-      // Skip if Presence is working (entries exist or bridge just went offline via Presence)
       if (presenceChannel) {
         refreshPresence();
         return;
       }
-      const { data: keys } = await supabase
-        .from("machine_keys")
-        .select("last_used_at")
-        .eq("server_id", serverId);
-      if (keys) {
-        const now = Date.now();
-        setBridgeOnline(
-          keys.some(
-            (k: { last_used_at: string | null }) =>
-              k.last_used_at && now - new Date(k.last_used_at).getTime() < 60_000
-          )
-        );
+      try {
+        const res = await fetch(`/api/bridge/keys?server_id=${serverId}`);
+        if (res.ok) {
+          const { keys } = await res.json();
+          const now = Date.now();
+          setBridgeOnline(
+            keys.some(
+              (k: { last_used_at: string | null }) =>
+                k.last_used_at && now - new Date(k.last_used_at).getTime() < 60_000
+            )
+          );
+        }
+      } catch {
+        // ignore
       }
     }
 

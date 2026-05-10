@@ -60,6 +60,7 @@ export class Bridge {
   private presenceChannel: RealtimeChannel | null = null;
   // Heartbeat timer for machine_keys.last_used_at (polling fallback for online status)
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+  private processedMessageIds = new Set<string>();
 
   constructor(config: BridgeConfig) {
     this.config = config;
@@ -130,6 +131,7 @@ export class Bridge {
 
     // 5. Subscribe to new messages in channels where agents are members
     this.subscribeToMessages();
+    await this.processRecentHumanMessages();
 
     // 6. Subscribe to new agents and channel memberships (for agents created via UI)
     this.subscribeToNewAgents();
@@ -323,7 +325,34 @@ export class Bridge {
     return channelId;
   }
 
+  private async processRecentHumanMessages() {
+    const channelIds = Array.from(this.channelAgents.keys());
+    if (channelIds.length === 0) return;
+
+    const since = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const { data: messages, error } = await this.supabase
+      .from("messages")
+      .select("id, channel_id, sender_id, sender_type, content, thread_parent_id, created_at")
+      .in("channel_id", channelIds)
+      .eq("sender_type", "human")
+      .is("thread_parent_id", null)
+      .gte("created_at", since)
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      console.error("  Failed to process recent messages:", error.message);
+      return;
+    }
+
+    for (const msg of messages || []) {
+      await this.handleNewMessage(msg as DbMessage);
+    }
+  }
+
   private async handleNewMessage(msg: DbMessage) {
+    if (this.processedMessageIds.has(msg.id)) return;
+    this.processedMessageIds.add(msg.id);
+
     // Only respond to human messages
     if (msg.sender_type !== "human") return;
 
@@ -336,24 +365,15 @@ export class Bridge {
 
     // Determine which agents should respond
     let respondingAgentIds: Set<string>;
+    const mentioned = isDm
+      ? new Set<string>()
+      : this.parseMentionedAgents(msg.content, agentIdsInChannel);
 
     if (isDm) {
       // DM: always respond with the single agent
       respondingAgentIds = agentIdsInChannel;
     } else {
-      // Channel: only respond if @mentioned
-      const mentioned = this.parseMentionedAgents(
-        msg.content,
-        agentIdsInChannel
-      );
-      if (mentioned.size === 0) {
-        // No agents mentioned — don't respond
-        console.log(
-          `  [Bridge] No @mention in channel message, skipping.`
-        );
-        return;
-      }
-      respondingAgentIds = mentioned;
+      respondingAgentIds = mentioned.size > 0 ? mentioned : agentIdsInChannel;
     }
 
     // Resolve sender name for message context
@@ -376,15 +396,20 @@ export class Bridge {
       if (!agent) continue;
 
       console.log(
-        `  [${agent.display_name}] Received${isDm ? "" : " (@mention)"}: "${msg.content.substring(0, 60)}${msg.content.length > 60 ? "..." : ""}"`
+        `  [${agent.display_name}] Received${isDm ? "" : mentioned.has(agentId) ? " (@mention)" : " (channel)"}: "${msg.content.substring(0, 60)}${msg.content.length > 60 ? "..." : ""}"`
       );
 
       try {
-        // Build prompt with message metadata
         const msgHeader = `[target=${channelTarget} sender=@${senderName} type=${msg.sender_type}]`;
-        const prompt = contextPrefix
+        let prompt = contextPrefix
           ? `${contextPrefix}\n\n${msgHeader} ${msg.content}`
           : `${msgHeader} ${msg.content}`;
+
+        if (!isDm && !mentioned.has(agentId)) {
+          prompt = `[You are ${agent.display_name} in a group channel. This message was sent to everyone in the channel (not @mentioning you specifically). Respond naturally as a team member — greet back, acknowledge, or contribute based on your role. Keep responses concise (1-3 sentences unless asked for detail). Only reply "SKIP" if the message is completely irrelevant to your role.\n\n${prompt}]`;
+        } else if (!isDm && mentioned.has(agentId)) {
+          prompt = `[You are ${agent.display_name} and you were @mentioned directly. Respond to this message.\n\n${prompt}]`;
+        }
 
         // Fire-and-forget: agent handles all responses via `zano` CLI
         await this.agentManager.sendToAgent(agentId, prompt);

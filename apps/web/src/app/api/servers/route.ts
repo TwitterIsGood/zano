@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomBytes, createHash } from "crypto";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 // GET /api/servers — list servers the user belongs to
-export async function GET() {
+export async function GET(request: NextRequest) {
   const supabase = await createClient();
   const {
     data: { user },
@@ -13,8 +14,69 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Get servers where user is a member
-  const { data: memberships } = await supabase
+  const admin = createAdminClient();
+  const slugParam = request.nextUrl.searchParams.get("slug");
+
+  // Single server lookup (used by /s/[slug] page)
+  if (slugParam) {
+    const { data: server, error: serverError } = await admin
+      .from("servers")
+      .select("*")
+      .eq("slug", slugParam)
+      .maybeSingle();
+
+    if (serverError) {
+      return NextResponse.json({ error: serverError.message }, { status: 500 });
+    }
+
+    if (!server) {
+      return NextResponse.json({ stats: null });
+    }
+
+    const { data: membership } = await admin
+      .from("server_members")
+      .select("server_id")
+      .eq("server_id", server.id)
+      .eq("member_id", user.id)
+      .eq("member_type", "human")
+      .maybeSingle();
+
+    if (!membership) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const [
+      { count: agentCount },
+      { count: channelCount },
+      { count: memberCount },
+      { data: keys },
+    ] = await Promise.all([
+      admin.from("agents").select("*", { count: "exact", head: true }).eq("server_id", server.id),
+      admin.from("channels").select("*", { count: "exact", head: true }).eq("server_id", server.id),
+      admin.from("server_members").select("*", { count: "exact", head: true }).eq("server_id", server.id),
+      admin
+        .from("machine_keys")
+        .select("id, key_prefix, name, created_at, last_used_at")
+        .eq("server_id", server.id)
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false }),
+    ]);
+
+    return NextResponse.json({
+      stats: {
+        id: server.id,
+        name: server.name,
+        description: server.description,
+        agentCount: agentCount ?? 0,
+        channelCount: channelCount ?? 0,
+        memberCount: memberCount ?? 0,
+      },
+      keys: keys ?? [],
+    });
+  }
+
+  // List all user's servers
+  const { data: memberships } = await admin
     .from("server_members")
     .select("server_id")
     .eq("member_id", user.id)
@@ -25,7 +87,7 @@ export async function GET() {
   }
 
   const serverIds = memberships.map((m) => m.server_id);
-  const { data: servers, error } = await supabase
+  const { data: servers, error } = await admin
     .from("servers")
     .select("*")
     .in("id", serverIds)
@@ -66,12 +128,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid slug" }, { status: 400 });
   }
 
+  const admin = createAdminClient();
+
   // Check slug uniqueness
-  const { data: existing } = await supabase
+  const { data: existing, error: existingError } = await admin
     .from("servers")
     .select("id")
     .eq("slug", rawSlug)
-    .single();
+    .maybeSingle();
+
+  if (existingError) {
+    return NextResponse.json({ error: existingError.message }, { status: 500 });
+  }
 
   if (existing) {
     return NextResponse.json(
@@ -82,7 +150,7 @@ export async function POST(request: NextRequest) {
 
   const slug = rawSlug;
 
-  const { data: server, error } = await supabase
+  const { data: server, error } = await admin
     .from("servers")
     .insert({
       name: name.trim(),
@@ -97,21 +165,23 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  // Add creator as owner member
-  await supabase.from("server_members").insert({
+  const { error: membershipError } = await admin.from("server_members").insert({
     server_id: server.id,
     member_id: user.id,
     member_type: "human",
     role: "owner",
   });
 
-  // Auto-generate a bridge API key for onboarding
+  if (membershipError) {
+    return NextResponse.json({ error: membershipError.message }, { status: 500 });
+  }
+
   const rawKey = randomBytes(32).toString("hex");
   const apiKey = `zk_${rawKey}`;
   const keyPrefix = `zk_${rawKey.substring(0, 8)}`;
   const keyHash = createHash("sha256").update(apiKey).digest("hex");
 
-  await supabase.from("machine_keys").insert({
+  const { error: keyError } = await admin.from("machine_keys").insert({
     key_prefix: keyPrefix,
     key_hash: keyHash,
     key_value: apiKey,
@@ -119,6 +189,10 @@ export async function POST(request: NextRequest) {
     server_id: server.id,
     name: "Default",
   });
+
+  if (keyError) {
+    return NextResponse.json({ error: keyError.message }, { status: 500 });
+  }
 
   return NextResponse.json({ server, apiKey });
 }

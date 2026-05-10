@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 // GET /api/agents — list user's agents
@@ -12,7 +13,8 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { data, error } = await supabase
+  const admin = createAdminClient();
+  const { data, error } = await admin
     .from("agents")
     .select("*")
     .eq("owner_id", user.id)
@@ -37,7 +39,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { display_name, description, system_prompt, model, server_id } = body;
+  const { display_name, description, system_prompt, server_id } = body;
 
   if (!display_name?.trim()) {
     return NextResponse.json(
@@ -56,10 +58,6 @@ export async function POST(request: NextRequest) {
   const name = `${baseName}-${user.id.substring(0, 8)}-${randomSuffix}`;
 
   // 1. Create the agent
-  // Validate model if provided
-  const validModels = ["opus", "sonnet", "haiku"];
-  const agentModel = model && validModels.includes(model) ? model : "opus";
-
   if (!server_id) {
     return NextResponse.json(
       { error: "server_id is required" },
@@ -67,14 +65,14 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { data: agent, error: agentError } = await supabase
+  const admin = createAdminClient();
+  const { data: agent, error: agentError } = await admin
     .from("agents")
     .insert({
       name,
       display_name: display_name.trim(),
       description: description?.trim() || null,
       system_prompt: system_prompt?.trim() || null,
-      model: agentModel,
       status: "offline",
       owner_id: user.id,
       server_id,
@@ -87,7 +85,7 @@ export async function POST(request: NextRequest) {
   }
 
   // 2. Create a DM channel for this agent
-  const { data: dmChannel, error: channelError } = await supabase
+  const { data: dmChannel, error: channelError } = await admin
     .from("channels")
     .insert({
       name: display_name.trim(),
@@ -101,18 +99,18 @@ export async function POST(request: NextRequest) {
 
   if (channelError) {
     // Rollback: delete the agent if channel creation fails
-    await supabase.from("agents").delete().eq("id", agent.id);
+    await admin.from("agents").delete().eq("id", agent.id);
     return NextResponse.json({ error: channelError.message }, { status: 500 });
   }
 
   // 3. Add both user and agent to the DM channel
-  await supabase.from("channel_members").insert([
+  await admin.from("channel_members").insert([
     { channel_id: dmChannel.id, member_id: user.id, member_type: "human" },
     { channel_id: dmChannel.id, member_id: agent.id, member_type: "agent" },
   ]);
 
   // 4. Add agent as server member
-  await supabase.from("server_members").insert({
+  await admin.from("server_members").insert({
     server_id,
     member_id: agent.id,
     member_type: "agent",

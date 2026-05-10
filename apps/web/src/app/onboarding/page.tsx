@@ -80,7 +80,6 @@ export default function OnboardingPage() {
       }
 
       const { server, apiKey } = await res.json();
-      // Store the auto-generated API key for the setup wizard
       if (apiKey) {
         sessionStorage.setItem("zano_setup_key", apiKey);
       }

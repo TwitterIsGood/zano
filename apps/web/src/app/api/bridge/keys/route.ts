@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomBytes, createHash } from "crypto";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -24,7 +25,8 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const { data, error } = await supabase
+  const admin = createAdminClient();
+  const { data, error } = await admin
     .from("machine_keys")
     .select("id, key_prefix, key_value, name, created_at, last_used_at")
     .eq("user_id", user.id)
@@ -62,14 +64,15 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const admin = createAdminClient();
   // Verify user is a member of this server
-  const { data: membership } = await supabase
+  const { data: membership } = await admin
     .from("server_members")
     .select("server_id")
     .eq("server_id", server_id)
     .eq("member_id", user.id)
     .eq("member_type", "human")
-    .single();
+    .maybeSingle();
 
   if (!membership) {
     return NextResponse.json(
@@ -84,7 +87,7 @@ export async function POST(request: NextRequest) {
   const keyPrefix = `zk_${rawKey.substring(0, 8)}`;
   const keyHash = createHash("sha256").update(apiKey).digest("hex");
 
-  const { data, error } = await supabase
+  const { data, error } = await admin
     .from("machine_keys")
     .insert({
       key_prefix: keyPrefix,
@@ -133,7 +136,8 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: "name is required" }, { status: 400 });
   }
 
-  const { data, error } = await supabase
+  const admin = createAdminClient();
+  const { data, error } = await admin
     .from("machine_keys")
     .update({ name: name.trim() })
     .eq("id", id)
@@ -170,7 +174,8 @@ export async function DELETE(request: NextRequest) {
     );
   }
 
-  const { error } = await supabase
+  const admin = createAdminClient();
+  const { error } = await admin
     .from("machine_keys")
     .delete()
     .eq("id", keyId)

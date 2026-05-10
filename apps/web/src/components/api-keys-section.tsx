@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { KeyIcon, CopyIcon, CheckIcon, TrashIcon, PlusIcon } from "lucide-react";
@@ -13,9 +13,14 @@ interface ApiKey {
   last_used_at: string | null;
 }
 
-export function ApiKeysSection({ serverId }: { serverId: string }) {
-  const [keys, setKeys] = useState<ApiKey[]>([]);
-  const [loading, setLoading] = useState(true);
+export function ApiKeysSection({
+  serverId,
+  initialKeys = [],
+}: {
+  serverId: string;
+  initialKeys?: ApiKey[];
+}) {
+  const [keys, setKeys] = useState<ApiKey[]>(initialKeys);
   const [creating, setCreating] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
   const [revealedKey, setRevealedKey] = useState<string | null>(null);
@@ -28,12 +33,7 @@ export function ApiKeysSection({ serverId }: { serverId: string }) {
       const data = await res.json();
       setKeys(data.keys);
     }
-    setLoading(false);
   }
-
-  useEffect(() => {
-    loadKeys();
-  }, [serverId]);
 
   async function handleCreate() {
     setCreating(true);
@@ -68,12 +68,6 @@ export function ApiKeysSection({ serverId }: { serverId: string }) {
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-  }
-
-  if (loading) {
-    return (
-      <div className="text-sm text-muted-foreground">Loading keys...</div>
-    );
   }
 
   return (
@@ -189,7 +183,7 @@ export function ApiKeysSection({ serverId }: { serverId: string }) {
               <div className="flex items-center gap-3 flex-shrink-0">
                 <span className="text-xs text-muted-foreground">
                   {k.last_used_at
-                    ? `Used ${new Date(k.last_used_at).toLocaleDateString()}`
+                    ? `Used ${new Date(k.last_used_at).toISOString().slice(0, 10)}`
                     : "Never used"}
                 </span>
                 <Button

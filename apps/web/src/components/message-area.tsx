@@ -146,6 +146,18 @@ export function MessageArea({
           if (!newMsg.thread_parent_id) {
             setMessages((prev) => {
               if (prev.some((m) => m.id === newMsg.id)) return prev;
+              const optimisticIndex = prev.findIndex(
+                (m) =>
+                  m.id.startsWith('optimistic-') &&
+                  m.sender_id === newMsg.sender_id &&
+                  m.sender_type === newMsg.sender_type &&
+                  m.content === newMsg.content,
+              );
+              if (optimisticIndex !== -1) {
+                const updated = [...prev];
+                updated[optimisticIndex] = newMsg;
+                return updated;
+              }
               return [...prev, newMsg];
             });
             if (newMsg.sender_type === 'agent') {
@@ -306,9 +318,12 @@ export function MessageArea({
         .single();
 
       if (inserted) {
-        setMessages((prev) =>
-          prev.map((m) => (m.id === optimisticMsg.id ? ({ ...inserted, profiles: null } as Message) : m)),
-        );
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === inserted.id)) {
+            return prev.filter((m) => m.id !== optimisticMsg.id);
+          }
+          return prev.map((m) => (m.id === optimisticMsg.id ? ({ ...inserted, profiles: null } as Message) : m));
+        });
       }
 
       setSending(false);
@@ -466,7 +481,17 @@ export function MessageArea({
                   className="prose-message text-[15px] wrap-break-word subpixel-antialiased prose-headings:antialiased"
                   style={{ lineHeight: '1.54' }}>
                   {msg.sender_type === 'agent' ? (
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        a: ({ href, children }) => (
+                          <a href={href} target="_blank" rel="noopener noreferrer">
+                            {children}
+                          </a>
+                        ),
+                      }}>
+                      {msg.content}
+                    </ReactMarkdown>
                   ) : (
                     <span className="whitespace-pre-wrap">
                       {msg.content.split(/(@[^\s,.:!?，。！？]+)/g).map((part, j) =>

@@ -1,54 +1,39 @@
-"use client";
+import { redirect } from "next/navigation";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+export default async function ChatRedirect() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-export default function ChatRedirect() {
-  const router = useRouter();
+  if (!user) {
+    redirect("/login");
+  }
 
-  useEffect(() => {
-    async function redirect() {
-      const supabase = createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+  const admin = createAdminClient();
+  const { data: memberships } = await admin
+    .from("server_members")
+    .select("server_id")
+    .eq("member_id", user.id)
+    .eq("member_type", "human")
+    .limit(1);
 
-      if (!user) {
-        router.push("/login");
-        return;
-      }
+  const serverId = memberships?.[0]?.server_id;
+  if (!serverId) {
+    redirect("/onboarding");
+  }
 
-      // Find user's servers
-      const { data: memberships } = await supabase
-        .from("server_members")
-        .select("server_id")
-        .eq("member_id", user.id)
-        .eq("member_type", "human");
+  const { data: server } = await admin
+    .from("servers")
+    .select("slug")
+    .eq("id", serverId)
+    .maybeSingle();
 
-      if (memberships && memberships.length > 0) {
-        const { data: server } = await supabase
-          .from("servers")
-          .select("slug")
-          .eq("id", memberships[0].server_id)
-          .single();
+  if (!server) {
+    redirect("/onboarding");
+  }
 
-        if (server) {
-          router.replace(`/s/${server.slug}`);
-          return;
-        }
-      }
-
-      // No server found — redirect to onboarding
-      router.replace("/onboarding");
-    }
-
-    redirect();
-  }, [router]);
-
-  return (
-    <div className="flex flex-1 items-center justify-center bg-background">
-      <div className="text-sm text-muted-foreground">Loading...</div>
-    </div>
-  );
+  redirect(`/s/${server.slug}`);
 }
