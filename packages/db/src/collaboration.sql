@@ -46,12 +46,25 @@ begin
 
   return new;
 end;
-$$ language plpgsql;
+$$ language plpgsql security definer set search_path = public;
 
 drop trigger if exists trg_update_thread_parent_counts on public.messages;
 create trigger trg_update_thread_parent_counts
 after insert on public.messages
 for each row execute function public.update_thread_parent_counts();
+
+with reply_stats as (
+  select thread_parent_id, count(*)::integer as reply_count, max(created_at) as last_reply_at
+  from public.messages
+  where thread_parent_id is not null
+  group by thread_parent_id
+)
+update public.messages parent
+set reply_count = reply_stats.reply_count,
+    last_reply_at = reply_stats.last_reply_at,
+    updated_at = now()
+from reply_stats
+where parent.id = reply_stats.thread_parent_id;
 
 create table if not exists public.thread_participants (
   thread_parent_id uuid references public.messages(id) on delete cascade not null,
