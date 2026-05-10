@@ -71,15 +71,67 @@ function readStdin(): Promise<string> {
 
 function parseArgs(args: string[]): Record<string, string> {
   const result: Record<string, string> = {};
+  const counts: Record<string, number> = {};
   for (let i = 0; i < args.length; i++) {
     if (args[i].startsWith("--")) {
       const key = args[i].slice(2);
       const val =
         args[i + 1] && !args[i + 1].startsWith("--") ? args[++i] : "true";
-      result[key] = val;
+      counts[key] = (counts[key] ?? 0) + 1;
+      result[counts[key] > 1 ? `${key}_${counts[key]}` : key] = val;
     }
   }
   return result;
+}
+
+function collectFlagValues(flags: Record<string, string>, key: string): string[] {
+  return Object.entries(flags)
+    .filter(([flag]) => flag === key || flag.startsWith(`${key}_`))
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([, value]) => value);
+}
+
+interface TaskDependencyEdge {
+  predecessorTaskId: string;
+  successorTaskId: string;
+}
+
+function hasDependencyCycle(edges: TaskDependencyEdge[]): boolean {
+  const graph = new Map<string, string[]>();
+
+  for (const edge of edges) {
+    const existing = graph.get(edge.predecessorTaskId) ?? [];
+    existing.push(edge.successorTaskId);
+    graph.set(edge.predecessorTaskId, existing);
+
+    if (!graph.has(edge.successorTaskId)) {
+      graph.set(edge.successorTaskId, []);
+    }
+  }
+
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+
+  function visit(node: string): boolean {
+    if (visiting.has(node)) return true;
+    if (visited.has(node)) return false;
+
+    visiting.add(node);
+
+    for (const next of graph.get(node) ?? []) {
+      if (visit(next)) return true;
+    }
+
+    visiting.delete(node);
+    visited.add(node);
+    return false;
+  }
+
+  for (const node of graph.keys()) {
+    if (visit(node)) return true;
+  }
+
+  return false;
 }
 
 function shortId(uuid: string): string {
@@ -646,13 +698,174 @@ async function cmdServerInfo() {
   }
 }
 
+async function cmdThreadList(flags: Record<string, string>) {
+  const channel = flags.channel;
+  if (!channel) fail("INVALID_ARG", "Missing --channel");
+
+  const { channelId } = await resolveTarget(channel);
+  const { data: threads, error } = await supabase
+    .from("messages")
+    .select("*")
+    .eq("channel_id", channelId)
+    .is("thread_parent_id", null)
+    .gt("reply_count", 0)
+    .order("last_reply_at", { ascending: false });
+
+  if (error) fail("THREAD_LIST_FAILED", error.message);
+  if (!threads || threads.length === 0) {
+    console.log("No threads.");
+    return;
+  }
+
+  const channelDisplay = await resolveChannelDisplay(channelId);
+  for (const thread of threads) {
+    const sender = await resolveSenderName(thread.sender_id, thread.sender_type);
+    const resolved = thread.thread_resolved_at ? " resolved" : "";
+    console.log(
+      `[target=${channelDisplay}:${shortId(thread.id)} replies=${thread.reply_count ?? 0}${resolved} time=${fmtTime(thread.last_reply_at ?? thread.created_at)}] @${sender}: ${thread.content}`
+    );
+  }
+}
+
+async function cmdThreadRead(flags: Record<string, string>) {
+  const target = flags.target;
+  if (!target) fail("INVALID_ARG", "Missing --target");
+
+  const { channelId, threadParentId } = await resolveTarget(target);
+  if (!threadParentId) fail("INVALID_ARG", "Target must include a thread message ID");
+
+  const { data: parent, error: parentError } = await supabase
+    .from("messages")
+    .select("*")
+    .eq("id", threadParentId)
+    .single();
+  if (parentError || !parent) fail("THREAD_READ_FAILED", parentError?.message ?? "Thread not found");
+
+  console.log(await formatMessage(parent));
+
+  const { data: replies, error } = await supabase
+    .from("messages")
+    .select("*")
+    .eq("channel_id", channelId)
+    .eq("thread_parent_id", threadParentId)
+    .order("created_at", { ascending: true });
+
+  if (error) fail("THREAD_READ_FAILED", error.message);
+  for (const reply of replies ?? []) {
+    console.log(await formatMessage(reply));
+  }
+}
+
+async function cmdThreadReply(flags: Record<string, string>) {
+  const target = flags.target;
+  if (!target) fail("INVALID_ARG", "Missing --target");
+
+  const content = await readStdin();
+  if (!content) fail("INVALID_ARG", "Reply content must be provided via stdin");
+
+  const { channelId, threadParentId } = await resolveTarget(target);
+  if (!threadParentId) fail("INVALID_ARG", "Target must include a thread message ID");
+
+  const { data, error } = await supabase
+    .from("messages")
+    .insert({
+      channel_id: channelId,
+      sender_id: AGENT_ID,
+      sender_type: "agent",
+      content,
+      thread_parent_id: threadParentId,
+    })
+    .select("id")
+    .single();
+
+  if (error) fail("THREAD_REPLY_FAILED", error.message);
+
+  await supabase.from("thread_participants").upsert({
+    thread_parent_id: threadParentId,
+    participant_id: AGENT_ID,
+    participant_type: "agent",
+    last_read_at: new Date().toISOString(),
+  });
+
+  console.log(`Reply sent to ${target}. Message ID: ${shortId(data.id)}`);
+}
+
+async function cmdThreadResolve(flags: Record<string, string>) {
+  const target = flags.target;
+  if (!target) fail("INVALID_ARG", "Missing --target");
+
+  const { threadParentId } = await resolveTarget(target);
+  if (!threadParentId) fail("INVALID_ARG", "Target must include a thread message ID");
+
+  const unresolved = flags.resolved === "false" || flags.unresolve === "true";
+  const patch = unresolved
+    ? {
+        thread_resolved_at: null,
+        thread_resolved_by: null,
+        thread_resolved_by_type: null,
+      }
+    : {
+        thread_resolved_at: new Date().toISOString(),
+        thread_resolved_by: AGENT_ID,
+        thread_resolved_by_type: "agent",
+      };
+
+  const { error } = await supabase.from("messages").update(patch).eq("id", threadParentId);
+  if (error) fail("THREAD_RESOLVE_FAILED", error.message);
+  console.log(`Thread ${target} ${unresolved ? "unresolved" : "resolved"}.`);
+}
+
+async function resolveTask(flags: Record<string, string>, code = "TASK_NOT_FOUND") {
+  const taskNumber = flags.number ? parseInt(flags.number) : null;
+  if (!taskNumber) fail("INVALID_ARG", "Missing --number");
+
+  let query = supabase
+    .from("tasks")
+    .select("id, task_number, status, assignee_id, assignee_type, channel_id")
+    .eq("task_number", taskNumber);
+
+  if (flags.channel) {
+    const { channelId } = await resolveTarget(flags.channel);
+    query = query.eq("channel_id", channelId);
+  } else {
+    const { data: memberships } = await supabase
+      .from("channel_members")
+      .select("channel_id")
+      .eq("member_id", AGENT_ID)
+      .eq("member_type", "agent");
+    if (!memberships || memberships.length === 0) fail(code, "Task not found");
+    query = query.in(
+      "channel_id",
+      memberships.map((m) => m.channel_id)
+    );
+  }
+
+  const { data: tasks, error } = await query;
+  if (error) fail(code, error.message);
+  if (!tasks || tasks.length === 0) fail(code, "Task not found");
+  if (tasks.length > 1) fail("AMBIGUOUS_TASK", "Multiple tasks match; provide --channel");
+  return tasks[0];
+}
+
+async function resolveTaskByNumber(taskNumber: number, channelId?: string) {
+  let query = supabase.from("tasks").select("id, task_number, channel_id").eq("task_number", taskNumber);
+  if (channelId) query = query.eq("channel_id", channelId);
+  const { data: tasks, error } = await query;
+  if (error) fail("TASK_NOT_FOUND", error.message);
+  if (!tasks || tasks.length === 0) fail("TASK_NOT_FOUND", `Task #${taskNumber} not found`);
+  if (tasks.length > 1) fail("AMBIGUOUS_TASK", `Multiple tasks match #${taskNumber}; provide --channel`);
+  return tasks[0];
+}
+
 async function cmdTaskList(flags: Record<string, string>) {
   const channel = flags.channel;
+  const status = flags.status;
+  const tag = flags.tag;
 
   let query = supabase
     .from("tasks")
     .select(
-      "id, task_number, status, assignee_id, assignee_type, channel_id, message_id, created_at"
+      "id, task_number, status, title, assignee_id, assignee_type, channel_id, created_at, tags, priority"
     )
     .order("task_number", { ascending: true });
 
@@ -660,7 +873,6 @@ async function cmdTaskList(flags: Record<string, string>) {
     const { channelId } = await resolveTarget(channel);
     query = query.eq("channel_id", channelId);
   } else {
-    // Only show tasks from agent's channels
     const { data: memberships } = await supabase
       .from("channel_members")
       .select("channel_id")
@@ -677,7 +889,11 @@ async function cmdTaskList(flags: Record<string, string>) {
     );
   }
 
-  const { data: tasks } = await query;
+  if (status) query = query.eq("status", status);
+  if (tag) query = query.contains("tags", [tag]);
+
+  const { data: tasks, error } = await query;
+  if (error) fail("TASK_LIST_FAILED", error.message);
 
   if (!tasks || tasks.length === 0) {
     console.log("No tasks.");
@@ -685,14 +901,7 @@ async function cmdTaskList(flags: Record<string, string>) {
   }
 
   for (const task of tasks) {
-    // Get the message content for the task title
-    const { data: msg } = await supabase
-      .from("messages")
-      .select("content")
-      .eq("id", task.message_id)
-      .single();
-
-    const title = msg?.content?.substring(0, 80) || "(no content)";
+    const title = task.title?.substring(0, 80) || "(untitled)";
     const assignee = task.assignee_id
       ? await resolveSenderName(
           task.assignee_id,
@@ -701,8 +910,9 @@ async function cmdTaskList(flags: Record<string, string>) {
       : "unassigned";
 
     const chDisplay = await resolveChannelDisplay(task.channel_id);
+    const prio = task.priority && task.priority !== "medium" ? ` prio=${task.priority}` : "";
     console.log(
-      `  task #${task.task_number} [${task.status}] ${chDisplay} — ${title} (${assignee})`
+      `  task #${task.task_number} [${task.status}] ${chDisplay} — ${title} (${assignee})${prio}`
     );
   }
 }
@@ -714,8 +924,9 @@ async function cmdTaskCreate(flags: Record<string, string>) {
   if (!title) fail("INVALID_ARG", "Missing --title");
 
   const { channelId } = await resolveTarget(channel);
+  const parentTask = flags.parent ? await resolveTaskByNumber(parseInt(flags.parent), channelId) : null;
+  const tagValues = collectFlagValues(flags, "tag");
 
-  // Create a message first
   const { data: msg, error: msgError } = await supabase
     .from("messages")
     .insert({
@@ -729,12 +940,20 @@ async function cmdTaskCreate(flags: Record<string, string>) {
 
   if (msgError) fail("CREATE_FAILED", msgError.message);
 
-  // Create the task linked to the message
   const { data: task, error: taskError } = await supabase
     .from("tasks")
     .insert({
       message_id: msg.id,
       channel_id: channelId,
+      title,
+      description: flags.description ?? null,
+      priority: flags.priority ?? "medium",
+      tags: tagValues.length > 0 ? tagValues : [],
+      source_message_id: msg.id,
+      parent_task_id: parentTask?.id ?? null,
+      created_by_id: AGENT_ID,
+      created_by_type: "agent",
+      current_gate: "ready_to_execute",
     })
     .select("task_number")
     .single();
@@ -745,58 +964,37 @@ async function cmdTaskCreate(flags: Record<string, string>) {
 }
 
 async function cmdTaskClaim(flags: Record<string, string>) {
-  const taskNumber = flags.number ? parseInt(flags.number) : null;
-  const messageId = flags["message-id"];
-
-  if (!taskNumber && !messageId) {
-    fail("INVALID_ARG", "Provide --number or --message-id");
-  }
-
-  let query = supabase.from("tasks").select("id, task_number, assignee_id");
-
-  if (taskNumber) {
-    query = query.eq("task_number", taskNumber);
-  } else if (messageId) {
-    query = query.eq("message_id", messageId);
-  }
-
-  const { data: task } = await query.single();
-
-  if (!task) fail("CLAIM_FAILED", "Task not found");
+  const task = await resolveTask(flags, "CLAIM_FAILED");
 
   if (task.assignee_id && task.assignee_id !== AGENT_ID) {
-    const owner = await resolveSenderName(task.assignee_id, "agent");
+    const owner = await resolveSenderName(task.assignee_id, task.assignee_type || "agent");
     fail(
       "CLAIM_FAILED",
       `Task #${task.task_number} is already claimed by @${owner}`
     );
   }
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("tasks")
     .update({
       assignee_id: AGENT_ID,
       assignee_type: "agent",
       status: "in_progress",
+      started_at: new Date().toISOString(),
+      current_gate: "executing",
     })
-    .eq("id", task.id);
+    .eq("id", task.id)
+    .is("assignee_id", null)
+    .select("task_number")
+    .single();
 
-  if (error) fail("CLAIM_FAILED", error.message);
+  if (error || !data) fail("CLAIM_FAILED", error?.message ?? "Task is already claimed");
 
   console.log(`Task #${task.task_number} claimed and set to in_progress.`);
 }
 
 async function cmdTaskUnclaim(flags: Record<string, string>) {
-  const taskNumber = flags.number ? parseInt(flags.number) : null;
-  if (!taskNumber) fail("INVALID_ARG", "Missing --number");
-
-  const { data: task } = await supabase
-    .from("tasks")
-    .select("id, task_number, assignee_id")
-    .eq("task_number", taskNumber)
-    .single();
-
-  if (!task) fail("UNCLAIM_FAILED", "Task not found");
+  const task = await resolveTask(flags, "UNCLAIM_FAILED");
 
   if (task.assignee_id !== AGENT_ID) {
     fail("UNCLAIM_FAILED", "You are not the assignee of this task");
@@ -807,6 +1005,8 @@ async function cmdTaskUnclaim(flags: Record<string, string>) {
     .update({
       assignee_id: null,
       assignee_type: null,
+      status: "todo",
+      current_gate: "ready_to_execute",
     })
     .eq("id", task.id);
 
@@ -816,36 +1016,133 @@ async function cmdTaskUnclaim(flags: Record<string, string>) {
 }
 
 async function cmdTaskUpdate(flags: Record<string, string>) {
-  const taskNumber = flags.number ? parseInt(flags.number) : null;
+  const task = await resolveTask(flags, "UPDATE_FAILED");
   const status = flags.status;
+  const summary = flags.summary;
 
-  if (!taskNumber) fail("INVALID_ARG", "Missing --number");
-  if (!status) fail("INVALID_ARG", "Missing --status");
+  const patch: Record<string, string | null> = {};
+  if (status) patch.status = status;
+  if (summary) patch.resolution_summary = summary;
+  if (flags.title) patch.title = flags.title;
+  if (flags.description) patch.description = flags.description;
 
-  const validStatuses = ["todo", "in_progress", "in_review", "done"];
-  if (!validStatuses.includes(status)) {
-    fail(
-      "INVALID_ARG",
-      `Invalid status: ${status}. Valid: ${validStatuses.join(", ")}`
-    );
+  if (Object.keys(patch).length === 0) {
+    fail("INVALID_ARG", "Provide --status, --summary, --title, or --description");
   }
 
-  const { data: task } = await supabase
-    .from("tasks")
-    .select("id")
-    .eq("task_number", taskNumber)
-    .single();
-
-  if (!task) fail("UPDATE_FAILED", "Task not found");
-
+  const fromStatus = task.status;
   const { error } = await supabase
     .from("tasks")
-    .update({ status, updated_at: new Date().toISOString() })
+    .update({ ...patch, updated_at: new Date().toISOString() })
     .eq("id", task.id);
 
   if (error) fail("UPDATE_FAILED", error.message);
 
-  console.log(`Task #${taskNumber} updated to ${status}.`);
+  if (status && status !== fromStatus) {
+    await supabase.from("task_events").insert({
+      task_id: task.id,
+      actor_id: AGENT_ID,
+      actor_type: "agent",
+      event_type: "status_changed",
+      from_state: { status: fromStatus },
+      to_state: { status },
+      reason: summary ?? null,
+    });
+  }
+
+  console.log(`Task #${task.task_number} updated${status ? ` to ${status}` : ""}.`);
+}
+
+async function cmdTaskComment(flags: Record<string, string>) {
+  const task = await resolveTask(flags, "COMMENT_FAILED");
+  const content = await readStdin();
+  if (!content) fail("INVALID_ARG", "Comment content must be provided via stdin");
+
+  const { error } = await supabase.from("task_comments").insert({
+    task_id: task.id,
+    author_id: AGENT_ID,
+    author_type: "agent",
+    content,
+  });
+  if (error) fail("COMMENT_FAILED", error.message);
+  console.log(`Comment added to task #${task.task_number}.`);
+}
+
+async function cmdTaskArtifactAdd(flags: Record<string, string>) {
+  const task = await resolveTask(flags, "ARTIFACT_FAILED");
+  const artifactType = flags.type;
+  const title = flags.title;
+  if (!artifactType) fail("INVALID_ARG", "Missing --type");
+  if (!title) fail("INVALID_ARG", "Missing --title");
+
+  const { error } = await supabase.from("task_artifacts").insert({
+    task_id: task.id,
+    artifact_type: artifactType,
+    title,
+    url: flags.url ?? null,
+    metadata: {},
+    created_by_id: AGENT_ID,
+    created_by_type: "agent",
+  });
+  if (error) fail("ARTIFACT_FAILED", error.message);
+  console.log(`Artifact added to task #${task.task_number}.`);
+}
+
+async function cmdTaskDependencyAdd(flags: Record<string, string>) {
+  const task = await resolveTask(flags, "DEPENDENCY_FAILED");
+  const blockedBy = flags.blocks ? parseInt(flags.blocks) : null;
+  if (!blockedBy) fail("INVALID_ARG", "Missing --blocks");
+
+  const predecessor = await resolveTaskByNumber(blockedBy, flags.channel ? task.channel_id : undefined);
+
+  const { data: existing, error: existingError } = await supabase
+    .from("task_dependencies")
+    .select("predecessor_task_id, successor_task_id");
+  if (existingError) fail("DEPENDENCY_FAILED", existingError.message);
+
+  const edges: TaskDependencyEdge[] = [
+    ...(existing ?? []).map((edge) => ({
+      predecessorTaskId: edge.predecessor_task_id,
+      successorTaskId: edge.successor_task_id,
+    })),
+    { predecessorTaskId: predecessor.id, successorTaskId: task.id },
+  ];
+
+  if (hasDependencyCycle(edges)) {
+    fail("DEPENDENCY_FAILED", "Dependency would create a cycle");
+  }
+
+  const { error } = await supabase.from("task_dependencies").insert({
+    predecessor_task_id: predecessor.id,
+    successor_task_id: task.id,
+    dependency_type: "blocks",
+  });
+  if (error) fail("DEPENDENCY_FAILED", error.message);
+  console.log(`Task #${task.task_number} now depends on task #${predecessor.task_number}.`);
+}
+
+async function cmdTaskReview(flags: Record<string, string>) {
+  const task = await resolveTask(flags, "REVIEW_FAILED");
+  const approve = flags.approve === "true";
+  const changesRequested = flags["changes-requested"] === "true";
+  if (approve === changesRequested) {
+    fail("INVALID_ARG", "Provide exactly one of --approve or --changes-requested");
+  }
+
+  const summary = flags.summary ?? ((await readStdin()) || (approve ? "Approved" : "Changes requested"));
+  const verdict = approve ? "pass" : "fail";
+
+  const { error } = await supabase.from("task_reviews").insert({
+    task_id: task.id,
+    reviewer_id: AGENT_ID,
+    reviewer_type: "agent",
+    review_type: flags.type ?? "agent_review",
+    findings: [],
+    verdict,
+    summary,
+  });
+  if (error) fail("REVIEW_FAILED", error.message);
+  console.log(`Review added to task #${task.task_number}: ${verdict}.`);
 }
 
 // ---------------------------------------------------------------------------
@@ -854,8 +1151,38 @@ async function cmdTaskUpdate(flags: Record<string, string>) {
 
 async function main() {
   const args = process.argv.slice(2);
-  const [group, action] = args;
+  const [group, action, subaction] = args;
   const flags = parseArgs(args.slice(2));
+
+  // Handle three-token commands first
+  if (group === "thread") {
+    switch (action) {
+      case "list":
+        return cmdThreadList(flags);
+      case "read":
+        return cmdThreadRead(flags);
+      case "reply":
+        return cmdThreadReply(flags);
+      case "resolve":
+        return cmdThreadResolve(flags);
+    }
+  }
+
+  if (group === "task" && action === "artifact" && subaction === "add") {
+    return cmdTaskArtifactAdd(flags);
+  }
+
+  if (group === "task" && action === "dependency" && subaction === "add") {
+    return cmdTaskDependencyAdd(flags);
+  }
+
+  if (group === "task" && action === "review") {
+    return cmdTaskReview(flags);
+  }
+
+  if (group === "task" && action === "comment") {
+    return cmdTaskComment(flags);
+  }
 
   switch (`${group} ${action}`) {
     case "message send":
@@ -889,7 +1216,7 @@ async function main() {
       return cmdTaskUpdate(flags);
 
     default:
-      console.log(`Zano CLI v0.1.0
+      console.log(`Zano CLI v0.2.0
 
 Usage:
   zano message send --target "#channel"    Send a message (content via stdin)
@@ -897,11 +1224,25 @@ Usage:
   zano message read --channel "#channel"   Read channel history
   zano message search --query "keyword"    Search messages
   zano server info                         Show server info
-  zano task list [--channel "#channel"]    List tasks
-  zano task create --channel "#ch" --title "T"  Create a task
+  zano thread list --channel "#channel"    List threads
+  zano thread read --target "#ch:abcd1234" Read thread with replies
+  zano thread reply --target "#ch:abcd1234" Reply to thread (stdin)
+  zano thread resolve --target "#ch:abcd"  Resolve/unresolve thread
+  zano task list [--channel "#ch"] [--status S] [--tag T]
+                                           List tasks
+  zano task create --channel "#ch" --title "T" [--priority high] [--tag T]
+                                           Create a task
   zano task claim --number N               Claim a task
   zano task unclaim --number N             Release a task
-  zano task update --number N --status S   Update task status
+  zano task update --number N [--status S] [--summary "..."]
+                                           Update task
+  zano task comment --number N             Comment on task (stdin)
+  zano task artifact add --number N --type pr --title "T" [--url ...]
+                                           Add artifact
+  zano task dependency add --number N --blocks M
+                                           Add blocking dependency
+  zano task review --number N --approve|--changes-requested [--summary "..."]
+                                           Review task
 
 Environment:
   ZANO_AGENT_ID        Agent UUID

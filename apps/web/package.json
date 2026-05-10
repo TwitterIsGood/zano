@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
+    "@zano/shared": "workspace:*",
     "@phosphor-icons/react": "^2.1.10",
     "@radix-ui/colors": "^3.0.0",
     "@supabase/ssr": "^0.10.2",

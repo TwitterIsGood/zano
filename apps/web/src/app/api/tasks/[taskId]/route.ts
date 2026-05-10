@@ -1,0 +1,50 @@
+import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
+
+interface Params {
+  params: Promise<{ taskId: string }>;
+}
+
+export async function GET(_request: NextRequest, { params }: Params) {
+  const { taskId } = await params;
+  const supabase = await createClient();
+
+  const [task, comments, artifacts, dependencies, events, verifications, reviews] = await Promise.all([
+    supabase.from("tasks").select("*").eq("id", taskId).single(),
+    supabase.from("task_comments").select("*").eq("task_id", taskId).order("created_at"),
+    supabase.from("task_artifacts").select("*").eq("task_id", taskId).order("created_at"),
+    supabase.from("task_dependencies").select("*").or(`predecessor_task_id.eq.${taskId},successor_task_id.eq.${taskId}`),
+    supabase.from("task_events").select("*").eq("task_id", taskId).order("created_at"),
+    supabase.from("task_verifications").select("*").eq("task_id", taskId).order("created_at"),
+    supabase.from("task_reviews").select("*").eq("task_id", taskId).order("created_at"),
+  ]);
+
+  if (task.error) return NextResponse.json({ error: task.error.message }, { status: 404 });
+  for (const result of [comments, artifacts, dependencies, events, verifications, reviews]) {
+    if (result.error) return NextResponse.json({ error: result.error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({
+    task: task.data,
+    comments: comments.data ?? [],
+    artifacts: artifacts.data ?? [],
+    dependencies: dependencies.data ?? [],
+    events: events.data ?? [],
+    verifications: verifications.data ?? [],
+    reviews: reviews.data ?? [],
+  });
+}
+
+export async function PATCH(request: NextRequest, { params }: Params) {
+  const { taskId } = await params;
+  const supabase = await createClient();
+  const body = await request.json();
+
+  const allowed = ["title", "description", "priority", "tags", "due_at", "assignee_id", "assignee_type", "reviewer_id", "reviewer_type", "review_policy", "current_gate", "resolution_summary"];
+  const patch = Object.fromEntries(Object.entries(body).filter(([key]) => allowed.includes(key)));
+
+  const { data, error } = await supabase.from("tasks").update(patch).eq("id", taskId).select().single();
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ task: data });
+}
