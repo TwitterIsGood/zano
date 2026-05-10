@@ -28,6 +28,18 @@ describe("canTransitionTask", () => {
     ).toEqual({ allowed: false, reason: "Task has unresolved blocking dependencies" });
   });
 
+  it("allows todo tasks to become blocked", () => {
+    expect(canTransitionTask("todo", "blocked", ctx())).toEqual({ allowed: true });
+  });
+
+  it("allows blocked tasks to resume when they are not blocked", () => {
+    expect(canTransitionTask("blocked", "in_progress", ctx())).toEqual({ allowed: true });
+  });
+
+  it("allows in_progress tasks to move to changes_requested", () => {
+    expect(canTransitionTask("in_progress", "changes_requested", ctx())).toEqual({ allowed: true });
+  });
+
   it("allows verified simple tasks to move directly from in_progress to done", () => {
     expect(canTransitionTask("in_progress", "done", ctx())).toEqual({ allowed: true });
   });
@@ -44,6 +56,16 @@ describe("canTransitionTask", () => {
     ).toEqual({ allowed: false, reason: "Task requires review before completion" });
   });
 
+  it("returns the verification reason first when verification and review are missing", () => {
+    expect(
+      canTransitionTask(
+        "in_progress",
+        "done",
+        ctx({ hasPassingVerification: false, requiresReview: true }),
+      ),
+    ).toEqual({ allowed: false, reason: "Task needs passing verification evidence" });
+  });
+
   it("allows reviewed tasks to complete from in_review", () => {
     expect(
       canTransitionTask(
@@ -58,6 +80,17 @@ describe("canTransitionTask", () => {
     expect(canTransitionTask("done", "in_progress", ctx())).toEqual({
       allowed: false,
       reason: "Invalid transition from done to in_progress",
+    });
+  });
+
+  it("allows done tasks to be archived", () => {
+    expect(canTransitionTask("done", "archived", ctx())).toEqual({ allowed: true });
+  });
+
+  it("blocks archived tasks from transitioning back to todo", () => {
+    expect(canTransitionTask("archived", "todo", ctx())).toEqual({
+      allowed: false,
+      reason: "Invalid transition from archived to todo",
     });
   });
 });

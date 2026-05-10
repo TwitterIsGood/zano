@@ -1,4 +1,6 @@
+/** ActorType identifies who performed an action, including system automation. */
 export type ActorType = "human" | "agent" | "system";
+/** ParticipantType identifies channel/thread participants that can actively join conversations. */
 export type ParticipantType = "human" | "agent";
 
 export type TaskStatus =

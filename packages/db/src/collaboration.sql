@@ -348,6 +348,9 @@ create policy "Task events follow task access" on public.task_events for select 
       and cm.member_id = auth.uid()
   )
 );
+-- NOTE: task_events is append-only audit data.
+-- Rows are inserted exclusively by trusted server-side helpers / service-role tokens,
+-- never by arbitrary client requests. No INSERT/UPDATE/DELETE policies are intentional.
 
 create policy "Task specs follow task access" on public.task_specs for all using (
   exists (
@@ -410,6 +413,8 @@ create policy "Recipients can view own notifications" on public.notifications fo
 create policy "Recipients can update own notifications" on public.notifications for update using (
   recipient_id = auth.uid()
 );
+-- NOTE: notifications are created only by trusted server-side routes / service-role helpers.
+-- Client access is limited to recipients reading and marking their own notifications.
 
 -- -----------------------------------------------------------
 -- Realtime
