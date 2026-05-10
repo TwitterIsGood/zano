@@ -38,9 +38,14 @@ export async function GET(_request: NextRequest, { params }: Params) {
 export async function PATCH(request: NextRequest, { params }: Params) {
   const { taskId } = await params;
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   const body = await request.json();
 
-  const allowed = ["title", "description", "priority", "tags", "due_at", "assignee_id", "assignee_type", "reviewer_id", "reviewer_type", "review_policy", "current_gate", "resolution_summary"];
+  const allowed = ["title", "description", "priority", "tags", "due_at", "resolution_summary"];
   const patch = Object.fromEntries(Object.entries(body).filter(([key]) => allowed.includes(key)));
 
   const { data, error } = await supabase.from("tasks").update(patch).eq("id", taskId).select().single();

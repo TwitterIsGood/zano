@@ -8,6 +8,11 @@ interface Params {
 export async function POST(_request: Request, { params }: Params) {
   const { taskId } = await params;
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   const { data, error } = await supabase
     .from("tasks")
     .update({ assignee_id: null, assignee_type: null, status: "todo", current_gate: "ready_to_execute" })

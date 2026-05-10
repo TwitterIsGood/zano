@@ -5,20 +5,18 @@ interface Params {
   params: Promise<{ messageId: string }>;
 }
 
-export async function POST(request: NextRequest, { params }: Params) {
+export async function POST(_request: NextRequest, { params }: Params) {
   const { messageId } = await params;
   const supabase = await createClient();
-  const body = await request.json();
-  const { participant_id, participant_type } = body;
-
-  if (!participant_id || !participant_type) {
-    return NextResponse.json({ error: "participant_id and participant_type required" }, { status: 400 });
-  }
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { error } = await supabase.from("thread_participants").upsert({
     thread_parent_id: messageId,
-    participant_id,
-    participant_type,
+    participant_id: user.id,
+    participant_type: "human",
     last_read_at: new Date().toISOString(),
   });
 

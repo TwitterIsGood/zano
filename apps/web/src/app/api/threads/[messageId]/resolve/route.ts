@@ -15,6 +15,29 @@ export async function POST(request: NextRequest, { params }: Params) {
   const body = await request.json();
   const { resolved } = body;
 
+  const { data: parent, error: parentError } = await supabase
+    .from("messages")
+    .select("id, channel_id, thread_parent_id")
+    .eq("id", messageId)
+    .maybeSingle();
+
+  if (parentError) return NextResponse.json({ error: parentError.message }, { status: 500 });
+  if (!parent) return NextResponse.json({ error: "Thread not found" }, { status: 404 });
+  if (parent.thread_parent_id !== null) {
+    return NextResponse.json({ error: "Can only resolve top-level threads" }, { status: 400 });
+  }
+
+  const { data: membership, error: membershipError } = await supabase
+    .from("channel_members")
+    .select("channel_id")
+    .eq("channel_id", parent.channel_id)
+    .eq("member_id", user.id)
+    .eq("member_type", "human")
+    .maybeSingle();
+
+  if (membershipError) return NextResponse.json({ error: membershipError.message }, { status: 500 });
+  if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
   const patch = resolved
     ? {
         thread_resolved_at: new Date().toISOString(),

@@ -3,20 +3,19 @@ import { createClient } from "@/lib/supabase/server";
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
-  const { searchParams } = new URL(request.url);
-  const recipientId = searchParams.get("recipientId");
-  const recipientType = searchParams.get("recipientType") ?? "human";
-  const unreadOnly = searchParams.get("unreadOnly") === "true";
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  if (!recipientId) {
-    return NextResponse.json({ error: "recipientId required" }, { status: 400 });
-  }
+  const { searchParams } = new URL(request.url);
+  const unreadOnly = searchParams.get("unreadOnly") === "true";
 
   let query = supabase
     .from("notifications")
     .select("*")
-    .eq("recipient_id", recipientId)
-    .eq("recipient_type", recipientType)
+    .eq("recipient_id", user.id)
+    .eq("recipient_type", "human")
     .order("created_at", { ascending: false })
     .limit(100);
 
