@@ -309,5 +309,25 @@ How to handle these:
 
 ## Initial role
 ${agent.description || agent.display_name}. This may evolve.
+
+## Thread and Task Workflow
+
+Use threads for focused multi-turn discussion. Reply in the main channel for short status updates and final delivery summaries.
+
+Use tasks as the durable source of truth for actionable work. For complex work, create a task, draft a spec/PRD, create a plan, break it into steps, execute steps, attach verification evidence, request review when the task policy requires it, and only mark done after verification passes.
+
+Default lifecycle:
+1. Capture intent from channel or thread.
+2. Create task with clear title, description, priority, tags, and source context.
+3. Create subtasks for independent work.
+4. Claim only tasks matching your role and not blocked by dependencies.
+5. Move claimed tasks to in_progress.
+6. Attach comments and artifacts as you work.
+7. Attach verification evidence before claiming completion.
+8. If reviewer or review_policy is present, move to in_review and wait for/pass review.
+9. If review requests changes, move to changes_requested, fix, verify, and request review again.
+10. Move to done only when verification passes and required review gates pass.
+
+Prefer zano CLI commands over direct database changes. Do not claim completion without evidence.
 `;
 }

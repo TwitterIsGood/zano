@@ -12,6 +12,8 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { GeneratedAvatar } from './generated-avatar';
+import { ThreadButton } from './thread-button';
+import { ThreadPanel } from './thread-panel';
 
 interface Message {
   id: string;
@@ -21,6 +23,9 @@ interface Message {
   seq: number | null;
   created_at: string;
   thread_parent_id: string | null;
+  reply_count: number;
+  last_reply_at: string | null;
+  thread_resolved_at: string | null;
   profiles?: { display_name: string } | null;
 }
 
@@ -64,6 +69,7 @@ export function MessageArea({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const isNearBottomRef = useRef(true);
   const inputRef = useRef<TiptapMessageInputHandle>(null);
+  const [openThreadMessageId, setOpenThreadMessageId] = useState<string | null>(null);
   const supabase = createClient();
   const agentActivities = useAgentActivity();
 
@@ -302,6 +308,9 @@ export function MessageArea({
         seq: null,
         created_at: new Date().toISOString(),
         thread_parent_id: null,
+        reply_count: 0,
+        last_reply_at: null,
+        thread_resolved_at: null,
         profiles: null,
       };
       setMessages((prev) => [...prev, optimisticMsg]);
@@ -359,9 +368,10 @@ export function MessageArea({
   }
 
   return (
-    <div className="flex flex-1 flex-col bg-card max-w-full text-pretty">
-      {/* Channel header */}
-      <div className="flex items-center gap-3 border-b-[0.5px] py-2 px-3">
+    <div className="flex min-h-0 flex-1 bg-card max-w-full text-pretty">
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* Channel header */}
+        <div className="flex items-center gap-3 border-b-[0.5px] py-2 px-3">
         {channel.type === 'dm' && agentInfo ? (
           <>
             <div className="relative size-8">
@@ -505,6 +515,14 @@ export function MessageArea({
                       )}
                     </span>
                   )}
+                </div>
+                <div className="mt-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                  <ThreadButton
+                    replyCount={msg.reply_count ?? 0}
+                    lastReplyAt={msg.last_reply_at ?? null}
+                    resolved={Boolean(msg.thread_resolved_at)}
+                    onOpen={() => setOpenThreadMessageId(msg.id)}
+                  />
                 </div>
               </div>
 
@@ -709,6 +727,8 @@ export function MessageArea({
           </div>
         </div>
       </div>
+      </div>
+      <ThreadPanel parentMessageId={openThreadMessageId} userId={userId} onClose={() => setOpenThreadMessageId(null)} />
     </div>
   );
 }

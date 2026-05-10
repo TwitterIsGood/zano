@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter, useParams } from "next/navigation";
@@ -12,8 +13,9 @@ import { ContextMenu } from "./context-menu";
 import { useAgentActivity } from "@/hooks/use-agent-activity";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
-import { ChevronDownIcon, CheckIcon, PlusIcon, PencilIcon, LogOutIcon, MonitorIcon } from "lucide-react";
+import { ChevronDownIcon, CheckIcon, PlusIcon, PencilIcon, LogOutIcon, MonitorIcon, ClipboardList } from "lucide-react";
 import { GeneratedAvatar } from "./generated-avatar";
+import { NotificationsMenu } from "./notifications-menu";
 
 interface Server {
   id: string;
@@ -295,15 +297,18 @@ export function Sidebar({
     <aside className="flex h-full w-[var(--sidebar-width)] flex-col">
       {/* Header — Server switcher */}
       <div className="relative px-2 pt-2 pb-1">
-        <button
-          onClick={() => setShowServerMenu((v) => !v)}
-          className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 transition-all hover:bg-accent"
-        >
-          <span className="text-[13px] font-semibold text-foreground truncate flex-1 text-left">
-            {serverName}
-          </span>
-          <ChevronDownIcon className={`size-3 text-muted-foreground transition-transform flex-shrink-0 ${showServerMenu ? "rotate-180" : ""}`} />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setShowServerMenu((v) => !v)}
+            className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-2 py-2 transition-all hover:bg-accent"
+          >
+            <span className="text-[13px] font-semibold text-foreground truncate flex-1 text-left">
+              {serverName}
+            </span>
+            <ChevronDownIcon className={`size-3 text-muted-foreground transition-transform flex-shrink-0 ${showServerMenu ? "rotate-180" : ""}`} />
+          </button>
+          <NotificationsMenu userId={userId} />
+        </div>
 
         {/* Server dropdown menu */}
         {showServerMenu && (
@@ -356,6 +361,16 @@ export function Sidebar({
       </div>
 
       <div className="flex-1 overflow-y-auto px-2 py-2 space-y-4">
+        <div className="flex flex-col gap-[2px]">
+          <Link
+            href={`/s/${serverSlug}/tasks`}
+            className="flex h-[32px] items-center gap-2 rounded-lg px-2 text-[13px] text-muted-foreground transition-all hover:bg-sanda-3 hover:text-accent-foreground"
+          >
+            <ClipboardList className="size-4" />
+            Tasks
+          </Link>
+        </div>
+
         {/* DM Conversations */}
         <div>
           <div className="mb-1.5 px-2 flex items-center justify-between h-[22px]">
