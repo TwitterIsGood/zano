@@ -2,6 +2,24 @@
 // Zano — Shared Types
 // ============================================================
 
+export * from "./collaboration";
+
+import type {
+  ActorType,
+  AgentRunStatus,
+  DependencyType,
+  DocumentStatus,
+  ParticipantType,
+  ReviewStatus,
+  ReviewVerdict,
+  StepStatus,
+  TaskGate,
+  TaskPriority,
+  TaskReviewPolicy,
+  TaskStatus,
+  ThreadSubscriptionType,
+} from "./collaboration";
+
 // --- Users & Agents ---
 
 export interface User {
@@ -90,24 +108,214 @@ export interface Message {
   content: string;
   seq: number | null;
   thread_parent_id: string | null;
+  reply_count: number;
+  last_reply_at: string | null;
+  thread_resolved_at: string | null;
+  thread_resolved_by: string | null;
+  thread_resolved_by_type: ActorType | null;
   created_at: string;
   updated_at: string;
 }
 
 // --- Tasks ---
 
-export type TaskStatus = "todo" | "in_progress" | "in_review" | "done";
-
 export interface Task {
   id: string;
-  message_id: string;
+  message_id: string | null;
+  source_message_id: string | null;
+  source_thread_parent_id: string | null;
   channel_id: string;
   task_number: number;
+  title: string;
+  description: string | null;
   status: TaskStatus;
+  priority: TaskPriority;
+  tags: string[];
+  due_at: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  parent_task_id: string | null;
+  current_gate: TaskGate | null;
+  review_policy: TaskReviewPolicy;
   assignee_id: string | null;
-  assignee_type: "human" | "agent" | null;
+  assignee_type: ParticipantType | null;
+  reviewer_id: string | null;
+  reviewer_type: ParticipantType | null;
+  review_status: ReviewStatus | null;
+  created_by_id: string | null;
+  created_by_type: ActorType | null;
+  resolution_summary: string | null;
+  archived_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface ThreadParticipant {
+  thread_parent_id: string;
+  participant_id: string;
+  participant_type: ParticipantType;
+  first_participated_at: string;
+  last_read_at: string | null;
+}
+
+export interface ThreadSubscription {
+  thread_parent_id: string;
+  subscriber_id: string;
+  subscriber_type: ParticipantType;
+  subscription_type: ThreadSubscriptionType;
+  muted: boolean;
+  created_at: string;
+}
+
+export interface TaskDependency {
+  predecessor_task_id: string;
+  successor_task_id: string;
+  dependency_type: DependencyType;
+  created_at: string;
+}
+
+export interface TaskComment {
+  id: string;
+  task_id: string;
+  author_id: string;
+  author_type: ActorType;
+  content: string;
+  created_at: string;
+}
+
+export interface TaskArtifact {
+  id: string;
+  task_id: string;
+  artifact_type: "pr" | "commit" | "file" | "url" | "report" | "log" | "note" | "spec" | "plan" | "evidence";
+  title: string;
+  url: string | null;
+  metadata: Record<string, unknown>;
+  created_by_id: string;
+  created_by_type: ActorType;
+  created_at: string;
+}
+
+export interface TaskEvent {
+  id: string;
+  task_id: string;
+  actor_id: string;
+  actor_type: ActorType;
+  event_type: string;
+  from_state: Record<string, unknown> | null;
+  to_state: Record<string, unknown> | null;
+  reason: string | null;
+  created_at: string;
+}
+
+export interface TaskSpec {
+  id: string;
+  task_id: string;
+  title: string;
+  content: string;
+  status: DocumentStatus;
+  approved_by: string | null;
+  approved_by_type: ParticipantType | null;
+  approved_at: string | null;
+  created_by_id: string;
+  created_by_type: ActorType;
+  created_at: string;
+}
+
+export interface TaskPlan {
+  id: string;
+  task_id: string;
+  spec_id: string | null;
+  title: string;
+  content: string;
+  status: DocumentStatus;
+  approved_by: string | null;
+  approved_by_type: ParticipantType | null;
+  approved_at: string | null;
+  created_by_id: string;
+  created_by_type: ActorType;
+  created_at: string;
+}
+
+export interface TaskStep {
+  id: string;
+  plan_id: string;
+  task_id: string;
+  order_index: number;
+  description: string;
+  target_files: string[] | null;
+  required_skill: string | null;
+  verification_command: string | null;
+  expected_result: string | null;
+  status: StepStatus;
+  started_at: string | null;
+  completed_at: string | null;
+  assigned_to_id: string | null;
+  assigned_to_type: ParticipantType | null;
+  evidence_summary: string | null;
+  created_at: string;
+}
+
+export interface TaskVerification {
+  id: string;
+  task_id: string;
+  step_id: string | null;
+  actor_id: string;
+  actor_type: ActorType;
+  verification_type: string;
+  command_or_check: string;
+  output_summary: string | null;
+  passed: boolean;
+  evidence_url: string | null;
+  created_at: string;
+}
+
+export interface TaskAgentRun {
+  id: string;
+  task_id: string;
+  step_id: string | null;
+  agent_id: string;
+  role: string;
+  prompt_snapshot: string | null;
+  context_manifest: Record<string, unknown>;
+  status: AgentRunStatus;
+  output_summary: string | null;
+  concerns: string | null;
+  files_touched: string[] | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+}
+
+export interface TaskReview {
+  id: string;
+  task_id: string;
+  agent_run_id: string | null;
+  reviewer_id: string;
+  reviewer_type: ParticipantType;
+  review_type: string;
+  findings: Array<{
+    severity: "critical" | "important" | "minor";
+    category: string;
+    location?: string;
+    recommendation: string;
+    blocking: boolean;
+  }>;
+  verdict: ReviewVerdict;
+  summary: string;
+  created_at: string;
+}
+
+export interface Notification {
+  id: string;
+  recipient_id: string;
+  recipient_type: ParticipantType;
+  type: string;
+  channel_id: string | null;
+  message_id: string | null;
+  thread_parent_id: string | null;
+  task_id: string | null;
+  read_at: string | null;
+  created_at: string;
 }
 
 // --- Bridge Protocol (WebSocket messages between Server <-> Bridge) ---
