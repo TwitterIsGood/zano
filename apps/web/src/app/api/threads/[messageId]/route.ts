@@ -8,6 +8,10 @@ interface Params {
 export async function GET(_request: NextRequest, { params }: Params) {
   const { messageId } = await params;
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const [parentResult, repliesResult, participantsResult] = await Promise.all([
     supabase.from("messages").select("*").eq("id", messageId).single(),

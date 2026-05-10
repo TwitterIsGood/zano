@@ -45,7 +45,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
 
   const body = await request.json();
 
-  const allowed = ["title", "description", "priority", "tags", "due_at", "resolution_summary"];
+  const allowed = ["title", "description", "priority", "tags", "due_at"];
   const patch = Object.fromEntries(Object.entries(body).filter(([key]) => allowed.includes(key)));
 
   const { data, error } = await supabase.from("tasks").update(patch).eq("id", taskId).select().single();
