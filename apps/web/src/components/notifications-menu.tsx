@@ -6,23 +6,19 @@ import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { Notification } from "@zano/shared";
 
-interface NotificationsMenuProps {
-  userId: string;
-}
-
-export function NotificationsMenu({ userId }: NotificationsMenuProps) {
+export function NotificationsMenu() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
   useEffect(() => {
     async function load() {
-      const res = await fetch(`/api/notifications?recipientId=${userId}&recipientType=human&unreadOnly=true`);
+      const res = await fetch(`/api/notifications?unreadOnly=true`);
       if (res.ok) {
         const data = await res.json();
         setNotifications(data.notifications ?? []);
       }
     }
     load();
-  }, [userId]);
+  }, []);
 
   return (
     <Popover>

@@ -307,7 +307,7 @@ export function Sidebar({
             </span>
             <ChevronDownIcon className={`size-3 text-muted-foreground transition-transform flex-shrink-0 ${showServerMenu ? "rotate-180" : ""}`} />
           </button>
-          <NotificationsMenu userId={userId} />
+          <NotificationsMenu />
         </div>
 
         {/* Server dropdown menu */}
