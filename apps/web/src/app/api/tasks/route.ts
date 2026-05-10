@@ -23,11 +23,14 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
-  const body = await request.json();
-  const { channel_id, title, description, priority, tags, source_message_id, source_thread_parent_id, created_by_id, created_by_type } = body;
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  if (!channel_id || !title || !created_by_id || !created_by_type) {
-    return NextResponse.json({ error: "channel_id, title, created_by_id, and created_by_type required" }, { status: 400 });
+  const body = await request.json();
+  const { channel_id, title, description, priority, tags, source_message_id, source_thread_parent_id } = body;
+
+  if (!channel_id || !title) {
+    return NextResponse.json({ error: "channel_id and title required" }, { status: 400 });
   }
 
   const { data, error } = await supabase
@@ -40,8 +43,8 @@ export async function POST(request: NextRequest) {
       tags: tags ?? [],
       source_message_id: source_message_id ?? null,
       source_thread_parent_id: source_thread_parent_id ?? null,
-      created_by_id,
-      created_by_type,
+      created_by_id: user.id,
+      created_by_type: "human",
       current_gate: "ready_to_execute",
     })
     .select()

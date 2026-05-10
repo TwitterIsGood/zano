@@ -96,6 +96,62 @@ interface TaskDependencyEdge {
   successorTaskId: string;
 }
 
+type TaskStatus =
+  | "todo"
+  | "in_progress"
+  | "blocked"
+  | "in_review"
+  | "changes_requested"
+  | "done"
+  | "archived";
+
+interface TaskTransitionContext {
+  hasBlockingDependencies: boolean;
+  hasPassingVerification: boolean;
+  requiresReview: boolean;
+  hasPassingRequiredReview: boolean;
+}
+
+const allowedTransitions: Record<TaskStatus, TaskStatus[]> = {
+  todo: ["in_progress", "blocked", "archived"],
+  in_progress: ["blocked", "in_review", "done", "changes_requested", "archived"],
+  blocked: ["todo", "in_progress", "archived"],
+  in_review: ["changes_requested", "done", "archived"],
+  changes_requested: ["in_progress", "blocked", "archived"],
+  done: ["archived"],
+  archived: [],
+};
+
+function canTransitionTask(
+  from: TaskStatus,
+  to: TaskStatus,
+  context: TaskTransitionContext
+): { allowed: boolean; reason?: string } {
+  if (!allowedTransitions[from]?.includes(to)) {
+    return { allowed: false, reason: `Invalid transition from ${from} to ${to}` };
+  }
+
+  if ((to === "in_progress" || to === "todo") && context.hasBlockingDependencies) {
+    return { allowed: false, reason: "Task has unresolved blocking dependencies" };
+  }
+
+  if (to === "done") {
+    if (!context.hasPassingVerification) {
+      return { allowed: false, reason: "Task needs passing verification evidence" };
+    }
+
+    if (context.requiresReview && !context.hasPassingRequiredReview) {
+      return { allowed: false, reason: "Task requires review before completion" };
+    }
+  }
+
+  return { allowed: true };
+}
+
+function isTaskStatus(status: string): status is TaskStatus {
+  return status in allowedTransitions;
+}
+
 function hasDependencyCycle(edges: TaskDependencyEdge[]): boolean {
   const graph = new Map<string, string[]>();
 
@@ -817,34 +873,50 @@ async function cmdThreadResolve(flags: Record<string, string>) {
 
 async function resolveTask(flags: Record<string, string>, code = "TASK_NOT_FOUND") {
   const taskNumber = flags.number ? parseInt(flags.number) : null;
-  if (!taskNumber) fail("INVALID_ARG", "Missing --number");
+  const messageId = flags["message-id"] ?? null;
 
-  let query = supabase
-    .from("tasks")
-    .select("id, task_number, status, assignee_id, assignee_type, channel_id")
-    .eq("task_number", taskNumber);
-
-  if (flags.channel) {
-    const { channelId } = await resolveTarget(flags.channel);
-    query = query.eq("channel_id", channelId);
-  } else {
-    const { data: memberships } = await supabase
-      .from("channel_members")
-      .select("channel_id")
-      .eq("member_id", AGENT_ID)
-      .eq("member_type", "agent");
-    if (!memberships || memberships.length === 0) fail(code, "Task not found");
-    query = query.in(
-      "channel_id",
-      memberships.map((m) => m.channel_id)
-    );
+  if (!taskNumber && !messageId) {
+    fail("INVALID_ARG", "Missing --number or --message-id");
   }
 
-  const { data: tasks, error } = await query;
-  if (error) fail(code, error.message);
-  if (!tasks || tasks.length === 0) fail(code, "Task not found");
-  if (tasks.length > 1) fail("AMBIGUOUS_TASK", "Multiple tasks match; provide --channel");
-  return tasks[0];
+  if (taskNumber) {
+    let query = supabase
+      .from("tasks")
+      .select("id, task_number, status, assignee_id, assignee_type, channel_id")
+      .eq("task_number", taskNumber);
+
+    if (flags.channel) {
+      const { channelId } = await resolveTarget(flags.channel);
+      query = query.eq("channel_id", channelId);
+    } else {
+      const { data: memberships } = await supabase
+        .from("channel_members")
+        .select("channel_id")
+        .eq("member_id", AGENT_ID)
+        .eq("member_type", "agent");
+      if (!memberships || memberships.length === 0) fail(code, "Task not found");
+      query = query.in(
+        "channel_id",
+        memberships.map((m) => m.channel_id)
+      );
+    }
+
+    const { data: tasks, error } = await query;
+    if (error) fail(code, error.message);
+    if (!tasks || tasks.length === 0) fail(code, "Task not found");
+    if (tasks.length > 1) fail("AMBIGUOUS_TASK", "Multiple tasks match; provide --channel");
+    return tasks[0];
+  }
+
+  // --message-id fallback: look up task by message_id field
+  const { data: tasksByMsg, error: msgError } = await supabase
+    .from("tasks")
+    .select("id, task_number, status, assignee_id, assignee_type, channel_id")
+    .eq("message_id", messageId!);
+
+  if (msgError) fail(code, msgError.message);
+  if (!tasksByMsg || tasksByMsg.length === 0) fail(code, `Task with message ID ${messageId} not found`);
+  return tasksByMsg[0];
 }
 
 async function resolveTaskByNumber(taskNumber: number, channelId?: string) {
@@ -1028,6 +1100,41 @@ async function cmdTaskUpdate(flags: Record<string, string>) {
 
   if (Object.keys(patch).length === 0) {
     fail("INVALID_ARG", "Provide --status, --summary, --title, or --description");
+  }
+
+  // F7: warn if transition would be blocked by rules
+  if (status && isTaskStatus(status) && isTaskStatus(task.status)) {
+    const [depsResult, verificationsResult] = await Promise.all([
+      supabase
+        .from("task_dependencies")
+        .select("predecessor_task_id, tasks!task_dependencies_predecessor_task_id_fkey(status)")
+        .eq("successor_task_id", task.id)
+        .eq("dependency_type", "blocks"),
+      supabase
+        .from("task_verifications")
+        .select("id")
+        .eq("task_id", task.id)
+        .eq("passed", true)
+        .limit(1),
+    ]);
+
+    const hasBlockingDeps = (depsResult.data ?? []).some((row) => {
+      const joined = row as unknown as { tasks?: { status?: string } | { status?: string }[] };
+      const predecessor = Array.isArray(joined.tasks) ? joined.tasks[0] : joined.tasks;
+      return predecessor?.status !== "done" && predecessor?.status !== "archived";
+    });
+
+    const context: TaskTransitionContext = {
+      hasBlockingDependencies: hasBlockingDeps,
+      hasPassingVerification: (verificationsResult.data ?? []).length > 0,
+      requiresReview: false,
+      hasPassingRequiredReview: false,
+    };
+
+    const check = canTransitionTask(task.status, status, context);
+    if (!check.allowed) {
+      process.stderr.write(`WARNING: Transition from ${task.status} to ${status} would be blocked by server rules: ${check.reason}\n`);
+    }
   }
 
   const fromStatus = task.status;

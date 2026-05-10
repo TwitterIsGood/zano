@@ -5,18 +5,15 @@ interface Params {
   params: Promise<{ taskId: string }>;
 }
 
-export async function POST(request: NextRequest, { params }: Params) {
+export async function POST(_request: NextRequest, { params }: Params) {
   const { taskId } = await params;
   const supabase = await createClient();
-  const { assignee_id, assignee_type } = await request.json();
-
-  if (!assignee_id || !assignee_type) {
-    return NextResponse.json({ error: "assignee_id and assignee_type required" }, { status: 400 });
-  }
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { data, error } = await supabase
     .from("tasks")
-    .update({ assignee_id, assignee_type, status: "in_progress", started_at: new Date().toISOString(), current_gate: "executing" })
+    .update({ assignee_id: user.id, assignee_type: "human", status: "in_progress", started_at: new Date().toISOString(), current_gate: "executing" })
     .eq("id", taskId)
     .is("assignee_id", null)
     .select()

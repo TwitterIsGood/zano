@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 interface Params {
   params: Promise<{ messageId: string }>;
@@ -8,18 +9,17 @@ interface Params {
 export async function POST(request: NextRequest, { params }: Params) {
   const { messageId } = await params;
   const supabase = await createClient();
-  const body = await request.json();
-  const { resolved, actor_id, actor_type } = body;
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  if (!actor_id || !actor_type) {
-    return NextResponse.json({ error: "actor_id and actor_type required" }, { status: 400 });
-  }
+  const body = await request.json();
+  const { resolved } = body;
 
   const patch = resolved
     ? {
         thread_resolved_at: new Date().toISOString(),
-        thread_resolved_by: actor_id,
-        thread_resolved_by_type: actor_type,
+        thread_resolved_by: user.id,
+        thread_resolved_by_type: "human",
       }
     : {
         thread_resolved_at: null,
@@ -27,7 +27,8 @@ export async function POST(request: NextRequest, { params }: Params) {
         thread_resolved_by_type: null,
       };
 
-  const { data, error } = await supabase
+  const admin = createAdminClient();
+  const { data, error } = await admin
     .from("messages")
     .update(patch)
     .eq("id", messageId)

@@ -18,6 +18,23 @@ export async function POST(request: NextRequest, { params }: Params) {
   const { predecessor_task_id, dependency_type } = await request.json();
   if (!predecessor_task_id) return NextResponse.json({ error: "predecessor_task_id required" }, { status: 400 });
 
+  const { data: successor, error: successorError } = await supabase
+    .from("tasks")
+    .select("id, channel_id")
+    .eq("id", taskId)
+    .single();
+  if (successorError || !successor) return NextResponse.json({ error: "Successor task not found" }, { status: 404 });
+
+  const { data: predecessor, error: predecessorError } = await supabase
+    .from("tasks")
+    .select("id, channel_id")
+    .eq("id", predecessor_task_id)
+    .single();
+  if (predecessorError || !predecessor) return NextResponse.json({ error: "Predecessor task not found" }, { status: 400 });
+  if (predecessor.channel_id !== successor.channel_id) {
+    return NextResponse.json({ error: "Dependency tasks must be in the same channel" }, { status: 400 });
+  }
+
   const { data: existing, error: existingError } = await supabase.from("task_dependencies").select("predecessor_task_id, successor_task_id");
   if (existingError) return NextResponse.json({ error: existingError.message }, { status: 500 });
 
