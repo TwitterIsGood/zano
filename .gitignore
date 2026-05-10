@@ -14,3 +14,4 @@ supabase/.branches/
 # OS / editor cruft
 .DS_Store
 *.log
+.worktrees/
