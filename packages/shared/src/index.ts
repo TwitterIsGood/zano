@@ -351,3 +351,72 @@ export type CliCommand =
   | { action: "task_claim"; taskNumber?: number; messageId?: string }
   | { action: "task_update"; taskNumber: number; status: TaskStatus }
   | { action: "server_info" };
+
+export type MemberType = "human" | "agent";
+export type MemberActivityActorType = "human" | "agent" | "system" | "bridge";
+
+export type MemberActivityEventType =
+  | "message.sent"
+  | "thread.replied"
+  | "thread.resolved"
+  | "thread.reopened"
+  | "channel.joined"
+  | "server.joined"
+  | "task.created"
+  | "task.claimed"
+  | "task.unclaimed"
+  | "task.status_changed"
+  | "task.updated"
+  | "task.commented"
+  | "task.artifact_added"
+  | "task.reviewed"
+  | "task.verified"
+  | "agent.started"
+  | "agent.received_message"
+  | "agent.thinking"
+  | "agent.working"
+  | "agent.tool_use"
+  | "agent.output"
+  | "agent.idle"
+  | "agent.error"
+  | "agent.disconnected"
+  | "agent.status_changed"
+  | "agent.created"
+  | "agent.updated"
+  | "agent.reset"
+  | "agent.deleted"
+  | "human.profile_updated";
+
+export interface MemberActivityEvent {
+  id: string;
+  server_id: string | null;
+  channel_id: string | null;
+  actor_id: string;
+  actor_type: MemberActivityActorType;
+  event_type: MemberActivityEventType;
+  subject_type: string | null;
+  subject_id: string | null;
+  target_id: string | null;
+  target_type: string | null;
+  message_id: string | null;
+  thread_parent_id: string | null;
+  task_id: string | null;
+  agent_id: string | null;
+  label: string | null;
+  summary: string | null;
+  metadata: Record<string, unknown>;
+  visibility: "public" | "server" | "channel" | "dm" | "private";
+  dedupe_key: string | null;
+  occurred_at: string;
+  created_at: string;
+}
+
+export interface HumanMember {
+  id: string;
+  display_name: string | null;
+  email: string | null;
+  avatar_url: string | null;
+  role?: string | null;
+  joined_at?: string | null;
+  created_at: string | null;
+}
