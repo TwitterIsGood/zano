@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { useRouter, useParams } from "next/navigation";
+import { useRouter, useParams, usePathname } from "next/navigation";
 import { CreateAgentDialog } from "./create-agent-dialog";
 import { CreateChannelDialog } from "./create-channel-dialog";
 import { CreateServerDialog } from "./create-server-dialog";
@@ -11,11 +11,11 @@ import { EditChannelDialog } from "./edit-channel-dialog";
 import { MachineDetailDialog } from "./machine-detail-dialog";
 import { ContextMenu } from "./context-menu";
 import { useAgentActivity } from "@/hooks/use-agent-activity";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { ChevronDownIcon, CheckIcon, PlusIcon, PencilIcon, LogOutIcon, MonitorIcon, ClipboardList } from "lucide-react";
 import { GeneratedAvatar } from "./generated-avatar";
 import { NotificationsMenu } from "./notifications-menu";
+import type { HumanMember } from "@zano/shared";
 
 interface Server {
   id: string;
@@ -62,6 +62,7 @@ export interface SidebarInitialData {
   channels: Channel[];
   agents: Agent[];
   dmMembers: Array<{ channel_id: string; member_id: string }>;
+  humans: HumanMember[];
 }
 
 function splitChannels(channels: Channel[], agents: Agent[], dmMembers: SidebarInitialData["dmMembers"]) {
@@ -98,6 +99,7 @@ export function Sidebar({
   const [dmChannels, setDmChannels] = useState<DmChannel[]>(initialChannels.dms);
   const [groupChannels, setGroupChannels] = useState<Channel[]>(initialChannels.groups);
   const [agents, setAgents] = useState<Agent[]>(initialData.agents);
+  const [humans, setHumans] = useState<HumanMember[]>(initialData.humans);
   const [userId, setUserId] = useState(initialData.user.id);
   const [userEmail, setUserEmail] = useState(initialData.user.email);
   const [userName, setUserName] = useState(initialData.user.display_name);
@@ -124,10 +126,14 @@ export function Sidebar({
   const supabase = createClient();
   const router = useRouter();
   const params = useParams();
+  const pathname = usePathname();
   const agentActivities = useAgentActivity();
 
   // Determine active channel from URL
   const activeChannelId = params.channelId as string | undefined;
+  const activeMemberType = params.memberType as string | undefined;
+  const activeMemberId = params.memberId as string | undefined;
+  const isDmRoute = pathname.startsWith(`/s/${serverSlug}/dm/`);
 
   const loadData = useCallback(async () => {
     const res = await fetch(`/api/sidebar?server_id=${serverId}`);
@@ -148,6 +154,7 @@ export function Sidebar({
 
     const agentList = (data.agents || []) as Agent[];
     setAgents(agentList);
+    setHumans((data.humans || []) as HumanMember[]);
 
     const split = splitChannels(data.channels as Channel[], agentList, data.dmMembers);
     setDmChannels(split.dms);
@@ -265,6 +272,10 @@ export function Sidebar({
   function navigateToChannel(channel: Channel) {
     const prefix = channel.type === "dm" ? "dm" : "channel";
     router.push(`/s/${serverSlug}/${prefix}/${channel.id}`);
+  }
+
+  function navigateToMember(memberType: "agent" | "human", memberId: string) {
+    router.push(`/s/${serverSlug}/member/${memberType}/${memberId}`);
   }
 
   async function handleLogout() {
@@ -388,39 +399,78 @@ export function Sidebar({
             </button>
           </div>
           <div className="flex flex-col gap-[2px]">
-            {dmChannels.map((dm) => (
-              <button
-                key={dm.id}
-                onClick={() => navigateToChannel(dm)}
-                className={`flex w-full items-center gap-2 rounded-lg px-2 h-[32px] text-[13px] transition-all ${
-                  activeChannelId === dm.id
-                    ? "bg-sanda-3 text-accent-foreground font-medium"
-                    : "text-muted-foreground hover:bg-sanda-3 hover:text-accent-foreground"
-                }`}
-              >
-                {/* Agent avatar */}
-                <div className="relative flex-shrink-0 size-6">
-                  <GeneratedAvatar id={dm.agent?.id || dm.id} name={dm.agent?.display_name || dm.name} size="xs" />
-                  {/* Status dot */}
-                  <div
-                    className={`absolute bottom-0 right-0 h-1.5 w-1.5 translate-x-[1px] translate-y-[1px] rounded-full border-[1.5px] border-background ${getStatusDot(dm.agent?.id || "")}`}
-                    title={(() => {
-                      const act = agentActivities.get(dm.agent?.id || "");
-                      if (act?.label && act.activity !== "idle") {
-                        return act.detail ? `${act.label}: ${act.detail}` : act.label;
-                      }
-                      return bridgeOnline ? "Online" : "Offline";
-                    })()}
-                  />
-                </div>
+            {dmChannels.map((dm) => {
+              const agentId = dm.agent?.id;
+              const isActive =
+                (agentId && activeMemberType === "agent" && activeMemberId === agentId) ||
+                (isDmRoute && activeChannelId === dm.id);
 
-                <div className="flex-1 min-w-0 text-left">
-                  <div className="truncate">
-                    {dm.agent?.display_name || dm.name}
+              return (
+                <button
+                  key={dm.id}
+                  onClick={() => agentId && navigateToMember("agent", agentId)}
+                  className={`flex w-full items-center gap-2 rounded-lg px-2 h-[32px] text-[13px] transition-all ${
+                    isActive
+                      ? "bg-sanda-3 text-accent-foreground font-medium"
+                      : "text-muted-foreground hover:bg-sanda-3 hover:text-accent-foreground"
+                  }`}
+                >
+                  {/* Agent avatar */}
+                  <div className="relative flex-shrink-0 size-6">
+                    <GeneratedAvatar id={dm.agent?.id || dm.id} name={dm.agent?.display_name || dm.name} size="xs" />
+                    {/* Status dot */}
+                    <div
+                      className={`absolute bottom-0 right-0 h-1.5 w-1.5 translate-x-[1px] translate-y-[1px] rounded-full border-[1.5px] border-background ${getStatusDot(dm.agent?.id || "")}`}
+                      title={(() => {
+                        const act = agentActivities.get(dm.agent?.id || "");
+                        if (act?.label && act.activity !== "idle") {
+                          return act.detail ? `${act.label}: ${act.detail}` : act.label;
+                        }
+                        return bridgeOnline ? "Online" : "Offline";
+                      })()}
+                    />
                   </div>
-                </div>
-              </button>
-            ))}
+
+                  <div className="flex-1 min-w-0 text-left">
+                    <div className="truncate">
+                      {dm.agent?.display_name || dm.name}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Humans includes the current user so self-profile navigation works. */}
+        <div>
+          <div className="mb-1.5 px-2 flex items-center justify-between h-[22px]">
+            <span className="text-[12px] font-medium text-muted-foreground">
+              Humans
+            </span>
+          </div>
+          <div className="flex flex-col gap-[2px]">
+            {humans.map((human) => {
+              const label = human.display_name || human.email || "Unknown human";
+              const isActive = activeMemberType === "human" && activeMemberId === human.id;
+
+              return (
+                <button
+                  key={human.id}
+                  onClick={() => navigateToMember("human", human.id)}
+                  className={`flex w-full items-center gap-2 rounded-lg px-2 h-[32px] text-[13px] transition-all ${
+                    isActive
+                      ? "bg-sanda-3 text-accent-foreground font-medium"
+                      : "text-muted-foreground hover:bg-sanda-3 hover:text-accent-foreground"
+                  }`}
+                >
+                  <GeneratedAvatar id={human.id} name={label} size="xs" />
+                  <div className="flex-1 min-w-0 text-left">
+                    <div className="truncate">{label}</div>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
 

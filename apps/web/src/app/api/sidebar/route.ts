@@ -30,23 +30,35 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const [profileResult, membershipsResult, keysResult, channelMembershipsResult, agentsResult] =
-    await Promise.all([
-      admin.from("profiles").select("display_name").eq("id", user.id).maybeSingle(),
-      admin
-        .from("server_members")
-        .select("server_id")
-        .eq("member_id", user.id)
-        .eq("member_type", "human"),
-      admin
-        .from("machine_keys")
-        .select("id, name, key_prefix, key_value, last_used_at")
-        .eq("server_id", serverId)
-        .eq("user_id", user.id)
-        .order("created_at"),
-      admin.from("channel_members").select("channel_id").eq("member_id", user.id),
-      admin.from("agents").select("*").eq("server_id", serverId).order("created_at"),
-    ]);
+  const [
+    profileResult,
+    membershipsResult,
+    keysResult,
+    channelMembershipsResult,
+    agentsResult,
+    humanMembershipsResult,
+  ] = await Promise.all([
+    admin.from("profiles").select("display_name").eq("id", user.id).maybeSingle(),
+    admin
+      .from("server_members")
+      .select("server_id")
+      .eq("member_id", user.id)
+      .eq("member_type", "human"),
+    admin
+      .from("machine_keys")
+      .select("id, name, key_prefix, key_value, last_used_at")
+      .eq("server_id", serverId)
+      .eq("user_id", user.id)
+      .order("created_at"),
+    admin.from("channel_members").select("channel_id").eq("member_id", user.id),
+    admin.from("agents").select("*").eq("server_id", serverId).order("created_at"),
+    admin
+      .from("server_members")
+      .select("member_id, role, joined_at")
+      .eq("server_id", serverId)
+      .eq("member_type", "human")
+      .order("joined_at"),
+  ]);
 
   const serverIds = membershipsResult.data?.map((m) => m.server_id) ?? [];
   const { data: servers } = serverIds.length
@@ -66,13 +78,39 @@ export async function GET(request: NextRequest) {
   const dmChannelIds = (channels ?? [])
     .filter((ch) => ch.type === "dm")
     .map((ch) => ch.id);
-  const { data: dmMembers } = dmChannelIds.length
-    ? await admin
-        .from("channel_members")
-        .select("channel_id, member_id, member_type")
-        .in("channel_id", dmChannelIds)
-        .eq("member_type", "agent")
-    : { data: [] };
+  const humanMemberIds = humanMembershipsResult.data?.map((member) => member.member_id) ?? [];
+
+  const [dmMembersResult, humanProfilesResult] = await Promise.all([
+    dmChannelIds.length
+      ? admin
+          .from("channel_members")
+          .select("channel_id, member_id, member_type")
+          .in("channel_id", dmChannelIds)
+          .eq("member_type", "agent")
+      : Promise.resolve({ data: [] }),
+    humanMemberIds.length
+      ? admin
+          .from("profiles")
+          .select("id, email, display_name, avatar_url, created_at")
+          .in("id", humanMemberIds)
+      : Promise.resolve({ data: [] }),
+  ]);
+
+  const humanProfilesById = new Map(
+    (humanProfilesResult.data ?? []).map((profile) => [profile.id, profile])
+  );
+  const humans = (humanMembershipsResult.data ?? []).map((membership) => {
+    const profile = humanProfilesById.get(membership.member_id);
+    return {
+      id: membership.member_id,
+      display_name: profile?.display_name ?? null,
+      email: profile?.email ?? null,
+      avatar_url: profile?.avatar_url ?? null,
+      role: membership.role,
+      joined_at: membership.joined_at,
+      created_at: profile?.created_at ?? null,
+    };
+  });
 
   return NextResponse.json({
     user: {
@@ -84,6 +122,7 @@ export async function GET(request: NextRequest) {
     machineKeys: keysResult.data ?? [],
     channels: channels ?? [],
     agents: agentsResult.data ?? [],
-    dmMembers: dmMembers ?? [],
+    dmMembers: dmMembersResult.data ?? [],
+    humans,
   });
 }
