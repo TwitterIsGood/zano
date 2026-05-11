@@ -8,6 +8,7 @@ import { GeneratedAvatar } from "@/components/generated-avatar";
 import { MessageArea } from "@/components/message-area";
 import { MemberActivityTab } from "@/components/member-activity-tab";
 import { MemberProfileTab } from "@/components/member-profile-tab";
+import { MemberWorkspaceTab } from "@/components/member-workspace-tab";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { createClient } from "@/lib/supabase/client";
 
@@ -60,7 +61,7 @@ export function MemberDetailPage({
   creatorProfile,
   humanMembership,
 }: MemberDetailPageProps) {
-  const [activeTab, setActiveTab] = useState<"profile" | "activity">("profile");
+  const [activeTab, setActiveTab] = useState<"profile" | "activity" | "workspace">("profile");
   const [mode, setMode] = useState<"detail" | "message">("detail");
   const [messageChannel, setMessageChannel] = useState<Channel | null>(null);
   const [dmError, setDmError] = useState<string | null>(null);
@@ -177,10 +178,11 @@ export function MemberDetailPage({
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col gap-4 px-6 py-4">
-          <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "profile" | "activity")}>
+          <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "profile" | "activity" | "workspace")}>
             <TabsList>
               <TabsTrigger value="profile">Profile</TabsTrigger>
               <TabsTrigger value="activity">Activity</TabsTrigger>
+              {memberType === "agent" ? <TabsTrigger value="workspace">Workspace</TabsTrigger> : null}
             </TabsList>
             <TabsContent value="profile" className="mt-4">
               <MemberProfileTab
@@ -200,6 +202,11 @@ export function MemberDetailPage({
                 memberId={memberId}
               />
             </TabsContent>
+            {memberType === "agent" ? (
+              <TabsContent value="workspace" className="mt-4">
+                <MemberWorkspaceTab memberType={memberType} agentId={memberId} />
+              </TabsContent>
+            ) : null}
           </Tabs>
         </div>
       )}
