@@ -65,20 +65,53 @@ export async function GET(request: NextRequest) {
   const limit = Math.min(Math.max(Number.isNaN(parsedLimit) ? 50 : parsedLimit, 1), 100);
 
   const admin = createAdminClient();
-  let query = admin
-    .from("member_activity_events")
-    .select("*")
-    .eq("server_id", serverId)
-    .in("visibility", ["server", "public"])
-    .order("occurred_at", { ascending: false })
-    .limit(limit);
+  const { data: channelMemberships, error: channelMembershipError } = await admin
+    .from("channel_members")
+    .select("channel_id")
+    .eq("member_id", user.id)
+    .eq("member_type", "human");
 
-  query = query.eq("actor_type", actorType).eq("actor_id", actorId);
-
-  const { data, error } = await query;
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  if (channelMembershipError) {
+    return NextResponse.json({ error: channelMembershipError.message }, { status: 500 });
   }
 
-  return NextResponse.json({ events: data ?? [] });
+  const channelIds = (channelMemberships ?? []).map((row) => row.channel_id);
+
+  const [serverEventsResult, channelEventsResult] = await Promise.all([
+    admin
+      .from("member_activity_events")
+      .select("*")
+      .eq("server_id", serverId)
+      .eq("actor_type", actorType)
+      .eq("actor_id", actorId)
+      .in("visibility", ["server", "public"])
+      .order("occurred_at", { ascending: false })
+      .limit(limit),
+    channelIds.length
+      ? admin
+          .from("member_activity_events")
+          .select("*")
+          .eq("server_id", serverId)
+          .eq("actor_type", actorType)
+          .eq("actor_id", actorId)
+          .in("visibility", ["channel", "dm"])
+          .in("channel_id", channelIds)
+          .order("occurred_at", { ascending: false })
+          .limit(limit)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+
+  if (serverEventsResult.error) {
+    return NextResponse.json({ error: serverEventsResult.error.message }, { status: 500 });
+  }
+
+  if (channelEventsResult.error) {
+    return NextResponse.json({ error: channelEventsResult.error.message }, { status: 500 });
+  }
+
+  const events = [...(serverEventsResult.data ?? []), ...(channelEventsResult.data ?? [])]
+    .sort((a, b) => new Date(b.occurred_at).getTime() - new Date(a.occurred_at).getTime())
+    .slice(0, limit);
+
+  return NextResponse.json({ events });
 }

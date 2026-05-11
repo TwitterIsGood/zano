@@ -118,10 +118,27 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ tasks: [] });
   }
 
+  const { data: memberships, error: channelMembershipError } = await admin
+    .from("channel_members")
+    .select("channel_id")
+    .eq("member_id", user.id)
+    .eq("member_type", "human");
+
+  if (channelMembershipError) {
+    return NextResponse.json({ error: channelMembershipError.message }, { status: 500 });
+  }
+
+  const channelIds = (memberships ?? []).map((row) => row.channel_id);
+
+  if (channelIds.length === 0) {
+    return NextResponse.json({ tasks: [] });
+  }
+
   const { data, error } = await admin
     .from("tasks")
     .select("*, channels!inner(server_id)")
     .in("id", Array.from(taskIds))
+    .in("channel_id", channelIds)
     .eq("channels.server_id", serverId)
     .order("updated_at", { ascending: false });
 

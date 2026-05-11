@@ -1,20 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { deriveTaskVisibility } from "@/lib/task-activity";
 
 async function recordTaskClaimedActivity(userId: string, task: { id: string; channel_id: string; title: string }) {
   try {
     const admin = createAdminClient();
-    const { data: channel, error: channelError } = await admin
-      .from("channels")
-      .select("server_id")
-      .eq("id", task.channel_id)
-      .single();
-
-    if (channelError) throw channelError;
+    const { visibility, channel_id, server_id } = await deriveTaskVisibility(admin, task.channel_id);
 
     const { error } = await admin.from("member_activity_events").insert({
-      server_id: channel.server_id,
+      server_id,
       actor_id: userId,
       actor_type: "human",
       event_type: "task.claimed",
@@ -27,7 +22,8 @@ async function recordTaskClaimedActivity(userId: string, task: { id: string; cha
       label: "Claimed task",
       summary: `Claimed task "${task.title}"`,
       metadata: {},
-      visibility: "server",
+      visibility,
+      channel_id,
       dedupe_key: `task:${task.id}:claimed:${userId}:${Date.now()}`,
     });
 

@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { checkTaskTransition } from "@/lib/collaboration/task-transitions";
 import type { TaskStatus } from "@zano/shared";
+import { deriveTaskVisibility } from "@/lib/task-activity";
 
 async function recordTaskStatusChangedActivity(
   userId: string,
@@ -13,16 +14,10 @@ async function recordTaskStatusChangedActivity(
 ) {
   try {
     const admin = createAdminClient();
-    const { data: channel, error: channelError } = await admin
-      .from("channels")
-      .select("server_id")
-      .eq("id", task.channel_id)
-      .single();
-
-    if (channelError) throw channelError;
+    const { visibility, channel_id, server_id } = await deriveTaskVisibility(admin, task.channel_id);
 
     const { error } = await admin.from("member_activity_events").insert({
-      server_id: channel.server_id,
+      server_id,
       actor_id: userId,
       actor_type: "human",
       event_type: "task.status_changed",
@@ -35,7 +30,8 @@ async function recordTaskStatusChangedActivity(
       label: "Changed task status",
       summary: `Changed task "${task.title}" from ${from} to ${to}`,
       metadata: { title: task.title, from_status: from, to_status: to, reason: reason ?? null },
-      visibility: "server",
+      visibility,
+      channel_id,
       dedupe_key: `task:${task.id}:status:${to}:${Date.now()}`,
     });
 
