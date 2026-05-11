@@ -8,6 +8,7 @@ import { GeneratedAvatar } from "@/components/generated-avatar";
 import { MessageArea } from "@/components/message-area";
 import { MemberActivityTab } from "@/components/member-activity-tab";
 import { MemberProfileTab } from "@/components/member-profile-tab";
+import { MemberTasksTab } from "@/components/member-tasks-tab";
 import { MemberWorkspaceTab } from "@/components/member-workspace-tab";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { createClient } from "@/lib/supabase/client";
@@ -61,7 +62,7 @@ export function MemberDetailPage({
   creatorProfile,
   humanMembership,
 }: MemberDetailPageProps) {
-  const [activeTab, setActiveTab] = useState<"profile" | "activity" | "workspace">("profile");
+  const [activeTab, setActiveTab] = useState<"profile" | "activity" | "tasks" | "workspace">("profile");
   const [mode, setMode] = useState<"detail" | "message">("detail");
   const [messageChannel, setMessageChannel] = useState<Channel | null>(null);
   const [dmError, setDmError] = useState<string | null>(null);
@@ -178,10 +179,11 @@ export function MemberDetailPage({
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col gap-4 px-6 py-4">
-          <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "profile" | "activity" | "workspace")}>
+          <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "profile" | "activity" | "tasks" | "workspace")}>
             <TabsList>
               <TabsTrigger value="profile">Profile</TabsTrigger>
               <TabsTrigger value="activity">Activity</TabsTrigger>
+              <TabsTrigger value="tasks">Tasks</TabsTrigger>
               {memberType === "agent" ? <TabsTrigger value="workspace">Workspace</TabsTrigger> : null}
             </TabsList>
             <TabsContent value="profile" className="mt-4">
@@ -198,6 +200,13 @@ export function MemberDetailPage({
               <MemberActivityTab
                 serverId={serverId}
                 serverSlug={serverSlug}
+                memberType={memberType}
+                memberId={memberId}
+              />
+            </TabsContent>
+            <TabsContent value="tasks" className="mt-4">
+              <MemberTasksTab
+                serverId={serverId}
                 memberType={memberType}
                 memberId={memberId}
               />
