@@ -34,6 +34,7 @@ interface DbAgent {
   system_prompt: string | null;
   model: string;
   status: string;
+  server_id?: string;
 }
 
 interface DbChannelMember {

@@ -578,7 +578,47 @@ after update of status on public.agents
 for each row execute function public.record_agent_status_changed();
 
 -- -----------------------------------------------------------
--- Step 9: Realtime publication
+-- Step 9: Bridge activity insert policy
+-- -----------------------------------------------------------
+
+drop policy if exists "Bridge can insert agent runtime activity" on public.member_activity_events;
+create policy "Bridge can insert agent runtime activity"
+  on public.member_activity_events for insert
+  to authenticated
+  with check (
+    actor_type = 'agent'
+    and agent_id = actor_id
+    and channel_id is null
+    and message_id is null
+    and thread_parent_id is null
+    and task_id is null
+    and subject_type is null
+    and subject_id is null
+    and target_type is null
+    and target_id is null
+    and visibility = 'server'
+    and event_type in (
+      'agent.started',
+      'agent.received_message',
+      'agent.thinking',
+      'agent.working',
+      'agent.tool_use',
+      'agent.output',
+      'agent.idle',
+      'agent.error',
+      'agent.disconnected'
+    )
+    and exists (
+      select 1
+      from public.agents a
+      where a.id = actor_id
+        and a.owner_id = auth.uid()
+        and a.server_id = member_activity_events.server_id
+    )
+  );
+
+-- -----------------------------------------------------------
+-- Step 10: Realtime publication
 -- -----------------------------------------------------------
 
 do $$

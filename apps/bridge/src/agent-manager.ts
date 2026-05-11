@@ -21,6 +21,7 @@ interface AgentRecord {
   system_prompt: string | null;
   model: string;
   status: string;
+  server_id?: string;
 }
 
 interface AgentSession {
@@ -28,6 +29,7 @@ interface AgentSession {
   name: string;
   displayName: string;
   workDir: string;
+  serverId?: string;
 }
 
 interface QueuedMessage {
@@ -59,6 +61,7 @@ export class AgentManager {
   private supabaseKey: string;
   private authToken: string;
   private activityChannel: RealtimeChannel;
+  private lastPersistedActivity = new Map<string, string>();
 
   constructor(
     agentsDir: string,
@@ -97,6 +100,42 @@ export class AgentManager {
       config: { broadcast: { self: false } },
     });
     this.activityChannel.subscribe();
+  }
+
+  private async persistActivityEvent(
+    agentId: string,
+    eventType: string,
+    label: string,
+    summary: string
+  ) {
+    const key = `${agentId}:${eventType}:${label}:${summary}`;
+    if (this.lastPersistedActivity.get(agentId) === key) return;
+
+    const session = this.sessions.get(agentId);
+    if (!session?.serverId) return;
+
+    try {
+      const { error } = await this.supabase.from("member_activity_events").insert({
+        server_id: session.serverId,
+        actor_id: agentId,
+        actor_type: "agent",
+        event_type: eventType,
+        label,
+        summary: summary ? summary.slice(0, 500) : null,
+        metadata: { runtime: "claude-code" },
+        visibility: "server",
+        agent_id: agentId,
+      });
+
+      if (error) {
+        console.warn("[AgentManager] Failed to persist activity", error.message || error);
+        return;
+      }
+
+      this.lastPersistedActivity.set(agentId, key);
+    } catch (error) {
+      console.warn("[AgentManager] Failed to persist activity", error);
+    }
   }
 
   /** Broadcast agent activity to all connected frontend clients */
@@ -141,6 +180,12 @@ export class AgentManager {
       event: "activity",
       payload: { agentId, activity, label, detail },
     });
+
+    // Persist broadcast activity with correct event mapping
+    const eventType = activity === "working" && label && label !== "Working"
+      ? "agent.tool_use"
+      : `agent.${activity}`;
+    void this.persistActivityEvent(agentId, eventType, label || activity, detail || "");
   }
 
   /**
@@ -208,6 +253,8 @@ export class AgentManager {
     const text = agentProc.pendingText.trim();
     if (text) {
       this.broadcastActivity(agentId, "thinking", "", text);
+      // Keep output as a semantic event in addition to the live thinking activity.
+      void this.persistActivityEvent(agentId, "agent.output", "Output", text);
     }
     agentProc.pendingText = "";
   }
@@ -263,6 +310,7 @@ ${agent.description || agent.display_name}
       name: agent.name,
       displayName: agent.display_name,
       workDir,
+      serverId: agent.server_id,
     });
 
     // Update workspace_path in DB
@@ -344,6 +392,8 @@ ${agent.description || agent.display_name}
       `  [${displayName}] Forwarding message (${userMessage.length} chars)...`
     );
     this.broadcastActivity(agentId, "working", "Working", "Message received");
+    // Keep received_message as a semantic event in addition to the live working activity.
+    void this.persistActivityEvent(agentId, "agent.received_message", "Message received", "");
     agentProc.proc.stdin?.write(stdinMsg + "\n");
   }
 
@@ -529,6 +579,7 @@ ${agent.description || agent.display_name}
 
     // Broadcast initial activity
     this.broadcastActivity(agentId, "working", "Working", "Starting…");
+    void this.persistActivityEvent(agentId, "agent.started", "Started", "");
 
     // Parse stdout line by line for stream-json events
     proc.stdout?.on("data", (chunk: Buffer) => {
@@ -554,12 +605,14 @@ ${agent.description || agent.display_name}
       console.error(
         `  [${session.displayName}] Process error: ${err.message}`
       );
+      void this.persistActivityEvent(agentId, "agent.error", "Error", err.message);
     });
 
     proc.on("close", (code: number | null) => {
       console.log(
         `  [${session.displayName}] Process exited with code ${code}`
       );
+      void this.persistActivityEvent(agentId, "agent.disconnected", "Disconnected", `Process exited with code ${code}`);
       // Reject any remaining queued messages
       for (const queued of agentProc.messageQueue) {
         queued.reject(new Error(`Agent process exited with code ${code}`));
