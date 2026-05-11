@@ -4,6 +4,47 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { checkTaskTransition } from "@/lib/collaboration/task-transitions";
 import type { TaskStatus } from "@zano/shared";
 
+async function recordTaskStatusChangedActivity(
+  userId: string,
+  task: { id: string; channel_id: string; title: string },
+  from: TaskStatus,
+  to: TaskStatus,
+  reason: string | null | undefined
+) {
+  try {
+    const admin = createAdminClient();
+    const { data: channel, error: channelError } = await admin
+      .from("channels")
+      .select("server_id")
+      .eq("id", task.channel_id)
+      .single();
+
+    if (channelError) throw channelError;
+
+    const { error } = await admin.from("member_activity_events").insert({
+      server_id: channel.server_id,
+      actor_id: userId,
+      actor_type: "human",
+      event_type: "task.status_changed",
+      subject_type: "task",
+      subject_id: task.id,
+      target_type: null,
+      target_id: null,
+      task_id: task.id,
+      agent_id: null,
+      label: "Changed task status",
+      summary: `Changed task "${task.title}" from ${from} to ${to}`,
+      metadata: { title: task.title, from_status: from, to_status: to, reason: reason ?? null },
+      visibility: "server",
+      dedupe_key: `task:${task.id}:status:${to}:${Date.now()}`,
+    });
+
+    if (error) throw error;
+  } catch (error) {
+    console.error("Failed to record task.status_changed activity", error);
+  }
+}
+
 interface Params {
   params: Promise<{ taskId: string }>;
 }
@@ -50,6 +91,8 @@ export async function POST(request: NextRequest, { params }: Params) {
   });
 
   if (eventError) return NextResponse.json({ error: eventError.message }, { status: 500 });
+
+  await recordTaskStatusChangedActivity(user.id, data, from, to, reason);
 
   return NextResponse.json({ task: data });
 }

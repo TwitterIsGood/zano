@@ -2,6 +2,33 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
+async function recordAgentCreatedActivity(userId: string, agent: { id: string; display_name: string; server_id: string }) {
+  try {
+    const admin = createAdminClient();
+    const { error } = await admin.from("member_activity_events").insert({
+      server_id: agent.server_id,
+      actor_id: userId,
+      actor_type: "human",
+      event_type: "agent.created",
+      subject_type: "agent",
+      subject_id: agent.id,
+      target_type: null,
+      target_id: null,
+      task_id: null,
+      agent_id: agent.id,
+      label: "Created agent",
+      summary: `Created agent “${agent.display_name}”`,
+      metadata: { name: agent.display_name },
+      visibility: "server",
+      dedupe_key: `agent:${agent.id}:created`,
+    });
+
+    if (error) throw error;
+  } catch (error) {
+    console.error("Failed to record agent.created activity", error);
+  }
+}
+
 // GET /api/agents — list user's agents
 export async function GET() {
   const supabase = await createClient();
@@ -116,6 +143,8 @@ export async function POST(request: NextRequest) {
     member_type: "agent",
     role: "member",
   });
+
+  await recordAgentCreatedActivity(user.id, agent);
 
   return NextResponse.json({ agent, channel: dmChannel });
 }

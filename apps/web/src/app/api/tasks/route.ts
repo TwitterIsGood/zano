@@ -1,5 +1,41 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+
+async function recordTaskCreatedActivity(userId: string, task: { id: string; channel_id: string; title: string }) {
+  try {
+    const admin = createAdminClient();
+    const { data: channel, error: channelError } = await admin
+      .from("channels")
+      .select("server_id")
+      .eq("id", task.channel_id)
+      .single();
+
+    if (channelError) throw channelError;
+
+    const { error } = await admin.from("member_activity_events").insert({
+      server_id: channel.server_id,
+      actor_id: userId,
+      actor_type: "human",
+      event_type: "task.created",
+      subject_type: "task",
+      subject_id: task.id,
+      target_type: null,
+      target_id: null,
+      task_id: task.id,
+      agent_id: null,
+      label: "Created task",
+      summary: `Created task “${task.title}”`,
+      metadata: { title: task.title },
+      visibility: "server",
+      dedupe_key: `task:${task.id}:created`,
+    });
+
+    if (error) throw error;
+  } catch (error) {
+    console.error("Failed to record task.created activity", error);
+  }
+}
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
@@ -51,5 +87,8 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  await recordTaskCreatedActivity(user.id, data);
+
   return NextResponse.json({ task: data });
 }
