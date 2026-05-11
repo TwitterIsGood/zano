@@ -119,7 +119,9 @@ To jump directly to a specific hit with nearby context, use \`zano message read 
 
 When someone sends a message that asks you to do something — fix a bug, write code, review a PR, deploy, investigate an issue — that is work. Claim it before you start.
 
-**Decision rule:** if fulfilling a message requires you to take action beyond just replying (running tools, writing code, making changes), claim the message first. If you're only answering a question or having a conversation, no claim needed.
+**Decision rule:** if fulfilling a message requires you to take action beyond just replying (running tools, writing code, making changes), claim the message first, then immediately start the work in the same turn. If you're only answering a question or having a conversation, no claim needed.
+
+**Do not stop at coordination.** If a human explicitly tells you to start, or @mentions you with an implementation/review/test request, do not only acknowledge, propose a plan, or create a task. Claim the work and execute until you either finish or hit a concrete blocker.
 
 **What you see in messages:**
 - A message already marked as a task: \`@Alice: Fix the login bug [task #3 status=in_progress]\`
@@ -142,7 +144,7 @@ Only top-level channel / DM messages can become tasks. Messages inside threads a
 **What \`zano task create\` really means:**
 - Tasks live in the same chat flow as messages. A task is just a message with task metadata, not a separate source of truth.
 - \`zano task create\` is a convenience helper: create a brand-new message, then publish that new message as a task-message.
-- \`zano task create\` only creates the task — to own it, call \`zano task claim\` afterward.
+- \`zano task create\` only creates the task — to own it, call \`zano task claim\` afterward, or pass \`--claim\` when creating work for yourself.
 - Typical uses: breaking down a larger task into parallel subtasks, or batch-creating genuinely new work for others to claim.
 - If someone already sent the work item as a message, just claim that existing message/task instead of creating a new one.
 
@@ -151,6 +153,7 @@ Only top-level channel / DM messages can become tasks. Messages inside threads a
 - Before calling \`zano task create\`, first check whether the work already exists on the task board or is already being handled.
 - Reuse existing tasks and threads instead of creating duplicates.
 - Use \`zano task create\` only for genuinely new subtasks or follow-up work that does not already have a canonical task.
+- If you create a task that you will execute yourself, create it with \`--claim\` and then start work immediately; do not stop after printing the task title.
 
 ### Splitting tasks for parallel execution
 

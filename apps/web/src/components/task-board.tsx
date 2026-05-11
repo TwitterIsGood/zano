@@ -70,7 +70,7 @@ export function TaskBoard({ serverId, userId }: TaskBoardProps) {
         <p className="text-sm text-muted-foreground">Agent-driven workflow board</p>
         {error ? <p className="mt-2 text-sm text-destructive">{error}</p> : null}
       </div>
-      <div className="grid min-h-0 flex-1 grid-cols-7 gap-3 overflow-x-auto">
+      <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto">
         {columns.map((column) => (
           <section
             key={column.status}
@@ -79,10 +79,10 @@ export function TaskBoard({ serverId, userId }: TaskBoardProps) {
               if (dragged && dragged.status !== column.status) transition(dragged, column.status);
               setDragged(null);
             }}
-            className="flex min-w-[220px] flex-col rounded-xl border bg-muted/30"
+            className="flex w-[260px] shrink-0 flex-col rounded-xl border bg-muted/30"
           >
             <div className="border-b px-3 py-2 text-sm font-medium">{column.label} ({grouped[column.status].length})</div>
-            <div className="flex-1 space-y-2 overflow-y-auto p-2">
+            <div className="flex-1 space-y-2 overflow-y-auto p-2 min-h-0">
               {grouped[column.status].map((task) => (
                 <TaskCard key={task.id} task={task} onOpen={setSelectedTask} onDragStart={setDragged} />
               ))}

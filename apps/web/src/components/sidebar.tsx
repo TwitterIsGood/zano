@@ -156,10 +156,7 @@ export function Sidebar({
 
   // Set up realtime subscriptions (stable across navigations, only recreate on server change)
   useEffect(() => {
-    let presenceChannel: ReturnType<typeof supabase.channel> | null = null;
-
     function refreshPresence() {
-      if (!presenceChannel) return;
       const state = presenceChannel.presenceState();
       const entries = Object.values(state).flat() as Array<{
         hostname?: string;
@@ -168,8 +165,22 @@ export function Sidebar({
       setBridgeOnline(entries.length > 0);
     }
 
+    const presenceTopic = `bridge-presence:${serverId}`;
+    for (const channel of supabase.getChannels() as Array<{ topic: string }>) {
+      if (channel.topic === `realtime:${presenceTopic}`) {
+        supabase.removeChannel(channel as ReturnType<typeof supabase.channel>);
+      }
+    }
+
+    const presenceChannel = supabase
+      .channel(presenceTopic)
+      .on("presence", { event: "sync" }, refreshPresence)
+      .on("presence", { event: "join" }, refreshPresence)
+      .on("presence", { event: "leave" }, refreshPresence)
+      .subscribe();
+
     const realtimeSub = supabase
-      .channel("sidebar-realtime")
+      .channel(`sidebar-realtime:${serverId}`)
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "agents" },
@@ -217,16 +228,7 @@ export function Sidebar({
           );
         }
       )
-      .subscribe((status) => {
-        if (status === "SUBSCRIBED") {
-          presenceChannel = supabase.channel(`bridge-presence:${serverId}`);
-          presenceChannel
-            .on("presence", { event: "sync" }, refreshPresence)
-            .on("presence", { event: "join" }, refreshPresence)
-            .on("presence", { event: "leave" }, refreshPresence);
-          presenceChannel.subscribe();
-        }
-      });
+      .subscribe();
 
     // Heartbeat polling: check last_used_at every 15s via API
     async function checkHeartbeat() {

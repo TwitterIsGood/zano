@@ -408,7 +408,7 @@ export class Bridge {
         if (!isDm && !mentioned.has(agentId)) {
           prompt = `[You are ${agent.display_name} in a group channel. This message was sent to everyone in the channel (not @mentioning you specifically). Respond naturally as a team member — greet back, acknowledge, or contribute based on your role. Keep responses concise (1-3 sentences unless asked for detail). Only reply "SKIP" if the message is completely irrelevant to your role.\n\n${prompt}]`;
         } else if (!isDm && mentioned.has(agentId)) {
-          prompt = `[You are ${agent.display_name} and you were @mentioned directly. Respond to this message.\n\n${prompt}]`;
+          prompt = `[You are ${agent.display_name} and you were @mentioned directly. If this message asks you to do work (implement, review, test, investigate, etc.), claim the task and start executing immediately — do not only acknowledge or propose a plan. If it is a question, answer it directly.\n\n${prompt}]`;
         }
 
         // Fire-and-forget: agent handles all responses via `zano` CLI

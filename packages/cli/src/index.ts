@@ -72,15 +72,26 @@ function readStdin(): Promise<string> {
 function parseArgs(args: string[]): Record<string, string> {
   const result: Record<string, string> = {};
   const counts: Record<string, number> = {};
+  const positional: string[] = [];
   for (let i = 0; i < args.length; i++) {
     if (args[i].startsWith("--")) {
       const key = args[i].slice(2);
-      const val =
-        args[i + 1] && !args[i + 1].startsWith("--") ? args[++i] : "true";
+      let val = "true";
+      if (args[i + 1] && !args[i + 1].startsWith("--")) {
+        val = args[++i];
+        if (key === "title" || key === "description" || key === "summary" || key === "reason") {
+          while (args[i + 1] && !args[i + 1].startsWith("--")) {
+            val += ` ${args[++i]}`;
+          }
+        }
+      }
       counts[key] = (counts[key] ?? 0) + 1;
       result[counts[key] > 1 ? `${key}_${counts[key]}` : key] = val;
+    } else {
+      positional.push(args[i]);
     }
   }
+  if (positional.length > 0) result._ = positional.join(" ");
   return result;
 }
 
@@ -991,13 +1002,14 @@ async function cmdTaskList(flags: Record<string, string>) {
 
 async function cmdTaskCreate(flags: Record<string, string>) {
   const channel = flags.channel;
-  const title = flags.title;
+  const title = (flags.title || flags._ || "").trim();
   if (!channel) fail("INVALID_ARG", "Missing --channel");
-  if (!title) fail("INVALID_ARG", "Missing --title");
+  if (!title) fail("INVALID_ARG", "Missing --title (use --title <title> or provide title after flags)");
 
   const { channelId } = await resolveTarget(channel);
   const parentTask = flags.parent ? await resolveTaskByNumber(parseInt(flags.parent), channelId) : null;
   const tagValues = collectFlagValues(flags, "tag");
+  const shouldClaim = flags.claim === "true";
 
   const { data: msg, error: msgError } = await supabase
     .from("messages")
@@ -1025,14 +1037,17 @@ async function cmdTaskCreate(flags: Record<string, string>) {
       parent_task_id: parentTask?.id ?? null,
       created_by_id: AGENT_ID,
       created_by_type: "agent",
-      current_gate: "ready_to_execute",
+      current_gate: shouldClaim ? "executing" : "ready_to_execute",
+      ...(shouldClaim
+        ? { assignee_id: AGENT_ID, assignee_type: "agent", status: "in_progress", started_at: new Date().toISOString() }
+        : {}),
     })
     .select("task_number")
     .single();
 
   if (taskError) fail("CREATE_FAILED", taskError.message);
 
-  console.log(`Task #${task.task_number} created in ${channel}.`);
+  console.log(`Task #${task.task_number} created${shouldClaim ? " and claimed" : ""} in ${channel}.`);
 }
 
 async function cmdTaskClaim(flags: Record<string, string>) {
@@ -1337,7 +1352,7 @@ Usage:
   zano thread resolve --target "#ch:abcd"  Resolve/unresolve thread
   zano task list [--channel "#ch"] [--status S] [--tag T]
                                            List tasks
-  zano task create --channel "#ch" --title "T" [--priority high] [--tag T]
+  zano task create --channel "#ch" --title "T" [--priority high] [--tag T] [--claim]
                                            Create a task
   zano task claim --number N               Claim a task
   zano task unclaim --number N             Release a task

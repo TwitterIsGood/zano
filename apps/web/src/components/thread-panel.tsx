@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { GeneratedAvatar } from "./generated-avatar";
 import TiptapMessageInput, { type TiptapMessageInputHandle } from "./tiptap-message-input";
+import { MessageBody } from "./message-body";
 
 interface ThreadMessage {
   id: string;
@@ -21,10 +21,15 @@ interface ThreadMessage {
 interface ThreadPanelProps {
   parentMessageId: string | null;
   userId: string | null;
+  mentions?: Array<{ name: string; displayName: string }>;
   onClose: () => void;
 }
 
-export function ThreadPanel({ parentMessageId, userId, onClose }: ThreadPanelProps) {
+function formatTime(dateStr: string) {
+  return new Date(dateStr).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+export function ThreadPanel({ parentMessageId, userId, mentions = [], onClose }: ThreadPanelProps) {
   const [parent, setParent] = useState<ThreadMessage | null>(null);
   const [replies, setReplies] = useState<ThreadMessage[]>([]);
   const [sending, setSending] = useState(false);
@@ -88,6 +93,24 @@ export function ThreadPanel({ parentMessageId, userId, onClose }: ThreadPanelPro
     }
   }
 
+  function renderThreadMessage(msg: ThreadMessage, isParent?: boolean) {
+    const label = msg.sender_type === "human" ? "You" : msg.sender_type === "agent" ? "Agent" : "System";
+    return (
+      <div className={`flex gap-3 rounded-lg px-2 py-1.5 ${isParent ? "rounded-lg border bg-muted/30 p-3" : ""}`}>
+        <div className="w-8 shrink-0 pt-0.5">
+          <GeneratedAvatar id={msg.sender_id} name={label} size="md" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="mb-0.5 flex items-baseline gap-2">
+            <span className="text-[13px] font-semibold">{label}</span>
+            <span className="text-[11px] text-muted-foreground">{formatTime(msg.created_at)}</span>
+          </div>
+          <MessageBody content={msg.content} senderType={msg.sender_type} mentions={mentions} />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <aside className="flex h-full w-[420px] shrink-0 flex-col border-l bg-background">
       <div className="flex items-center justify-between border-b px-4 py-3">
@@ -100,23 +123,11 @@ export function ThreadPanel({ parentMessageId, userId, onClose }: ThreadPanelPro
         </Button>
       </div>
 
-      <ScrollArea className="flex-1 px-4 py-3">
-        {parent ? (
-          <div className="mb-4 rounded-lg border bg-muted/30 p-3 text-sm">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{parent.content}</ReactMarkdown>
-          </div>
-        ) : null}
-
-        <div className="space-y-3">
-          {replies.map((reply) => (
-            <div key={reply.id} className="rounded-lg border p-3 text-sm">
-              <div className="mb-1 text-xs text-muted-foreground">
-                {reply.sender_type} · {new Date(reply.created_at).toLocaleString()}
-              </div>
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{reply.content}</ReactMarkdown>
-            </div>
-          ))}
-        </div>
+      <ScrollArea className="flex-1 px-4 py-3 space-y-1">
+        {parent ? renderThreadMessage(parent, true) : null}
+        {replies.map((reply) => (
+          <div key={reply.id}>{renderThreadMessage(reply)}</div>
+        ))}
       </ScrollArea>
 
       <div className="border-t p-3">

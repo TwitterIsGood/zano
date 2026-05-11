@@ -1,19 +1,18 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { GearSix } from '@phosphor-icons/react';
+import { Check, MessageSquareText, RotateCcw } from 'lucide-react';
 import TiptapMessageInput, { type TiptapMessageInputHandle } from './tiptap-message-input';
 import { useAgentActivity } from '@/hooks/use-agent-activity';
 import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { GeneratedAvatar } from './generated-avatar';
-import { ThreadButton } from './thread-button';
 import { ThreadPanel } from './thread-panel';
+import { MessageActionMenu } from './message-action-menu';
+import { ContextMenu } from './context-menu';
+import { MessageBody } from './message-body';
 
 interface Message {
   id: string;
@@ -38,6 +37,7 @@ interface Channel {
 
 interface AgentInfo {
   id: string;
+  name: string;
   display_name: string;
   status: string;
   description: string | null;
@@ -56,6 +56,7 @@ export function MessageArea({
   const [hasContent, setHasContent] = useState(false);
   const [sending, setSending] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const [currentUserDisplayName, setCurrentUserDisplayName] = useState<string | null>(null);
   const [agentInfo, setAgentInfo] = useState<AgentInfo | null>(null);
   const [channelAgents, setChannelAgents] = useState<Map<string, AgentInfo>>(new Map());
   const [agentTyping, setAgentTyping] = useState(false);
@@ -70,12 +71,16 @@ export function MessageArea({
   const isNearBottomRef = useRef(true);
   const inputRef = useRef<TiptapMessageInputHandle>(null);
   const [openThreadMessageId, setOpenThreadMessageId] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ messageId: string; x: number; y: number } | null>(null);
   const supabase = createClient();
   const agentActivities = useAgentActivity();
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) setUserId(user.id);
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) return;
+      setUserId(user.id);
+      const { data } = await supabase.from('profiles').select('display_name').eq('id', user.id).maybeSingle();
+      setCurrentUserDisplayName(data?.display_name ?? null);
     });
   }, [supabase]);
 
@@ -101,7 +106,7 @@ export function MessageArea({
         const agentIds = members.map((m) => m.member_id);
         const { data: agentsData } = await supabase
           .from('agents')
-          .select('id, display_name, status, description')
+          .select('id, name, display_name, status, description')
           .in('id', agentIds);
 
         if (agentsData) {
@@ -367,6 +372,37 @@ export function MessageArea({
     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
 
+  async function toggleThreadResolved(messageId: string, resolved: boolean) {
+    const res = await fetch(`/api/threads/${messageId}/resolve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ resolved }),
+    });
+    if (!res.ok) return;
+
+    const data = await res.json();
+    setMessages((prev) => prev.map((msg) => (msg.id === messageId ? { ...msg, ...data.thread } : msg)));
+  }
+
+  function openMessageMenu(messageId: string, x: number, y: number) {
+    setContextMenu({ messageId, x, y });
+  }
+
+  const contextMenuMessage = contextMenu ? messages.find((m) => m.id === contextMenu.messageId) : null;
+  const mentions = useMemo(() => {
+    const list = Array.from(channelAgents.values()).map((a) => ({
+      name: a.name,
+      displayName: a.display_name,
+    }));
+    if (userId) {
+      list.push({ name: userId, displayName: 'You' });
+    }
+    if (currentUserDisplayName) {
+      list.push({ name: currentUserDisplayName, displayName: 'You' });
+    }
+    return list;
+  }, [channelAgents, userId, currentUserDisplayName]);
+
   return (
     <div className="flex min-h-0 flex-1 bg-card max-w-full text-pretty">
       <div className="flex min-w-0 flex-1 flex-col">
@@ -468,6 +504,11 @@ export function MessageArea({
           return (
             <div
               key={msg.id}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                openMessageMenu(msg.id, event.clientX, event.clientY);
+              }}
               className={`group flex gap-3 rounded-lg px-2 py-1.5 transition-colors ${
                 sameSender ? '' : 'mt-5 first:mt-0'
               }`}>
@@ -475,7 +516,7 @@ export function MessageArea({
                 {!sameSender && <GeneratedAvatar id={msg.sender_id} name={getSenderName(msg)} size="md" />}
               </div>
 
-              <div className="flex-1 min-w-0">
+              <div className="relative flex-1 min-w-0">
                 {!sameSender && (
                   <div className="flex items-baseline gap-2 mb-0.5">
                     <span className="text-[13px] font-semibold">{getSenderName(msg)}</span>
@@ -487,43 +528,15 @@ export function MessageArea({
                     <span className="text-[11px] text-muted-foreground">{formatTime(msg.created_at)}</span>
                   </div>
                 )}
-                <div
-                  className="prose-message text-[15px] wrap-break-word subpixel-antialiased prose-headings:antialiased"
-                  style={{ lineHeight: '1.54' }}>
-                  {msg.sender_type === 'agent' ? (
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      components={{
-                        a: ({ href, children }) => (
-                          <a href={href} target="_blank" rel="noopener noreferrer">
-                            {children}
-                          </a>
-                        ),
-                      }}>
-                      {msg.content}
-                    </ReactMarkdown>
-                  ) : (
-                    <span className="whitespace-pre-wrap">
-                      {msg.content.split(/(@[^\s,.:!?，。！？]+)/g).map((part, j) =>
-                        part.startsWith('@') ? (
-                          <span key={j} className="rounded bg-primary/10 px-0.5 text-primary font-medium">
-                            {part}
-                          </span>
-                        ) : (
-                          part
-                        ),
-                      )}
-                    </span>
-                  )}
-                </div>
-                <div className="mt-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-                  <ThreadButton
-                    replyCount={msg.reply_count ?? 0}
-                    lastReplyAt={msg.last_reply_at ?? null}
-                    resolved={Boolean(msg.thread_resolved_at)}
-                    onOpen={() => setOpenThreadMessageId(msg.id)}
-                  />
-                </div>
+                <MessageBody content={msg.content} senderType={msg.sender_type} mentions={mentions} />
+                <MessageActionMenu
+                  replyCount={msg.reply_count ?? 0}
+                  lastReplyAt={msg.last_reply_at ?? null}
+                  resolved={Boolean(msg.thread_resolved_at)}
+                  onOpenThread={() => setOpenThreadMessageId(msg.id)}
+                  onResolve={() => toggleThreadResolved(msg.id, true)}
+                  onReopen={() => toggleThreadResolved(msg.id, false)}
+                />
               </div>
 
               {sameSender && (
@@ -728,7 +741,36 @@ export function MessageArea({
         </div>
       </div>
       </div>
-      <ThreadPanel parentMessageId={openThreadMessageId} userId={userId} onClose={() => setOpenThreadMessageId(null)} />
+      <ThreadPanel parentMessageId={openThreadMessageId} userId={userId} mentions={mentions} onClose={() => setOpenThreadMessageId(null)} />
+      {contextMenu && contextMenuMessage && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={[
+            {
+              label: contextMenuMessage.reply_count > 0
+                ? `View thread · ${contextMenuMessage.reply_count} ${contextMenuMessage.reply_count === 1 ? 'reply' : 'replies'}`
+                : 'Reply in thread',
+              icon: <MessageSquareText className="h-4 w-4" />,
+              onClick: () => setOpenThreadMessageId(contextMenu.messageId),
+            },
+            ...(contextMenuMessage.reply_count > 0 && Boolean(contextMenuMessage.thread_resolved_at)
+              ? [{
+                  label: 'Reopen thread',
+                  icon: <RotateCcw className="h-4 w-4" />,
+                  onClick: () => toggleThreadResolved(contextMenu.messageId, false),
+                }]
+              : contextMenuMessage.reply_count > 0
+                ? [{
+                    label: 'Resolve thread',
+                    icon: <Check className="h-4 w-4" />,
+                    onClick: () => toggleThreadResolved(contextMenu.messageId, true),
+                  }]
+              : []),
+          ]}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
     </div>
   );
 }
