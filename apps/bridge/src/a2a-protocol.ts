@@ -85,7 +85,7 @@ const ACTION_PATTERNS: Array<[MessageIntent, RegExp]> = [
   ["request", /\b(can someone|could someone|please|need someone|needs to|should|must|do this|take this|handle this|look into|inspect|investigate|fix|implement|verify)\b|请(?:验证|检查|审核|审查|确认)/i],
   ["question", /\?|\b(which|what|why|how|when|where|who|should we|can you|could you)\b/i],
   ["handoff", /\b(handoff|hand off|pass to|over to|take over|continue|next step|follow up|should check|should review|should verify|please check|please review|please verify)\b/i],
-  ["blocker", /\b(blocked|blocker|critical issue|serious issue|major issue|failure|failed|cannot|can't|unable|waiting on|until .* confirms?|depends on|need .* before)\b/i],
+  ["blocker", /\b(blocked|blocker|critical issue|serious issue|major issue|failure|failed|regression|cannot|can't|unable|waiting on|until .* confirms?|depends on|need .* before)\b/i],
   ["decision_needed", /\b(confirms?|decide|decision|approve|approval|approval needed|choose|select|sign off|signoff|go\/no-go)\b/i],
   ["review_needed", /\b(?:please|should|needs?|must|can you|could you)\s+review\b|\breview\s+(?:this|the|these|that)\b|\b(?:approval needed|check .* risk|look over|take another look|critique)\b|请(?:检查|审核|审查)/i],
   ["verification_needed", /\b(verify|verification|validate|evidence|regression|confirm .* works|(?:run|perform|need|needs|please)\s+(?:a\s+)?(?:smoke|test))\b|请(?:验证|确认)/i],
@@ -109,8 +109,12 @@ const BENIGN_COMPLETION_PATTERN =
 const EXPLICIT_ACTION_PATTERN =
   /\b(?:please|can someone|could someone|can you|could you|need someone|look into|inspect|investigate|fix|implement|verify|review\s+(?:this|the|these|that)|run|critical issue|serious issue|major issue|failure|decide|decision|approve|approval needed|choose|select|sign off|signoff)\b|请(?:验证|检查|审核|审查|确认)/i;
 
+const PROBLEM_FINDING_PATTERN =
+  /\b(?:critical issue|serious issue|major issue|failure|failed|regression|cannot|can't|unable|blocked|blocker)\b/i;
+
 function isPureBenignCompletionSummary(content: string): boolean {
-  return BENIGN_COMPLETION_PATTERN.test(content) && !EXPLICIT_ACTION_PATTERN.test(content);
+  if (/\bno tests? failed\b/i.test(content)) return true;
+  return BENIGN_COMPLETION_PATTERN.test(content) && !EXPLICIT_ACTION_PATTERN.test(content) && !PROBLEM_FINDING_PATTERN.test(content);
 }
 
 export function classifyConversationSpace(input: ConversationSpaceInput): ConversationSpace {

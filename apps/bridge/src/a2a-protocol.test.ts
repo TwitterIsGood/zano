@@ -172,6 +172,21 @@ describe("classifyMessageIntent", () => {
     expect(hasOnlyLowValueIntent(intents)).toBe(false);
   });
 
+  it("keeps mixed completion and failure findings actionable", () => {
+    const cases = [
+      "The verification is complete but checkout failed.",
+      "The tests passed except checkout failed.",
+      "The review is complete and found a regression.",
+    ];
+
+    for (const content of cases) {
+      const intents = classifyMessageIntent(content);
+      expect(intents).toEqual(expect.arrayContaining(["blocker", "result"]));
+      expect(hasActionableIntent(intents)).toBe(true);
+      expect(hasOnlyLowValueIntent(intents)).toBe(false);
+    }
+  });
+
   it("keeps mixed completion and approval follow-up messages actionable", () => {
     const cases = [
       "The verification is complete; approval needed before deploy.",
