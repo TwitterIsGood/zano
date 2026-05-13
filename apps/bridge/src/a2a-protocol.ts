@@ -82,7 +82,7 @@ const ACTIONABLE_INTENTS: ReadonlySet<MessageIntent> = new Set([
 const LOW_VALUE_INTENTS: ReadonlySet<MessageIntent> = new Set(["ack", "thanks", "chatter", "status", "result", "decision"]);
 
 const ACTION_PATTERNS: Array<[MessageIntent, RegExp]> = [
-  ["request", /\b(can someone|could someone|please|need someone|needs to|must|do this|take this|handle this|look into|inspect|investigate|fix|implement|verify)\b|请(?:验证|检查|审核|审查|确认)/i],
+  ["request", /\b(can someone|could someone|can you|could you|please|need someone|needs to|must|do this|take this|handle this|look into|inspect|investigate|fix|implement|verify)\b|请(?:验证|检查|审核|审查|确认)/i],
   ["question", /\?|\b(which|what|why|how|when|where|who|should we|can you|could you)\b/i],
   ["handoff", /\b(handoff|hand off|pass to|over to|take over|continue|next step|follow up|should (?:check|review|verify)|please (?:check|review|verify))\b/i],
   ["blocker", /\b(blocked|blocker|critical issue|serious issue|major issue|bug|error|crash(?:es|ed|ing)?|failure|failed|regression|cannot|can't|unable|waiting on|until .* confirms?|depends on|need .* before)\b/i],
@@ -104,19 +104,19 @@ const INFORMATIONAL_PATTERNS: Array<[MessageIntent, RegExp]> = [
 ];
 
 const BENIGN_COMPLETION_PATTERN =
-  /\b(?:verification|verifier|review|reviewer|check|smoke test|test(?:s)?)\b[\s\S]*\b(?:complete|completed|done|finished|passed|found no (?:issue|issues|problem|problems)|no (?:issue|issues|problem|problems)|no regression was found|confirms? .* works?)\b|\bno tests? failed\b/i;
+  /\b(?:verification|verifier|review|reviewer|handoff|check|fix|next step|smoke test|test(?:s)?)\b[\s\S]*\b(?:is\s+)?(?:complete|completed|done|finished|passed|found no (?:issue|issues|problem|problems)|no (?:issue|issues|problem|problems)|no regression was found|confirms? .* works?)\b|\bit confirms?\b[\s\S]*\bworks?\b|\bno tests? failed\b/i;
 
 const EXPLICIT_ACTION_PATTERN =
-  /\b(?:please|can someone|could someone|can you|could you|need someone|look into|inspect|investigate|fix|implement|verify|review\s+(?:this|the|these|that)|run|should (?:check|review|verify)|needs? review|decide(?: whether)?|decision\s+(?:needed|required)|approve\b|approval\s+(?:needed|required|is required)|choose|select|sign[- ]?off(?:\s+is\s+(?:needed|required))?|sign off(?:\s+is\s+(?:needed|required))?)\b|请(?:验证|检查|审核|审查|确认)/i;
+  /\b(?:please|can someone|could someone|can you|could you|need someone|needs to|must|look into|inspect|run|should (?:check|review|verify)|needs? review|decide(?: whether)?|decision\s+(?:needed|required)|approve\b|approval\s+(?:needed|required|is required)|choose|select|sign[- ]?off(?:\s+is\s+(?:needed|required))?|sign off(?:\s+is\s+(?:needed|required))?)\b|(?:^|[.!?;]\s*|,\s*|\bto\s+|\bthen\s+)(?:hand off|fix|implement|investigate|verify|review|check)\b|\breview\s+(?:this|the|these|that)\b|请(?:验证|检查|审核|审查|确认)/i;
 
 const PROBLEM_FINDING_PATTERN =
   /\b(?:critical issue|serious issue|major issue|bug|error|crash(?:es|ed|ing)?|failure|failed|regression|cannot|can't|unable|blocked|blocker)\b/i;
 
 const PURE_NO_PROBLEM_SUMMARY_PATTERN =
-  /\b(?:no tests? failed|no (?:issue|issues|problem|problems|errors?)|no regression was (?:found|detected))\b/i;
+  /\b(?:no (?:build|tests?) failed|no (?:critical issue|serious issue|major issue|issue|issues|problem|problems|bug|bugs|error|errors?|failure|failures|regression|regressions)(?: was | were )?(?:found|detected)?)\b/i;
 
 const NEGATED_PROBLEM_PATTERN =
-  /\b(?:no tests? failed|no (?:issue|issues|problem|problems|errors?) (?:was |were )?(?:found|detected)|no regression was (?:found|detected))\b/gi;
+  /\b(?:no (?:build|tests?) failed|no (?:critical issue|serious issue|major issue|issue|issues|problem|problems|bug|bugs|error|errors?|failure|failures|regression|regressions)(?: was | were )?(?:found|detected)?)\b/gi;
 const HIGH_SIGNAL_RESULT_PATTERN = /\b(?:found|crash(?:es|ed|ing)?)\b/i;
 
 function normalizeNegatedProblemFindings(content: string): string {
@@ -128,8 +128,9 @@ function hasProblemFinding(content: string): boolean {
 }
 
 function isPureBenignCompletionSummary(content: string): boolean {
-  const hasBenignCompletion = BENIGN_COMPLETION_PATTERN.test(content) || PURE_NO_PROBLEM_SUMMARY_PATTERN.test(content);
-  return hasBenignCompletion && !EXPLICIT_ACTION_PATTERN.test(content) && !hasProblemFinding(content);
+  const normalizedProblemContent = normalizeNegatedProblemFindings(content);
+  const hasBenignCompletion = BENIGN_COMPLETION_PATTERN.test(normalizedProblemContent) || PURE_NO_PROBLEM_SUMMARY_PATTERN.test(content);
+  return hasBenignCompletion && !EXPLICIT_ACTION_PATTERN.test(normalizedProblemContent) && !hasProblemFinding(content);
 }
 
 export function classifyConversationSpace(input: ConversationSpaceInput): ConversationSpace {
@@ -158,15 +159,11 @@ export function classifyMessageIntent(content: string): MessageIntent[] {
   if (isPureBenignCompletionSummary(content)) {
     intents.add("result");
     intents.delete("request");
+    intents.delete("handoff");
     intents.delete("blocker");
     intents.delete("decision_needed");
     intents.delete("verification_needed");
     intents.delete("review_needed");
-  }
-
-  if (intents.has("request") && /\bconfirms?\b/i.test(content) && !/\b(?:please|can you|could you)\s+confirm\b/i.test(content)) {
-    intents.delete("request");
-    intents.add("result");
   }
 
   if (intents.size === 0) intents.add("chatter");

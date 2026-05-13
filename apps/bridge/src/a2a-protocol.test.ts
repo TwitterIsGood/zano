@@ -114,10 +114,28 @@ describe("classifyMessageIntent", () => {
   });
 
   it("keeps explicit confirm requests actionable", () => {
-    const intents = classifyMessageIntent("Please confirm final approval.");
-    expect(intents).toEqual(expect.arrayContaining(["request", "decision_needed"]));
-    expect(hasActionableIntent(intents)).toBe(true);
-    expect(hasOnlyLowValueIntent(intents)).toBe(false);
+    const cases = ["Please confirm final approval.", "Could you confirm the field requirement?"];
+
+    for (const content of cases) {
+      const intents = classifyMessageIntent(content);
+      expect(intents).toEqual(expect.arrayContaining(["request", "decision_needed"]));
+      expect(hasActionableIntent(intents)).toBe(true);
+      expect(hasOnlyLowValueIntent(intents)).toBe(false);
+    }
+  });
+
+  it("keeps conditional confirm messages with follow-up work actionable", () => {
+    const cases = [
+      "If the report confirms the timeout, implement the fallback.",
+      "If the smoke test confirms the issue, fix checkout.",
+    ];
+
+    for (const content of cases) {
+      const intents = classifyMessageIntent(content);
+      expect(intents).toEqual(expect.arrayContaining(["request"]));
+      expect(hasActionableIntent(intents)).toBe(true);
+      expect(hasOnlyLowValueIntent(intents)).toBe(false);
+    }
   });
 
   it("does not mark completed decision or approval summaries as actionable", () => {
@@ -138,6 +156,9 @@ describe("classifyMessageIntent", () => {
 
   it("does not mark repeated negated problem summaries as actionable", () => {
     const cases = [
+      "No bug was found.",
+      "No critical issue was found.",
+      "No build failed.",
       "No tests failed and no regression was found.",
       "No error was found and no regression was detected.",
     ];
@@ -300,6 +321,9 @@ describe("classifyMessageIntent", () => {
       "The verification is complete and confirms it works.",
       "The reviewer should be done now.",
       "The code review should be complete now.",
+      "The checkout fix is done.",
+      "The review handoff is complete.",
+      "The next step is complete.",
     ];
 
     for (const content of cases) {
@@ -319,6 +343,9 @@ describe("classifyMessageIntent", () => {
       "Could someone run the smoke test?",
       "The test failed, can someone investigate?",
       "Can someone inspect why the import flow is timing out?",
+      "Fix checkout now.",
+      "Please hand off to the reviewer.",
+      "The next step is to verify the checkout flow.",
     ];
 
     for (const content of cases) {
