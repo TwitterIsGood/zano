@@ -66,6 +66,21 @@ export interface ConversationSpaceInput {
   task: ProtocolTaskRef | null;
 }
 
+const ACTIONABLE_INTENTS: ReadonlySet<MessageIntent> = new Set([
+  "request",
+  "question",
+  "handoff",
+  "blocker",
+  "decision_needed",
+  "review_needed",
+  "verification_needed",
+  "correction",
+  "assignment",
+  "escalation",
+]);
+
+const LOW_VALUE_INTENTS: ReadonlySet<MessageIntent> = new Set(["ack", "thanks", "chatter", "status", "result"]);
+
 const ACTION_PATTERNS: Array<[MessageIntent, RegExp]> = [
   ["request", /\b(can someone|could someone|please|need someone|needs to|should|must|do this|take this|handle this|look into|inspect|investigate|fix|implement|verify|review)\b/i],
   ["question", /\?|\b(which|what|why|how|when|where|who|should we|can you|could you)\b/i],
@@ -73,18 +88,18 @@ const ACTION_PATTERNS: Array<[MessageIntent, RegExp]> = [
   ["blocker", /\b(blocked|blocker|cannot|can't|unable|waiting on|until .* confirms?|depends on|need .* before)\b/i],
   ["decision_needed", /\b(confirms?|decide|decision|approve|approval|choose|select|sign off|go\/no-go)\b/i],
   ["review_needed", /\b(review|critique|approve|approval|check .* risk|look over|take another look)\b/i],
-  ["verification_needed", /\b(verify|verification|test|validate|evidence|smoke|regression|confirm .* works)\b/i],
-  ["correction", /\b(no|not that|instead|change|wrong|incorrect|revise|adjust|stop|don't)\b/i],
+  ["verification_needed", /\b(verify|verification|validate|evidence|regression|confirm .* works|(?:run|perform|need|needs|please)\s+(?:a\s+)?(?:smoke|test))\b/i],
+  ["correction", /\b(not that|instead|change|wrong|incorrect|revise|adjust|stop|don't|no,)\b/i],
   ["assignment", /\b(assign|owner|responsible|take|claim|belongs to|owned by)\b/i],
   ["escalation", /\b(stuck|need help|escalate|urgent|blocked hard|can't proceed)\b/i],
 ];
 
 const INFORMATIONAL_PATTERNS: Array<[MessageIntent, RegExp]> = [
   ["ack", /\b(ok|okay|sounds good|sgtm|received|got it|ack|noted)\b/i],
-  ["thanks", /\b(thanks|thank you|appreciate|辛苦|谢谢)\b/i],
+  ["thanks", /\b(thanks|thank you|appreciate)\b|辛苦|谢谢/i],
   ["result", /\b(done|completed|finished|result|findings|found|confirmed|fixed|implemented|verified|passed|failed)\b/i],
   ["decision", /\b(decided|approved|rejected|selected|we will|we'll|final decision)\b/i],
-  ["status", /\b(in progress|working on|currently|status|progress|waiting|pending|in review|ongoing|already|已|正在|等待)\b/i],
+  ["status", /\b(in progress|working on|currently|status|progress|waiting|pending|in review|ongoing|already)\b|已|正在|等待/i],
   ["chatter", /\b(hello|hi|hey|good morning|good night|lol|haha)\b/i],
 ];
 
@@ -112,24 +127,11 @@ export function classifyMessageIntent(content: string): MessageIntent[] {
 }
 
 export function hasActionableIntent(intents: MessageIntent[]): boolean {
-  return intents.some((intent) =>
-    [
-      "request",
-      "question",
-      "handoff",
-      "blocker",
-      "decision_needed",
-      "review_needed",
-      "verification_needed",
-      "correction",
-      "assignment",
-      "escalation",
-    ].includes(intent),
-  );
+  return intents.some((intent) => ACTIONABLE_INTENTS.has(intent));
 }
 
 export function hasOnlyLowValueIntent(intents: MessageIntent[]): boolean {
-  return intents.every((intent) => ["ack", "thanks", "chatter", "status"].includes(intent));
+  return intents.every((intent) => LOW_VALUE_INTENTS.has(intent));
 }
 
 export function deriveTopicKey(message: ProtocolMessage, task: ProtocolTaskRef | null): string {

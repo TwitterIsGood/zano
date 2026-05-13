@@ -3,6 +3,8 @@ import {
   classifyMessageIntent,
   classifyConversationSpace,
   deriveTopicKey,
+  hasActionableIntent,
+  hasOnlyLowValueIntent,
   type ChannelKind,
   type ProtocolMessage,
 } from "./a2a-protocol";
@@ -78,8 +80,36 @@ describe("classifyMessageIntent", () => {
   it("does not mark pure status as actionable", () => {
     const intents = classifyMessageIntent("The verifier already completed the smoke check and found no issue.");
     expect(intents).toContain("status");
+    expect(intents).toContain("result");
     expect(intents).not.toContain("request");
     expect(intents).not.toContain("handoff");
+    expect(intents).not.toContain("verification_needed");
+    expect(intents).not.toContain("correction");
+    expect(hasActionableIntent(intents)).toBe(false);
+    expect(hasOnlyLowValueIntent(intents)).toBe(true);
+  });
+
+  it("marks open requests as actionable and not low-value", () => {
+    const intents = classifyMessageIntent("Can someone inspect why the import flow is timing out?");
+    expect(hasActionableIntent(intents)).toBe(true);
+    expect(hasOnlyLowValueIntent(intents)).toBe(false);
+  });
+
+  it("marks acknowledgements and thanks as low-value and not actionable", () => {
+    const intents = classifyMessageIntent("Sounds good, thanks.");
+    expect(hasActionableIntent(intents)).toBe(false);
+    expect(hasOnlyLowValueIntent(intents)).toBe(true);
+  });
+
+  it("marks progress status as low-value and not actionable", () => {
+    const intents = classifyMessageIntent("Working on the import check now, status update only.");
+    expect(hasActionableIntent(intents)).toBe(false);
+    expect(hasOnlyLowValueIntent(intents)).toBe(true);
+  });
+
+  it("matches Chinese informational terms", () => {
+    expect(classifyMessageIntent("谢谢，辛苦了")).toEqual(expect.arrayContaining(["thanks"]));
+    expect(classifyMessageIntent("正在处理，等待结果")).toEqual(expect.arrayContaining(["status"]));
   });
 });
 
