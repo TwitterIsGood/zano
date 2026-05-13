@@ -107,7 +107,7 @@ const BENIGN_COMPLETION_PATTERN =
   /\b(?:verification|review|check|smoke test|test(?:s)?)\b[\s\S]*\b(?:complete|completed|done|finished|passed|found no (?:issue|issues|problem|problems)|no (?:issue|issues|problem|problems))\b|\bno tests? failed\b/i;
 
 const EXPLICIT_ACTION_PATTERN =
-  /\b(?:please|can someone|could someone|can you|could you|need someone|look into|inspect|investigate|fix|implement|verify|review|run|critical issue|serious issue|major issue|failure)\b/i;
+  /\b(?:please|can someone|could someone|can you|could you|need someone|look into|inspect|investigate|fix|implement|verify|review\s+(?:this|the|these|that)|run|critical issue|serious issue|major issue|failure)\b/i;
 
 function isPureBenignCompletionSummary(content: string): boolean {
   return BENIGN_COMPLETION_PATTERN.test(content) && !EXPLICIT_ACTION_PATTERN.test(content);

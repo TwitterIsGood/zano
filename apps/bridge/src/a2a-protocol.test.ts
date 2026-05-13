@@ -97,6 +97,22 @@ describe("classifyMessageIntent", () => {
     expect(hasOnlyLowValueIntent(intents)).toBe(true);
   });
 
+  it("does not mark should-complete review summaries as actionable", () => {
+    const intents = classifyMessageIntent("The code review should be complete now.");
+    expect(intents).toContain("result");
+    expect(intents).not.toContain("request");
+    expect(intents).not.toContain("review_needed");
+    expect(hasActionableIntent(intents)).toBe(false);
+    expect(hasOnlyLowValueIntent(intents)).toBe(true);
+  });
+
+  it("keeps noun review requirements actionable", () => {
+    const intents = classifyMessageIntent("This needs review before close.");
+    expect(intents).toEqual(expect.arrayContaining(["review_needed"]));
+    expect(hasActionableIntent(intents)).toBe(true);
+    expect(hasOnlyLowValueIntent(intents)).toBe(false);
+  });
+
   it("does not mark completed verification summaries as actionable", () => {
     const intents = classifyMessageIntent("The verification is complete and found no issue.");
     expect(intents).toContain("result");
