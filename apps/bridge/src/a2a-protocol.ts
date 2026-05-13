@@ -184,6 +184,65 @@ export function deriveTopicKey(message: ProtocolMessage, task: ProtocolTaskRef |
   return `message:${message.id}`;
 }
 
+export interface ActivationCooldownEntry {
+  lastActivatedAt: number;
+  sourceMessageId: string;
+}
+
+export interface CooldownKeyInput {
+  topicKey: string;
+  channelId: string;
+  sourceAgentId: string;
+  targetAgentId: string;
+  reason: string;
+}
+
+export function buildCooldownKey(input: CooldownKeyInput): string {
+  return [input.topicKey, input.channelId, input.sourceAgentId, input.targetAgentId, input.reason].join("|");
+}
+
+export interface CooldownCheckInput {
+  key: string;
+  entries: Map<string, ActivationCooldownEntry>;
+  now: number;
+  cooldownMs: number;
+  bypass: boolean;
+}
+
+export function shouldSuppressForCooldown(input: CooldownCheckInput): { suppress: boolean; reason?: "cooldown" } {
+  if (input.bypass) return { suppress: false };
+  const entry = input.entries.get(input.key);
+  if (!entry) return { suppress: false };
+  return input.now - entry.lastActivatedAt < input.cooldownMs ? { suppress: true, reason: "cooldown" } : { suppress: false };
+}
+
+export interface ActivationEnvelopeInput {
+  targetAgentName: string;
+  space: ConversationSpace;
+  intents: MessageIntent[];
+  reasons: ActivationReason[];
+  strength: ActivationStrength;
+  sourceMessageId: string;
+  topicKey: string;
+  hopCount: number;
+  loopConstraints: string[];
+}
+
+export function buildActivationEnvelope(input: ActivationEnvelopeInput): string {
+  return `[A2A_ACTIVATION
+agent=${input.targetAgentName}
+space=${input.space}
+intents=${input.intents.join(",")}
+activation_reasons=${input.reasons.join(",")}
+activation_strength=${input.strength}
+source_message=${input.sourceMessageId}
+topic_key=${input.topicKey}
+hop_count=${input.hopCount}
+loop_constraints=${input.loopConstraints.join("; ") || "none"}
+expected_decision=Choose one internal mode before doing anything visible: REPLY_AND_WORK, WORK_SILENTLY, REPLY_ONLY, OBSERVE, or SKIP. You are not required to reply. Send a message only if it adds new result, evidence, blocker, decision, question, ownership, handoff, correction, or completion value.
+]`;
+}
+
 export interface ProtocolAgent {
   id: string;
   name: string;

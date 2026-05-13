@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildActivationEnvelope,
+  buildCooldownKey,
   classifyMessageIntent,
   classifyConversationSpace,
   deriveTopicKey,
   hasActionableIntent,
   hasOnlyLowValueIntent,
   selectActivationCandidates,
+  shouldSuppressForCooldown,
+  type ActivationCooldownEntry,
   type ProtocolAgent,
   type ProtocolMessage,
   type ProtocolRecentMessage,
@@ -438,6 +442,98 @@ function recent(overrides: Partial<ProtocolRecentMessage> = {}): ProtocolRecentM
     ...overrides,
   };
 }
+
+describe("loop guard helpers", () => {
+  it("builds stable cooldown keys", () => {
+    expect(buildCooldownKey({ topicKey: "task:1", channelId: "channel-1", sourceAgentId: "agent-a", targetAgentId: "agent-b", reason: "review_needed" })).toBe(
+      "task:1|channel-1|agent-a|agent-b|review_needed",
+    );
+  });
+
+  it("suppresses repeated cooldown entries", () => {
+    const now = Date.parse("2026-05-12T00:05:00.000Z");
+    const entries = new Map<string, ActivationCooldownEntry>([
+      [
+        "task:1|channel-1|agent-a|agent-b|review_needed",
+        { lastActivatedAt: Date.parse("2026-05-12T00:00:00.000Z"), sourceMessageId: "msg-old" },
+      ],
+    ]);
+
+    expect(
+      shouldSuppressForCooldown({
+        key: "task:1|channel-1|agent-a|agent-b|review_needed",
+        entries,
+        now,
+        cooldownMs: 10 * 60 * 1000,
+        bypass: false,
+      }),
+    ).toEqual({ suppress: true, reason: "cooldown" });
+  });
+
+  it("does not suppress explicit bypass events", () => {
+    const now = Date.parse("2026-05-12T00:05:00.000Z");
+    const entries = new Map<string, ActivationCooldownEntry>([
+      [
+        "task:1|channel-1|agent-a|agent-b|direct_mention",
+        { lastActivatedAt: Date.parse("2026-05-12T00:00:00.000Z"), sourceMessageId: "msg-old" },
+      ],
+    ]);
+
+    expect(
+      shouldSuppressForCooldown({
+        key: "task:1|channel-1|agent-a|agent-b|direct_mention",
+        entries,
+        now,
+        cooldownMs: 10 * 60 * 1000,
+        bypass: true,
+      }),
+    ).toEqual({ suppress: false });
+  });
+});
+
+describe("buildActivationEnvelope", () => {
+  it("formats a structured activation envelope", () => {
+    const envelope = buildActivationEnvelope({
+      targetAgentName: "Beta",
+      space: "project_channel",
+      intents: ["handoff", "review_needed"],
+      reasons: ["natural_reference", "review_owner"],
+      strength: "medium",
+      sourceMessageId: "msg-1",
+      topicKey: "task:1",
+      hopCount: 1,
+      loopConstraints: ["cooldown: clear", "fanout: within cap"],
+    });
+
+    expect(envelope).toContain("[A2A_ACTIVATION");
+    expect(envelope).toContain("agent=Beta");
+    expect(envelope).toContain("space=project_channel");
+    expect(envelope).toContain("intents=handoff,review_needed");
+    expect(envelope).toContain("activation_reasons=natural_reference,review_owner");
+    expect(envelope).toContain("activation_strength=medium");
+    expect(envelope).toContain("source_message=msg-1");
+    expect(envelope).toContain("topic_key=task:1");
+    expect(envelope).toContain("hop_count=1");
+    expect(envelope).toContain("loop_constraints=cooldown: clear; fanout: within cap");
+    expect(envelope).toContain("expected_decision=Choose one internal mode");
+  });
+
+  it("tells agents they are not required to reply", () => {
+    expect(
+      buildActivationEnvelope({
+        targetAgentName: "Beta",
+        space: "project_channel",
+        intents: ["handoff"],
+        reasons: ["handoff_target"],
+        strength: "strong",
+        sourceMessageId: "msg-1",
+        topicKey: "task:1",
+        hopCount: 0,
+        loopConstraints: [],
+      }),
+    ).toContain("You are not required to reply");
+  });
+});
 
 describe("selectActivationCandidates", () => {
   it("strongly activates explicit @mentions", () => {
