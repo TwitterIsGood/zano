@@ -104,7 +104,7 @@ const INFORMATIONAL_PATTERNS: Array<[MessageIntent, RegExp]> = [
 ];
 
 const BENIGN_COMPLETION_PATTERN =
-  /\b(?:verification|review|check|smoke test|test(?:s)?)\b[\s\S]*\b(?:complete|completed|done|finished|passed|found no (?:issue|issues|problem|problems)|no (?:issue|issues|problem|problems))\b|\bno tests? failed\b/i;
+  /\b(?:verification|verifier|review|reviewer|check|smoke test|test(?:s)?)\b[\s\S]*\b(?:complete|completed|done|finished|passed|found no (?:issue|issues|problem|problems)|no (?:issue|issues|problem|problems))\b|\bno tests? failed\b/i;
 
 const EXPLICIT_ACTION_PATTERN =
   /\b(?:please|can someone|could someone|can you|could you|need someone|look into|inspect|investigate|fix|implement|verify|review\s+(?:this|the|these|that)|run|critical issue|serious issue|major issue|failure)\b/i;
@@ -136,6 +136,7 @@ export function classifyMessageIntent(content: string): MessageIntent[] {
     intents.add("result");
     intents.delete("request");
     intents.delete("blocker");
+    intents.delete("decision_needed");
     intents.delete("verification_needed");
     intents.delete("review_needed");
   }

@@ -113,6 +113,31 @@ describe("classifyMessageIntent", () => {
     expect(hasOnlyLowValueIntent(intents)).toBe(false);
   });
 
+  it("keeps explicit confirm requests actionable", () => {
+    const intents = classifyMessageIntent("Please confirm final approval.");
+    expect(intents).toEqual(expect.arrayContaining(["request", "decision_needed"]));
+    expect(hasActionableIntent(intents)).toBe(true);
+    expect(hasOnlyLowValueIntent(intents)).toBe(false);
+  });
+
+  it("does not mark completed confirmation summaries as actionable", () => {
+    const intents = classifyMessageIntent("The verification is complete and confirms it works.");
+    expect(intents).toContain("result");
+    expect(intents).not.toContain("decision_needed");
+    expect(intents).not.toContain("verification_needed");
+    expect(hasActionableIntent(intents)).toBe(false);
+    expect(hasOnlyLowValueIntent(intents)).toBe(true);
+  });
+
+  it("does not mark actor completion summaries as actionable", () => {
+    const intents = classifyMessageIntent("The reviewer should be done now.");
+    expect(intents).toContain("result");
+    expect(intents).not.toContain("request");
+    expect(intents).not.toContain("review_needed");
+    expect(hasActionableIntent(intents)).toBe(false);
+    expect(hasOnlyLowValueIntent(intents)).toBe(true);
+  });
+
   it("does not mark completed verification summaries as actionable", () => {
     const intents = classifyMessageIntent("The verification is complete and found no issue.");
     expect(intents).toContain("result");
