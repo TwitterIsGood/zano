@@ -174,6 +174,7 @@ describe("classifyMessageIntent", () => {
 
   it("keeps mixed completion and failure findings actionable", () => {
     const cases = [
+      "No tests failed, but deployment failed.",
       "The verification is complete but checkout failed.",
       "The tests passed except checkout failed.",
       "The review is complete and found a regression.",
@@ -187,8 +188,22 @@ describe("classifyMessageIntent", () => {
     }
   });
 
+  it("keeps pure no-issue summaries non-actionable", () => {
+    const cases = ["No tests failed.", "The review is complete and no regression was found."];
+
+    for (const content of cases) {
+      const intents = classifyMessageIntent(content);
+      expect(intents).toContain("result");
+      expect(hasActionableIntent(intents)).toBe(false);
+      expect(hasOnlyLowValueIntent(intents)).toBe(true);
+    }
+  });
+
   it("keeps mixed completion and approval follow-up messages actionable", () => {
     const cases = [
+      "The verification is complete; approval is required before deploy.",
+      "The code review is complete; approval is required before close.",
+      "The smoke test passed; sign-off is required before release.",
       "The verification is complete; approval needed before deploy.",
       "The code review is complete; approval needed before close.",
       "The smoke test passed; sign off is needed before release.",
@@ -230,10 +245,56 @@ describe("classifyMessageIntent", () => {
   });
 
   it("keeps high-signal findings out of low-value result summaries", () => {
-    const intents = classifyMessageIntent("I found a critical issue in the login flow.");
-    expect(intents).toContain("result");
-    expect(intents).toContain("blocker");
-    expect(hasOnlyLowValueIntent(intents)).toBe(false);
+    const cases = [
+      "I found a bug in checkout.",
+      "I found an error in checkout.",
+      "The checkout crashes during payment.",
+      "I found a critical issue in the login flow.",
+    ];
+
+    for (const content of cases) {
+      const intents = classifyMessageIntent(content);
+      expect(intents).toContain("result");
+      expect(intents).toContain("blocker");
+      expect(hasActionableIntent(intents)).toBe(true);
+      expect(hasOnlyLowValueIntent(intents)).toBe(false);
+    }
+  });
+
+  it("keeps broad false-positive action patterns non-actionable", () => {
+    const cases = [
+      "This should work now.",
+      "Verification is in progress.",
+      "It confirms the fix works.",
+      "The verification is complete and confirms it works.",
+      "The reviewer should be done now.",
+      "The code review should be complete now.",
+    ];
+
+    for (const content of cases) {
+      const intents = classifyMessageIntent(content);
+      expect(hasActionableIntent(intents)).toBe(false);
+      expect(hasOnlyLowValueIntent(intents)).toBe(true);
+    }
+  });
+
+  it("keeps explicit action phrases actionable", () => {
+    const cases = [
+      "Please confirm final approval.",
+      "Could you confirm the field requirement?",
+      "The reviewer should check the risk section.",
+      "This needs review before close.",
+      "Please verify the checkout flow.",
+      "Could someone run the smoke test?",
+      "The test failed, can someone investigate?",
+      "Can someone inspect why the import flow is timing out?",
+    ];
+
+    for (const content of cases) {
+      const intents = classifyMessageIntent(content);
+      expect(hasActionableIntent(intents)).toBe(true);
+      expect(hasOnlyLowValueIntent(intents)).toBe(false);
+    }
   });
 
   it("marks open requests as actionable and not low-value", () => {
