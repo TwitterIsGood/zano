@@ -226,7 +226,7 @@ export interface ActivationSelection {
 }
 
 const REVIEW_TERMS = ["review", "reviewer", "approve", "approval", "risk", "critique", "检查", "评审"];
-const VERIFY_TERMS = ["verify", "verifier", "validation", "test", "evidence", "smoke", "验证", "测试"];
+const VERIFY_TERMS = ["verify", "verifier", "validate", "validation", "test", "evidence", "smoke", "验证", "测试"];
 const IMPLEMENT_TERMS = ["implement", "implementation", "build", "code", "fix", "change", "实现", "修复"];
 
 function pushReason(map: Map<string, ActivationCandidate>, agentId: string, reason: ActivationReason, strength: ActivationStrength) {
@@ -245,12 +245,16 @@ function normalizedIncludes(content: string, value: string) {
   return content.toLocaleLowerCase().includes(value.toLocaleLowerCase());
 }
 
+const REVIEW_ROLE_TERMS = ["reviewer", "review owner", "approval owner", "评审者"];
+const VERIFY_ROLE_TERMS = ["verifier", "verification owner", "validation owner", "tester", "验证者"];
+const IMPLEMENT_ROLE_TERMS = ["implementer", "implementation owner", "builder", "developer", "修复者", "实现者"];
+
 function matchesAgent(content: string, agent: ProtocolAgent) {
   if (normalizedIncludes(content, `@${agent.name}`) || normalizedIncludes(content, agent.displayName) || normalizedIncludes(content, agent.name)) return true;
   const agentProfile = `${agent.displayName}\n${agent.name}\n${agent.description || ""}`;
-  if (hasAnyTerm(content, REVIEW_TERMS) && hasAnyTerm(agentProfile, REVIEW_TERMS)) return true;
-  if (hasAnyTerm(content, VERIFY_TERMS) && hasAnyTerm(agentProfile, VERIFY_TERMS)) return true;
-  if (hasAnyTerm(content, IMPLEMENT_TERMS) && hasAnyTerm(agentProfile, IMPLEMENT_TERMS)) return true;
+  if (hasAnyTerm(content, REVIEW_ROLE_TERMS) && hasAnyTerm(agentProfile, REVIEW_TERMS)) return true;
+  if (hasAnyTerm(content, VERIFY_ROLE_TERMS) && hasAnyTerm(agentProfile, VERIFY_TERMS)) return true;
+  if (hasAnyTerm(content, IMPLEMENT_ROLE_TERMS) && hasAnyTerm(agentProfile, IMPLEMENT_TERMS)) return true;
   return false;
 }
 
@@ -291,8 +295,18 @@ export function selectActivationCandidates(input: ActivationSelectionInput): Act
     const naturalReference = matchesAgent(input.message.content, agent) && !explicitMention;
 
     if (isSender) {
-      const hasTaskObligation = input.task?.assigneeId === agent.id || input.task?.reviewerId === agent.id || input.task?.createdById === agent.id;
-      if (!hasTaskObligation) continue;
+      const senderReasons: ActivationReason[] = [];
+      if (explicitMention) senderReasons.push("direct_mention");
+      if (input.space === "dm") senderReasons.push("dm_recipient");
+      if (input.task?.assigneeId === agent.id) senderReasons.push("task_owner");
+      if (input.task?.reviewerId === agent.id) senderReasons.push("review_owner");
+      if (input.task?.createdById === agent.id) senderReasons.push("task_creator");
+      if (naturalReference) senderReasons.push("natural_reference");
+      if (isOpenCall(input.message.content) && actionable && input.space === "project_channel") senderReasons.push("open_call_candidate");
+      if (lastOtherSpeaker?.senderId === agent.id && actionable && /\b(you|your|take another look|continue|please check|can you|could you)\b/i.test(input.message.content)) senderReasons.push("conversation_continuation");
+      if (!naturalReference && !explicitMention && actionable && matchesDomain(input.message.content, agent)) senderReasons.push(isOpenCall(input.message.content) ? "open_call_candidate" : "domain_fit");
+      if (senderReasons.length > 0) suppressed.push({ agentId: agent.id, reason: "sender", reasons: senderReasons });
+      continue;
     }
 
     if (explicitMention) pushReason(candidates, agent.id, "direct_mention", "strong");
@@ -332,7 +346,7 @@ export function selectActivationCandidates(input: ActivationSelectionInput): Act
   const strong = activated.filter((candidate) => candidate.strength === "strong");
   const natural = activated.filter((candidate) => candidate.strength !== "strong");
   const limit = fanoutLimit(input.space, input.message.senderType);
-  const allowedNatural = natural.slice(0, Math.max(0, limit - strong.length));
+  const allowedNatural = natural.slice(0, limit);
   const capped = natural.slice(allowedNatural.length);
 
   for (const candidate of capped) suppressed.push({ agentId: candidate.agentId, reason: "fanout_cap", reasons: candidate.reasons });

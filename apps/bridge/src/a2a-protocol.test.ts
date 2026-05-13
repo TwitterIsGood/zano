@@ -500,6 +500,90 @@ describe("selectActivationCandidates", () => {
     ]);
   });
 
+  it("suppresses the sender even when the sender owns task obligations", () => {
+    const result = selectActivationCandidates({
+      message: msg({ senderType: "agent", senderId: "agent-a", content: "task #42 needs follow-up before close." }),
+      agents,
+      space: "task_thread",
+      intents: ["request"],
+      topicKey: "task:task-1",
+      recentMessages: [],
+      task: { id: "task-1", taskNumber: 42, messageId: "message-1", sourceMessageId: "message-1", assigneeId: "agent-a", reviewerId: "agent-a", createdById: "agent-a" },
+    });
+
+    expect(result.activated).not.toEqual(expect.arrayContaining([expect.objectContaining({ agentId: "agent-a" })]));
+    expect(result.suppressed).toEqual([
+      expect.objectContaining({
+        agentId: "agent-a",
+        reason: "sender",
+        reasons: expect.arrayContaining(["task_owner", "review_owner", "task_creator"]),
+      }),
+    ]);
+  });
+
+  it("activates a non-open-call domain fit as a weak candidate", () => {
+    const result = selectActivationCandidates({
+      message: msg({ content: "Please validate the import timeout before release." }),
+      agents,
+      space: "project_channel",
+      intents: ["request", "verification_needed"],
+      topicKey: "message:msg-1",
+      recentMessages: [],
+      task: null,
+    });
+
+    expect(result.activated).toEqual([
+      expect.objectContaining({ agentId: "agent-b", strength: "weak", reasons: ["domain_fit"] }),
+    ]);
+  });
+
+  it("activates open-call domain matches as weak open-call candidates", () => {
+    const result = selectActivationCandidates({
+      message: msg({ content: "Can someone validate the import timeout?" }),
+      agents,
+      space: "project_channel",
+      intents: ["request", "question", "verification_needed"],
+      topicKey: "message:msg-1",
+      recentMessages: [],
+      task: null,
+    });
+
+    expect(result.activated).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ agentId: "agent-b", strength: "weak", reasons: expect.arrayContaining(["open_call_candidate"]) }),
+      ]),
+    );
+  });
+
+  it("preserves all strong candidates and caps only non-strong fanout", () => {
+    const result = selectActivationCandidates({
+      message: msg({ content: "@alpha please validate, implement, and review the import timeout." }),
+      agents: [
+        { id: "agent-a", name: "alpha", displayName: "Alpha", description: "Owns implementation work" },
+        { id: "agent-b", name: "beta", displayName: "Beta", description: "Owns validation work" },
+        { id: "agent-c", name: "gamma", displayName: "Gamma", description: "Owns review work" },
+        { id: "agent-d", name: "delta", displayName: "Delta", description: "Owns build work" },
+      ],
+      space: "project_channel",
+      intents: ["request", "verification_needed", "review_needed"],
+      topicKey: "message:msg-1",
+      recentMessages: [],
+      task: null,
+    });
+
+    expect(result.activated).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ agentId: "agent-a", strength: "strong", reasons: expect.arrayContaining(["direct_mention"]) }),
+        expect.objectContaining({ agentId: "agent-b", strength: "weak", reasons: expect.arrayContaining(["domain_fit"]) }),
+        expect.objectContaining({ agentId: "agent-c", strength: "weak", reasons: expect.arrayContaining(["domain_fit"]) }),
+      ]),
+    );
+    expect(result.activated).toHaveLength(3);
+    expect(result.suppressed).toEqual([
+      expect.objectContaining({ agentId: "agent-d", reason: "fanout_cap", reasons: expect.arrayContaining(["domain_fit"]) }),
+    ]);
+  });
+
   it("caps project channel natural fanout to two candidates", () => {
     const result = selectActivationCandidates({
       message: msg({ content: "Can someone inspect and validate this?" }),
