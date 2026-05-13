@@ -194,11 +194,11 @@ export interface CooldownKeyInput {
   channelId: string;
   sourceAgentId: string;
   targetAgentId: string;
-  reason: string;
+  reason: ActivationReason | MessageIntent;
 }
 
 export function buildCooldownKey(input: CooldownKeyInput): string {
-  return [input.topicKey, input.channelId, input.sourceAgentId, input.targetAgentId, input.reason].join("|");
+  return JSON.stringify([input.topicKey, input.channelId, input.sourceAgentId, input.targetAgentId, input.reason]);
 }
 
 export interface CooldownCheckInput {
@@ -209,6 +209,9 @@ export interface CooldownCheckInput {
   bypass: boolean;
 }
 
+/**
+ * Suppresses only exact directed cooldown keys. Broader hop/topic loop guards are enforced by bridge integration.
+ */
 export function shouldSuppressForCooldown(input: CooldownCheckInput): { suppress: boolean; reason?: "cooldown" } {
   if (input.bypass) return { suppress: false };
   const entry = input.entries.get(input.key);
@@ -229,18 +232,19 @@ export interface ActivationEnvelopeInput {
 }
 
 export function buildActivationEnvelope(input: ActivationEnvelopeInput): string {
-  return `[A2A_ACTIVATION
-agent=${input.targetAgentName}
-space=${input.space}
-intents=${input.intents.join(",")}
-activation_reasons=${input.reasons.join(",")}
-activation_strength=${input.strength}
-source_message=${input.sourceMessageId}
-topic_key=${input.topicKey}
-hop_count=${input.hopCount}
-loop_constraints=${input.loopConstraints.join("; ") || "none"}
-expected_decision=Choose one internal mode before doing anything visible: REPLY_AND_WORK, WORK_SILENTLY, REPLY_ONLY, OBSERVE, or SKIP. You are not required to reply. Send a message only if it adds new result, evidence, blocker, decision, question, ownership, handoff, correction, or completion value.
-]`;
+  return `[A2A_ACTIVATION ${JSON.stringify({
+    agent: input.targetAgentName,
+    space: input.space,
+    intents: input.intents,
+    activation_reasons: input.reasons,
+    activation_strength: input.strength,
+    source_message: input.sourceMessageId,
+    topic_key: input.topicKey,
+    hop_count: input.hopCount,
+    loop_constraints: input.loopConstraints,
+    expected_decision:
+      "Choose one internal mode before doing anything visible: REPLY_AND_WORK, WORK_SILENTLY, REPLY_ONLY, OBSERVE, or SKIP. You are not required to reply. Send a message only if it adds new result, evidence, blocker, decision, question, ownership, handoff, correction, or completion value.",
+  })}]`;
 }
 
 export interface ProtocolAgent {
