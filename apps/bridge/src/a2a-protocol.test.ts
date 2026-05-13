@@ -120,6 +120,37 @@ describe("classifyMessageIntent", () => {
     expect(hasOnlyLowValueIntent(intents)).toBe(false);
   });
 
+  it("does not mark completed decision or approval summaries as actionable", () => {
+    const cases = [
+      "The final decision was approved.",
+      "Approval was received.",
+      "The deployment approval was granted.",
+    ];
+
+    for (const content of cases) {
+      const intents = classifyMessageIntent(content);
+      expect(intents).toEqual(expect.arrayContaining(["result"]));
+      expect(intents).not.toContain("decision_needed");
+      expect(hasActionableIntent(intents)).toBe(false);
+      expect(hasOnlyLowValueIntent(intents)).toBe(true);
+    }
+  });
+
+  it("does not mark repeated negated problem summaries as actionable", () => {
+    const cases = [
+      "No tests failed and no regression was found.",
+      "No error was found and no regression was detected.",
+    ];
+
+    for (const content of cases) {
+      const intents = classifyMessageIntent(content);
+      expect(intents).toContain("result");
+      expect(intents).not.toContain("blocker");
+      expect(hasActionableIntent(intents)).toBe(false);
+      expect(hasOnlyLowValueIntent(intents)).toBe(true);
+    }
+  });
+
   it("does not mark completed confirmation summaries as actionable", () => {
     const intents = classifyMessageIntent("The verification is complete and confirms it works.");
     expect(intents).toContain("result");

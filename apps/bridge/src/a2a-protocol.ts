@@ -79,14 +79,14 @@ const ACTIONABLE_INTENTS: ReadonlySet<MessageIntent> = new Set([
   "escalation",
 ]);
 
-const LOW_VALUE_INTENTS: ReadonlySet<MessageIntent> = new Set(["ack", "thanks", "chatter", "status", "result"]);
+const LOW_VALUE_INTENTS: ReadonlySet<MessageIntent> = new Set(["ack", "thanks", "chatter", "status", "result", "decision"]);
 
 const ACTION_PATTERNS: Array<[MessageIntent, RegExp]> = [
   ["request", /\b(can someone|could someone|please|need someone|needs to|must|do this|take this|handle this|look into|inspect|investigate|fix|implement|verify)\b|请(?:验证|检查|审核|审查|确认)/i],
   ["question", /\?|\b(which|what|why|how|when|where|who|should we|can you|could you)\b/i],
   ["handoff", /\b(handoff|hand off|pass to|over to|take over|continue|next step|follow up|should (?:check|review|verify)|please (?:check|review|verify))\b/i],
   ["blocker", /\b(blocked|blocker|critical issue|serious issue|major issue|bug|error|crash(?:es|ed|ing)?|failure|failed|regression|cannot|can't|unable|waiting on|until .* confirms?|depends on|need .* before)\b/i],
-  ["decision_needed", /\b((?:please|can you|could you)\s+confirm|until .* confirms?|decide(?: whether)?|decision|approve|approval(?:\s+(?:needed|required|is required))?|choose|select|sign[- ]?off(?:\s+is\s+(?:needed|required))?|sign off(?:\s+is\s+(?:needed|required))?|go\/no-go)\b/i],
+  ["decision_needed", /\b((?:please|can you|could you)\s+confirm|until .* confirms?|decide(?: whether)?|decision\s+(?:needed|required)|approve\b|approval\s+(?:needed|required|is required)|choose|select|sign[- ]?off(?:\s+is\s+(?:needed|required))?|sign off(?:\s+is\s+(?:needed|required))?|go\/no-go)\b/i],
   ["review_needed", /\b(?:please|should|needs?|must|can you|could you)\s+review\b|\breview\s+(?:this|the|these|that)\b|\b(?:approval needed|check .* risk|look over|take another look|critique)\b|请(?:检查|审核|审查)/i],
   ["verification_needed", /\b(verify|validate|evidence|regression|(?:please|can you|could you)\s+confirm .* works|(?:run|perform|need|needs|please|could someone)\s+(?:a\s+)?(?:smoke|test))\b|请(?:验证|确认)/i],
   ["correction", /\b(not that|instead|change|wrong|incorrect|revise|adjust|stop|don't|no,)\b/i],
@@ -97,7 +97,7 @@ const ACTION_PATTERNS: Array<[MessageIntent, RegExp]> = [
 const INFORMATIONAL_PATTERNS: Array<[MessageIntent, RegExp]> = [
   ["ack", /\b(ok|okay|sounds good|sgtm|received|got it|ack|noted)\b/i],
   ["thanks", /\b(thanks|thank you|appreciate)\b|辛苦|谢谢/i],
-  ["result", /\b(done|completed?|finished|result|findings|found|confirmed|fixed|implemented|verified|passed|failed)\b/i],
+  ["result", /\b(done|completed?|finished|result|findings|found|confirmed|fixed|implemented|verified|passed|failed|approved|received|granted)\b/i],
   ["decision", /\b(decided|approved|rejected|selected|we will|we'll|final decision)\b/i],
   ["status", /\b(in progress|working on|currently|status|progress|waiting|pending|in review|ongoing|already)\b|已|正在|等待/i],
   ["chatter", /\b(hello|hi|hey|good morning|good night|lol|haha)\b/i],
@@ -107,19 +107,24 @@ const BENIGN_COMPLETION_PATTERN =
   /\b(?:verification|verifier|review|reviewer|check|smoke test|test(?:s)?)\b[\s\S]*\b(?:complete|completed|done|finished|passed|found no (?:issue|issues|problem|problems)|no (?:issue|issues|problem|problems)|no regression was found|confirms? .* works?)\b|\bno tests? failed\b/i;
 
 const EXPLICIT_ACTION_PATTERN =
-  /\b(?:please|can someone|could someone|can you|could you|need someone|look into|inspect|investigate|fix|implement|verify|review\s+(?:this|the|these|that)|run|should (?:check|review|verify)|needs? review|decide(?: whether)?|decision|approve|approval(?:\s+(?:needed|required|is required))?|choose|select|sign[- ]?off(?:\s+is\s+(?:needed|required))?|sign off(?:\s+is\s+(?:needed|required))?)\b|请(?:验证|检查|审核|审查|确认)/i;
+  /\b(?:please|can someone|could someone|can you|could you|need someone|look into|inspect|investigate|fix|implement|verify|review\s+(?:this|the|these|that)|run|should (?:check|review|verify)|needs? review|decide(?: whether)?|decision\s+(?:needed|required)|approve\b|approval\s+(?:needed|required|is required)|choose|select|sign[- ]?off(?:\s+is\s+(?:needed|required))?|sign off(?:\s+is\s+(?:needed|required))?)\b|请(?:验证|检查|审核|审查|确认)/i;
 
 const PROBLEM_FINDING_PATTERN =
   /\b(?:critical issue|serious issue|major issue|bug|error|crash(?:es|ed|ing)?|failure|failed|regression|cannot|can't|unable|blocked|blocker)\b/i;
 
 const PURE_NO_PROBLEM_SUMMARY_PATTERN =
-  /\b(?:no tests? failed|no (?:issue|issues|problem|problems)|no regression was found)\b/i;
+  /\b(?:no tests? failed|no (?:issue|issues|problem|problems|errors?)|no regression was (?:found|detected))\b/i;
 
-const NEGATED_PROBLEM_PATTERN = /\b(?:no tests? failed|no regression was found)\b/i;
+const NEGATED_PROBLEM_PATTERN =
+  /\b(?:no tests? failed|no (?:issue|issues|problem|problems|errors?) (?:was |were )?(?:found|detected)|no regression was (?:found|detected))\b/gi;
 const HIGH_SIGNAL_RESULT_PATTERN = /\b(?:found|crash(?:es|ed|ing)?)\b/i;
 
+function normalizeNegatedProblemFindings(content: string): string {
+  return content.replace(NEGATED_PROBLEM_PATTERN, "");
+}
+
 function hasProblemFinding(content: string): boolean {
-  return PROBLEM_FINDING_PATTERN.test(content.replace(NEGATED_PROBLEM_PATTERN, ""));
+  return PROBLEM_FINDING_PATTERN.test(normalizeNegatedProblemFindings(content));
 }
 
 function isPureBenignCompletionSummary(content: string): boolean {
@@ -146,7 +151,9 @@ export function classifyMessageIntent(content: string): MessageIntent[] {
     if (pattern.test(content)) intents.add(intent);
   }
 
-  if (hasProblemFinding(content) && HIGH_SIGNAL_RESULT_PATTERN.test(content)) intents.add("result");
+  const normalizedProblemContent = normalizeNegatedProblemFindings(content);
+
+  if (hasProblemFinding(content) && HIGH_SIGNAL_RESULT_PATTERN.test(normalizedProblemContent)) intents.add("result");
 
   if (isPureBenignCompletionSummary(content)) {
     intents.add("result");
