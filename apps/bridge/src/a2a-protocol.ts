@@ -82,12 +82,12 @@ const ACTIONABLE_INTENTS: ReadonlySet<MessageIntent> = new Set([
 const LOW_VALUE_INTENTS: ReadonlySet<MessageIntent> = new Set(["ack", "thanks", "chatter", "status", "result"]);
 
 const ACTION_PATTERNS: Array<[MessageIntent, RegExp]> = [
-  ["request", /\b(can someone|could someone|please|need someone|needs to|should|must|do this|take this|handle this|look into|inspect|investigate|fix|implement|verify|review)\b/i],
+  ["request", /\b(can someone|could someone|please|need someone|needs to|should|must|do this|take this|handle this|look into|inspect|investigate|fix|implement|verify)\b/i],
   ["question", /\?|\b(which|what|why|how|when|where|who|should we|can you|could you)\b/i],
   ["handoff", /\b(handoff|hand off|pass to|over to|take over|continue|next step|follow up|should check|should review|should verify|please check|please review|please verify)\b/i],
-  ["blocker", /\b(blocked|blocker|cannot|can't|unable|waiting on|until .* confirms?|depends on|need .* before)\b/i],
+  ["blocker", /\b(blocked|blocker|critical issue|serious issue|major issue|failure|failed|cannot|can't|unable|waiting on|until .* confirms?|depends on|need .* before)\b/i],
   ["decision_needed", /\b(confirms?|decide|decision|approve|approval|choose|select|sign off|go\/no-go)\b/i],
-  ["review_needed", /\b(review|critique|approve|approval|check .* risk|look over|take another look)\b/i],
+  ["review_needed", /\b(?:please|should|needs?|must|can you|could you)\s+review\b|\breview\s+(?:this|the|these|that)\b|\b(?:approval needed|check .* risk|look over|take another look|critique)\b/i],
   ["verification_needed", /\b(verify|verification|validate|evidence|regression|confirm .* works|(?:run|perform|need|needs|please)\s+(?:a\s+)?(?:smoke|test))\b/i],
   ["correction", /\b(not that|instead|change|wrong|incorrect|revise|adjust|stop|don't|no,)\b/i],
   ["assignment", /\b(assign|owner|responsible|take|claim|belongs to|owned by)\b/i],
@@ -131,7 +131,7 @@ export function hasActionableIntent(intents: MessageIntent[]): boolean {
 }
 
 export function hasOnlyLowValueIntent(intents: MessageIntent[]): boolean {
-  return intents.every((intent) => LOW_VALUE_INTENTS.has(intent));
+  return intents.length > 0 && intents.every((intent) => LOW_VALUE_INTENTS.has(intent));
 }
 
 export function deriveTopicKey(message: ProtocolMessage, task: ProtocolTaskRef | null): string {

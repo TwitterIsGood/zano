@@ -89,6 +89,29 @@ describe("classifyMessageIntent", () => {
     expect(hasOnlyLowValueIntent(intents)).toBe(true);
   });
 
+  it("does not mark completed no-issue review summaries as actionable", () => {
+    const intents = classifyMessageIntent("The code review is complete and found no issue.");
+    expect(intents).toContain("result");
+    expect(intents).not.toContain("request");
+    expect(intents).not.toContain("review_needed");
+    expect(hasActionableIntent(intents)).toBe(false);
+    expect(hasOnlyLowValueIntent(intents)).toBe(true);
+  });
+
+  it("marks imperative review requests as actionable", () => {
+    const intents = classifyMessageIntent("Please review the login flow changes.");
+    expect(intents).toEqual(expect.arrayContaining(["request", "review_needed"]));
+    expect(hasActionableIntent(intents)).toBe(true);
+    expect(hasOnlyLowValueIntent(intents)).toBe(false);
+  });
+
+  it("keeps high-signal findings out of low-value result summaries", () => {
+    const intents = classifyMessageIntent("I found a critical issue in the login flow.");
+    expect(intents).toContain("result");
+    expect(intents).toContain("blocker");
+    expect(hasOnlyLowValueIntent(intents)).toBe(false);
+  });
+
   it("marks open requests as actionable and not low-value", () => {
     const intents = classifyMessageIntent("Can someone inspect why the import flow is timing out?");
     expect(hasActionableIntent(intents)).toBe(true);
@@ -110,6 +133,24 @@ describe("classifyMessageIntent", () => {
   it("matches Chinese informational terms", () => {
     expect(classifyMessageIntent("谢谢，辛苦了")).toEqual(expect.arrayContaining(["thanks"]));
     expect(classifyMessageIntent("正在处理，等待结果")).toEqual(expect.arrayContaining(["status"]));
+  });
+});
+
+describe("intent helper semantics", () => {
+  it("marks raw actionable intent arrays as actionable", () => {
+    expect(hasActionableIntent(["request"])).toBe(true);
+  });
+
+  it("marks benign raw status and result arrays as low-value", () => {
+    expect(hasOnlyLowValueIntent(["status", "result"])).toBe(true);
+  });
+
+  it("does not mark raw high-signal result arrays as low-value", () => {
+    expect(hasOnlyLowValueIntent(["result", "blocker"])).toBe(false);
+  });
+
+  it("does not mark empty raw intent arrays as low-value", () => {
+    expect(hasOnlyLowValueIntent([])).toBe(false);
   });
 });
 
