@@ -5,7 +5,10 @@ import {
   deriveTopicKey,
   hasActionableIntent,
   hasOnlyLowValueIntent,
+  selectActivationCandidates,
+  type ProtocolAgent,
   type ProtocolMessage,
+  type ProtocolRecentMessage,
 } from "./a2a-protocol";
 
 function msg(overrides: Partial<ProtocolMessage> = {}): ProtocolMessage {
@@ -412,5 +415,121 @@ describe("deriveTopicKey", () => {
 
   it("falls back to message id", () => {
     expect(deriveTopicKey(msg({ id: "message-1", threadParentId: null }), null)).toBe("message:message-1");
+  });
+});
+
+const agents: ProtocolAgent[] = [
+  { id: "agent-a", name: "alpha", displayName: "Alpha", description: "Owns implementation and build work" },
+  { id: "agent-b", name: "beta", displayName: "Beta", description: "Owns review and validation work" },
+  { id: "agent-c", name: "gamma", displayName: "Gamma", description: "Owns documentation work" },
+];
+
+function recent(overrides: Partial<ProtocolRecentMessage> = {}): ProtocolRecentMessage {
+  return {
+    senderId: "agent-a",
+    senderType: "agent",
+    content: "I finished the change.",
+    createdAt: "2026-05-12T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+describe("selectActivationCandidates", () => {
+  it("strongly activates explicit @mentions", () => {
+    const result = selectActivationCandidates({
+      message: msg({ senderType: "agent", senderId: "agent-a", content: "@beta please review this." }),
+      agents,
+      space: "project_channel",
+      intents: ["request", "review_needed"],
+      topicKey: "message:msg-1",
+      recentMessages: [],
+      task: null,
+    });
+
+    expect(result.activated).toEqual([
+      expect.objectContaining({ agentId: "agent-b", strength: "strong", reasons: expect.arrayContaining(["direct_mention"]) }),
+    ]);
+  });
+
+  it("activates a naturally referenced role only when the message is actionable", () => {
+    const result = selectActivationCandidates({
+      message: msg({ senderType: "agent", senderId: "agent-a", content: "The reviewer should check the risk section." }),
+      agents,
+      space: "project_channel",
+      intents: ["handoff", "review_needed"],
+      topicKey: "message:msg-1",
+      recentMessages: [],
+      task: null,
+    });
+
+    expect(result.activated).toEqual([
+      expect.objectContaining({ agentId: "agent-b", strength: "medium", reasons: expect.arrayContaining(["natural_reference"]) }),
+    ]);
+  });
+
+  it("does not activate a naturally referenced role for pure status", () => {
+    const result = selectActivationCandidates({
+      message: msg({ senderType: "agent", senderId: "agent-a", content: "The reviewer already completed the check." }),
+      agents,
+      space: "project_channel",
+      intents: ["status"],
+      topicKey: "message:msg-1",
+      recentMessages: [],
+      task: null,
+    });
+
+    expect(result.activated).toEqual([]);
+    expect(result.suppressed).toEqual([
+      expect.objectContaining({ agentId: "agent-b", reason: "low_value_intent" }),
+    ]);
+  });
+
+  it("activates task assignee as task owner", () => {
+    const result = selectActivationCandidates({
+      message: msg({ content: "task #42 needs follow-up before close." }),
+      agents,
+      space: "task_thread",
+      intents: ["request"],
+      topicKey: "task:task-1",
+      recentMessages: [],
+      task: { id: "task-1", taskNumber: 42, messageId: "message-1", sourceMessageId: "message-1", assigneeId: "agent-a", reviewerId: null, createdById: null },
+    });
+
+    expect(result.activated).toEqual([
+      expect.objectContaining({ agentId: "agent-a", strength: "strong", reasons: expect.arrayContaining(["task_owner"]) }),
+    ]);
+  });
+
+  it("caps project channel natural fanout to two candidates", () => {
+    const result = selectActivationCandidates({
+      message: msg({ content: "Can someone inspect and validate this?" }),
+      agents,
+      space: "project_channel",
+      intents: ["request", "verification_needed"],
+      topicKey: "message:msg-1",
+      recentMessages: [],
+      task: null,
+    });
+
+    expect(result.activated).toHaveLength(2);
+    expect(result.suppressed).toEqual([
+      expect.objectContaining({ reason: "fanout_cap" }),
+    ]);
+  });
+
+  it("activates recent participant for conversation continuation", () => {
+    const result = selectActivationCandidates({
+      message: msg({ senderType: "agent", senderId: "agent-c", content: "Can you take another look?" }),
+      agents,
+      space: "thread",
+      intents: ["question", "request"],
+      topicKey: "thread:thread-1",
+      recentMessages: [recent({ senderId: "agent-b", content: "I found a possible issue." })],
+      task: null,
+    });
+
+    expect(result.activated).toEqual([
+      expect.objectContaining({ agentId: "agent-b", reasons: expect.arrayContaining(["conversation_continuation"]) }),
+    ]);
   });
 });

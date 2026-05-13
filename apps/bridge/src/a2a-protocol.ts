@@ -183,3 +183,159 @@ export function deriveTopicKey(message: ProtocolMessage, task: ProtocolTaskRef |
   if (message.threadParentId) return `thread:${message.threadParentId}`;
   return `message:${message.id}`;
 }
+
+export interface ProtocolAgent {
+  id: string;
+  name: string;
+  displayName: string;
+  description: string | null;
+}
+
+export interface ProtocolRecentMessage {
+  senderId: string;
+  senderType: SenderType;
+  content: string;
+  createdAt: string;
+}
+
+export interface ActivationCandidate {
+  agentId: string;
+  reasons: ActivationReason[];
+  strength: ActivationStrength;
+}
+
+export interface SuppressedCandidate {
+  agentId: string;
+  reason: "sender" | "low_value_intent" | "fanout_cap" | "no_obligation";
+  reasons: ActivationReason[];
+}
+
+export interface ActivationSelectionInput {
+  message: ProtocolMessage;
+  agents: ProtocolAgent[];
+  space: ConversationSpace;
+  intents: MessageIntent[];
+  topicKey: string;
+  recentMessages: ProtocolRecentMessage[];
+  task: ProtocolTaskRef | null;
+}
+
+export interface ActivationSelection {
+  activated: ActivationCandidate[];
+  suppressed: SuppressedCandidate[];
+}
+
+const REVIEW_TERMS = ["review", "reviewer", "approve", "approval", "risk", "critique", "检查", "评审"];
+const VERIFY_TERMS = ["verify", "verifier", "validation", "test", "evidence", "smoke", "验证", "测试"];
+const IMPLEMENT_TERMS = ["implement", "implementation", "build", "code", "fix", "change", "实现", "修复"];
+
+function pushReason(map: Map<string, ActivationCandidate>, agentId: string, reason: ActivationReason, strength: ActivationStrength) {
+  const current = map.get(agentId);
+  if (!current) {
+    map.set(agentId, { agentId, reasons: [reason], strength });
+    return;
+  }
+
+  if (!current.reasons.includes(reason)) current.reasons.push(reason);
+  if (current.strength === "weak" && (strength === "medium" || strength === "strong")) current.strength = strength;
+  if (current.strength === "medium" && strength === "strong") current.strength = strength;
+}
+
+function normalizedIncludes(content: string, value: string) {
+  return content.toLocaleLowerCase().includes(value.toLocaleLowerCase());
+}
+
+function matchesAgent(content: string, agent: ProtocolAgent) {
+  if (normalizedIncludes(content, `@${agent.name}`) || normalizedIncludes(content, agent.displayName) || normalizedIncludes(content, agent.name)) return true;
+  const agentProfile = `${agent.displayName}\n${agent.name}\n${agent.description || ""}`;
+  if (hasAnyTerm(content, REVIEW_TERMS) && hasAnyTerm(agentProfile, REVIEW_TERMS)) return true;
+  if (hasAnyTerm(content, VERIFY_TERMS) && hasAnyTerm(agentProfile, VERIFY_TERMS)) return true;
+  if (hasAnyTerm(content, IMPLEMENT_TERMS) && hasAnyTerm(agentProfile, IMPLEMENT_TERMS)) return true;
+  return false;
+}
+
+function hasAnyTerm(content: string, terms: string[]) {
+  return terms.some((term) => normalizedIncludes(content, term));
+}
+
+function matchesDomain(content: string, agent: ProtocolAgent) {
+  const agentProfile = `${agent.displayName}\n${agent.name}\n${agent.description || ""}`;
+  return (
+    (hasAnyTerm(content, REVIEW_TERMS) && hasAnyTerm(agentProfile, REVIEW_TERMS)) ||
+    (hasAnyTerm(content, VERIFY_TERMS) && hasAnyTerm(agentProfile, VERIFY_TERMS)) ||
+    (hasAnyTerm(content, IMPLEMENT_TERMS) && hasAnyTerm(agentProfile, IMPLEMENT_TERMS))
+  );
+}
+
+function isOpenCall(content: string) {
+  return /\b(can someone|could someone|who can|need help|needs? someone)\b/i.test(content);
+}
+
+function fanoutLimit(space: ConversationSpace, senderType: SenderType) {
+  if (space === "general_channel") return senderType === "agent" ? 1 : 2;
+  if (space === "project_channel") return senderType === "agent" ? 2 : 2;
+  if (space === "thread" || space === "task_thread") return 3;
+  return Number.POSITIVE_INFINITY;
+}
+
+export function selectActivationCandidates(input: ActivationSelectionInput): ActivationSelection {
+  const candidates = new Map<string, ActivationCandidate>();
+  const suppressed: SuppressedCandidate[] = [];
+  const actionable = hasActionableIntent(input.intents);
+  const lowValue = hasOnlyLowValueIntent(input.intents);
+  const lastOtherSpeaker = [...input.recentMessages].reverse().find((m) => m.senderType === "agent" && m.senderId !== input.message.senderId);
+
+  for (const agent of input.agents) {
+    const isSender = agent.id === input.message.senderId;
+    const explicitMention = normalizedIncludes(input.message.content, `@${agent.name}`) || normalizedIncludes(input.message.content, `@${agent.displayName}`);
+    const naturalReference = matchesAgent(input.message.content, agent) && !explicitMention;
+
+    if (isSender) {
+      const hasTaskObligation = input.task?.assigneeId === agent.id || input.task?.reviewerId === agent.id || input.task?.createdById === agent.id;
+      if (!hasTaskObligation) continue;
+    }
+
+    if (explicitMention) pushReason(candidates, agent.id, "direct_mention", "strong");
+
+    if (input.space === "dm") pushReason(candidates, agent.id, "dm_recipient", "strong");
+
+    if (input.task?.assigneeId === agent.id) pushReason(candidates, agent.id, "task_owner", "strong");
+    if (input.task?.reviewerId === agent.id) pushReason(candidates, agent.id, "review_owner", "strong");
+    if (input.task?.createdById === agent.id) pushReason(candidates, agent.id, "task_creator", "medium");
+
+    if (naturalReference) {
+      if (actionable) pushReason(candidates, agent.id, "natural_reference", "medium");
+      else suppressed.push({ agentId: agent.id, reason: "low_value_intent", reasons: ["natural_reference"] });
+    }
+
+    if (isOpenCall(input.message.content) && actionable && input.space === "project_channel") {
+      pushReason(candidates, agent.id, "open_call_candidate", "weak");
+    }
+
+    if (lastOtherSpeaker?.senderId === agent.id && actionable && /\b(you|your|take another look|continue|please check|can you|could you)\b/i.test(input.message.content)) {
+      pushReason(candidates, agent.id, "conversation_continuation", input.space === "thread" || input.space === "task_thread" ? "strong" : "medium");
+    }
+
+    if (!naturalReference && !explicitMention && actionable && matchesDomain(input.message.content, agent)) {
+      pushReason(candidates, agent.id, isOpenCall(input.message.content) ? "open_call_candidate" : "domain_fit", "weak");
+    }
+  }
+
+  const activated = Array.from(candidates.values()).filter((candidate) => {
+    if (lowValue && !candidate.reasons.includes("direct_mention") && !candidate.reasons.includes("dm_recipient")) {
+      suppressed.push({ agentId: candidate.agentId, reason: "low_value_intent", reasons: candidate.reasons });
+      return false;
+    }
+    return true;
+  });
+
+  const strong = activated.filter((candidate) => candidate.strength === "strong");
+  const natural = activated.filter((candidate) => candidate.strength !== "strong");
+  const limit = fanoutLimit(input.space, input.message.senderType);
+  const allowedNatural = natural.slice(0, Math.max(0, limit - strong.length));
+  const capped = natural.slice(allowedNatural.length);
+
+  for (const candidate of capped) suppressed.push({ agentId: candidate.agentId, reason: "fanout_cap", reasons: candidate.reasons });
+
+  return { activated: [...strong, ...allowedNatural], suppressed };
+}
