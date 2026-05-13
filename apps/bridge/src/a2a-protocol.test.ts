@@ -1225,7 +1225,7 @@ describe("A2A target-state scenarios", () => {
   });
 
   it("keeps explicit mentions reliable even for low-value-looking text", () => {
-    const message = msg({ senderType: "agent", senderId: "agent-a", content: "@beta sounds good, please confirm final approval." });
+    const message = msg({ senderType: "agent", senderId: "agent-a", content: "@beta sounds good, thanks." });
     const intents = classifyMessageIntent(message.content);
     const selection = selectActivationCandidates({
       message,
@@ -1243,11 +1243,18 @@ describe("A2A target-state scenarios", () => {
   });
 
   it("keeps open calls bounded", () => {
+    const openCallCandidates: ProtocolAgent[] = [
+      { id: "agent-a", name: "alpha", displayName: "Alpha", description: "Can inspect failures in implementation flows" },
+      { id: "agent-b", name: "beta", displayName: "Beta", description: "Can validate failures and review outcomes" },
+      { id: "agent-c", name: "gamma", displayName: "Gamma", description: "Can document failures and findings" },
+      { id: "agent-d", name: "delta", displayName: "Delta", description: "Can inspect and validate service failures" },
+      { id: "agent-e", name: "epsilon", displayName: "Epsilon", description: "Can document validation failure details" },
+    ];
     const message = msg({ senderType: "human", senderId: "human-1", content: "Can someone inspect, validate, and document the failure?" });
     const intents = classifyMessageIntent(message.content);
     const selection = selectActivationCandidates({
       message,
-      agents,
+      agents: openCallCandidates,
       space: "project_channel",
       intents,
       topicKey: "message:msg-1",
@@ -1255,6 +1262,8 @@ describe("A2A target-state scenarios", () => {
       task: null,
     });
 
+    expect(openCallCandidates.length).toBeGreaterThan(3);
     expect(selection.activated.length).toBeLessThanOrEqual(3);
+    expect(selection.activated.length).toBeLessThan(openCallCandidates.length);
   });
 });
