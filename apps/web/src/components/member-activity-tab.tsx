@@ -129,7 +129,7 @@ export function MemberActivityTab({ serverId, serverSlug, memberType, memberId }
         <Card className="border-primary/20 bg-primary/5">
           <CardContent className="py-4">
             <div className="flex items-center gap-2 text-sm">
-              <Badge variant={activityBadgeVariant}>{agentActivity.activity}</Badge>
+              <Badge className="shrink-0" variant={activityBadgeVariant}>{agentActivity.activity}</Badge>
               <span className="font-medium">{agentActivity.label || "Active"}</span>
               {agentActivity.detail ? <span className="truncate text-muted-foreground">{agentActivity.detail}</span> : null}
             </div>
