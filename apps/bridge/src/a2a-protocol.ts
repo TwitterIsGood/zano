@@ -242,12 +242,12 @@ function pushReason(map: Map<string, ActivationCandidate>, agentId: string, reas
   if (current.strength === "medium" && strength === "strong") current.strength = strength;
 }
 
-function normalizedIncludes(content: string, value: string) {
-  return content.toLocaleLowerCase().includes(value.toLocaleLowerCase());
-}
-
 function escapeRegex(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function containsCjk(value: string) {
+  return /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(value);
 }
 
 function tokenAwarePattern(value: string, prefix = "") {
@@ -255,6 +255,7 @@ function tokenAwarePattern(value: string, prefix = "") {
 }
 
 function hasTokenAwareTerm(content: string, value: string, prefix = "") {
+  if (!prefix && containsCjk(value)) return content.toLocaleLowerCase().includes(value.toLocaleLowerCase());
   return tokenAwarePattern(value, prefix).test(content);
 }
 
@@ -262,6 +263,30 @@ const REVIEW_ROLE_TERMS = ["reviewer", "review owner", "approval owner", "评审
 const VERIFY_ROLE_TERMS = ["verifier", "verification owner", "validation owner", "tester", "验证者"];
 const IMPLEMENT_ROLE_TERMS = ["implementer", "implementation owner", "builder", "developer", "修复者", "实现者"];
 const DOCUMENTATION_ROLE_TERMS = ["documenter", "documentation owner", "docs owner", "writer", "technical writer", "文档负责人"];
+
+const GENERIC_DOMAIN_STOPWORDS = new Set([
+  "work",
+  "works",
+  "own",
+  "owns",
+  "owner",
+  "team",
+  "task",
+  "this",
+  "that",
+  "these",
+  "those",
+  "someone",
+  "please",
+  "check",
+  "handle",
+  "help",
+  "need",
+  "needs",
+  "can",
+  "could",
+  "should",
+]);
 
 function matchesDirectMention(content: string, agent: ProtocolAgent) {
   return hasTokenAwareTerm(content, agent.name, "@") || hasTokenAwareTerm(content, agent.displayName, "@");
@@ -285,13 +310,18 @@ function hasAnyTerm(content: string, terms: string[]) {
   return terms.some((term) => hasTokenAwareTerm(content, term));
 }
 
+function meaningfulDomainTokens(content: string) {
+  return (content.toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu) || []).filter(
+    (token) => token.length >= 5 && !GENERIC_DOMAIN_STOPWORDS.has(token),
+  );
+}
+
 function tokenOverlapCount(content: string, agent: ProtocolAgent) {
-  const contentTokens = new Set((content.toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu) || []).filter((token) => token.length >= 4));
+  const contentTokens = new Set(meaningfulDomainTokens(content));
   if (contentTokens.size === 0) return 0;
 
   const agentProfile = `${agent.displayName}\n${agent.name}\n${agent.description || ""}`;
-  return (agentProfile.toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu) || [])
-    .filter((token) => token.length >= 4 && contentTokens.has(token)).length;
+  return meaningfulDomainTokens(agentProfile).filter((token) => contentTokens.has(token)).length;
 }
 
 function domainScore(content: string, agent: ProtocolAgent) {
@@ -380,10 +410,11 @@ export function selectActivationCandidates(input: ActivationSelectionInput): Act
     return true;
   });
 
+  const agentsById = new Map(input.agents.map((agent) => [agent.id, agent]));
   const strong = activated.filter((candidate) => candidate.strength === "strong");
   const natural = activated
     .filter((candidate) => candidate.strength !== "strong")
-    .sort((a, b) => domainScore(input.message.content, input.agents.find((agent) => agent.id === b.agentId)!) - domainScore(input.message.content, input.agents.find((agent) => agent.id === a.agentId)!));
+    .sort((a, b) => domainScore(input.message.content, agentsById.get(b.agentId)!) - domainScore(input.message.content, agentsById.get(a.agentId)!));
   const limit = fanoutLimit(input.space, input.message.senderType);
   const allowedNatural = natural.slice(0, limit);
   const capped = natural.slice(allowedNatural.length);

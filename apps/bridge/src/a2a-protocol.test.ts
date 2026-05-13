@@ -555,6 +555,83 @@ describe("selectActivationCandidates", () => {
     );
   });
 
+  it("does not activate agents from generic work overlap in open calls", () => {
+    const result = selectActivationCandidates({
+      message: msg({ content: "Can someone check this work?" }),
+      agents,
+      space: "project_channel",
+      intents: ["request", "question"],
+      topicKey: "message:msg-1",
+      recentMessages: [],
+      task: null,
+    });
+
+    expect(result.activated).toEqual([]);
+  });
+
+  it("still activates implementation agents for specific implementation requests", () => {
+    const result = selectActivationCandidates({
+      message: msg({ content: "Can someone implement the checkout fallback?" }),
+      agents,
+      space: "project_channel",
+      intents: ["request", "question"],
+      topicKey: "message:msg-1",
+      recentMessages: [],
+      task: null,
+    });
+
+    expect(result.activated).toEqual([
+      expect.objectContaining({ agentId: "agent-a", strength: "weak", reasons: expect.arrayContaining(["open_call_candidate"]) }),
+    ]);
+  });
+
+  it("activates agents for Chinese domain requests", () => {
+    const chineseAgents: ProtocolAgent[] = [
+      { id: "verify-agent", name: "verifier", displayName: "Verifier", description: "负责验证和测试结账流程" },
+      { id: "review-agent", name: "reviewer", displayName: "Reviewer", description: "负责评审风险和代码审查" },
+      { id: "docs-agent", name: "documenter", displayName: "Documenter", description: "负责文档和说明" },
+    ];
+
+    const verification = selectActivationCandidates({
+      message: msg({ content: "请验证结账流程。" }),
+      agents: chineseAgents,
+      space: "project_channel",
+      intents: ["request", "verification_needed"],
+      topicKey: "message:msg-1",
+      recentMessages: [],
+      task: null,
+    });
+    expect(verification.activated).toEqual([
+      expect.objectContaining({ agentId: "verify-agent", strength: "weak", reasons: expect.arrayContaining(["domain_fit"]) }),
+    ]);
+
+    const review = selectActivationCandidates({
+      message: msg({ content: "请评审登录风险。" }),
+      agents: chineseAgents,
+      space: "project_channel",
+      intents: ["request", "review_needed"],
+      topicKey: "message:msg-1",
+      recentMessages: [],
+      task: null,
+    });
+    expect(review.activated).toEqual([
+      expect.objectContaining({ agentId: "review-agent", strength: "weak", reasons: expect.arrayContaining(["domain_fit"]) }),
+    ]);
+
+    const documentation = selectActivationCandidates({
+      message: msg({ content: "请补充结账文档。" }),
+      agents: chineseAgents,
+      space: "project_channel",
+      intents: ["request"],
+      topicKey: "message:msg-1",
+      recentMessages: [],
+      task: null,
+    });
+    expect(documentation.activated).toEqual([
+      expect.objectContaining({ agentId: "docs-agent", strength: "weak", reasons: expect.arrayContaining(["domain_fit"]) }),
+    ]);
+  });
+
   it("prioritizes relevant open-call agents over irrelevant earlier roster entries", () => {
     const result = selectActivationCandidates({
       message: msg({ content: "Can someone validate the import timeout?" }),
