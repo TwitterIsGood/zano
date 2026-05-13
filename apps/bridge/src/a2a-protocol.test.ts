@@ -1188,3 +1188,73 @@ describe("bridge integration helpers", () => {
     );
   });
 });
+
+describe("A2A target-state scenarios", () => {
+  it("wakes a responsible reviewer for natural handoff without explicit mention", () => {
+    const message = msg({ senderType: "agent", senderId: "agent-a", content: "The change is ready; reviewer should check the risk section before close." });
+    const intents = classifyMessageIntent(message.content);
+    const selection = selectActivationCandidates({
+      message,
+      agents,
+      space: "project_channel",
+      intents,
+      topicKey: "task:42",
+      recentMessages: [],
+      task: { id: "task-42", taskNumber: 42, messageId: "message-42", sourceMessageId: "message-42", assigneeId: "agent-a", reviewerId: "agent-b", createdById: null },
+    });
+
+    expect(selection.activated).toEqual([
+      expect.objectContaining({ agentId: "agent-b", strength: "strong", reasons: expect.arrayContaining(["review_owner"]) }),
+    ]);
+  });
+
+  it("does not wake agents for pure status summaries", () => {
+    const message = msg({ senderType: "agent", senderId: "agent-a", content: "The verifier already completed the smoke check and found no issue." });
+    const intents = classifyMessageIntent(message.content);
+    const selection = selectActivationCandidates({
+      message,
+      agents,
+      space: "project_channel",
+      intents,
+      topicKey: "task:42",
+      recentMessages: [],
+      task: null,
+    });
+
+    expect(selection.activated).toEqual([]);
+  });
+
+  it("keeps explicit mentions reliable even for low-value-looking text", () => {
+    const message = msg({ senderType: "agent", senderId: "agent-a", content: "@beta sounds good, please confirm final approval." });
+    const intents = classifyMessageIntent(message.content);
+    const selection = selectActivationCandidates({
+      message,
+      agents,
+      space: "general_channel",
+      intents,
+      topicKey: "message:msg-1",
+      recentMessages: [],
+      task: null,
+    });
+
+    expect(selection.activated).toEqual([
+      expect.objectContaining({ agentId: "agent-b", strength: "strong", reasons: expect.arrayContaining(["direct_mention"]) }),
+    ]);
+  });
+
+  it("keeps open calls bounded", () => {
+    const message = msg({ senderType: "human", senderId: "human-1", content: "Can someone inspect, validate, and document the failure?" });
+    const intents = classifyMessageIntent(message.content);
+    const selection = selectActivationCandidates({
+      message,
+      agents,
+      space: "project_channel",
+      intents,
+      topicKey: "message:msg-1",
+      recentMessages: [],
+      task: null,
+    });
+
+    expect(selection.activated.length).toBeLessThanOrEqual(3);
+  });
+});
