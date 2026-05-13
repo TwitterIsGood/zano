@@ -51,6 +51,18 @@ describe("system prompt A2A contract", () => {
 
     expect(prompt).toContain("Never send the literal word `SKIP` into chat");
   });
+
+  it("does not override WORK_SILENTLY with unconditional task acknowledgement guidance", () => {
+    const prompt = buildSystemPrompt(
+      { display_name: "Beta", name: "beta", description: null, system_prompt: null },
+      "",
+    );
+
+    expect(prompt).not.toContain("When you receive a task, acknowledge it and briefly outline your plan before starting");
+    expect(prompt).toMatch(/REPLY_AND_WORK[\s\S]*visible[\s\S]*(ownership|plan)/);
+    expect(prompt).toMatch(/WORK_SILENTLY[\s\S]*do not send a visible acknowledgement\/plan before starting/);
+    expect(prompt).toContain("`SKIP` and `OBSERVE` are internal decisions");
+  });
 });
 
 describe("classifyConversationSpace", () => {
