@@ -6,7 +6,7 @@ import {
   type TaskStatus,
   type TaskTransitionContext,
 } from "./collaboration";
-import type { AgentActivity } from "./index";
+import type { AgentActivity, MemberActivityEventType } from "./index";
 
 function ctx(overrides: Partial<TaskTransitionContext> = {}): TaskTransitionContext {
   return {
@@ -129,8 +129,15 @@ describe("hasDependencyCycle", () => {
 describe("AgentActivity", () => {
   it("accepts A2A quiet collaboration states", () => {
     const states: AgentActivity[] = ["idle", "thinking", "working", "working_silently", "observing", "blocked", "error"];
+    const persistedEvents: MemberActivityEventType[] = [
+      "agent.working_silently",
+      "agent.observing",
+      "agent.blocked",
+    ];
+
     expect(states).toContain("working_silently");
     expect(states).toContain("observing");
     expect(states).toContain("blocked");
+    expect(persistedEvents).toEqual(["agent.working_silently", "agent.observing", "agent.blocked"]);
   });
 });

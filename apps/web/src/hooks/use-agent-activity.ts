@@ -3,8 +3,9 @@
 import { createContext, useContext, useEffect, useState, useRef, type ReactNode } from "react";
 import { createClient } from "@/lib/supabase/client";
 import React from "react";
+import type { AgentActivity } from "@zano/shared";
 
-export type AgentActivity = "idle" | "thinking" | "working" | "error";
+export type { AgentActivity };
 
 export interface ActivityState {
   activity: AgentActivity;
