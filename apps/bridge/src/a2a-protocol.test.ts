@@ -555,6 +555,86 @@ describe("selectActivationCandidates", () => {
     );
   });
 
+  it("prioritizes relevant open-call agents over irrelevant earlier roster entries", () => {
+    const result = selectActivationCandidates({
+      message: msg({ content: "Can someone validate the import timeout?" }),
+      agents: [
+        { id: "agent-a", name: "alpha", displayName: "Alpha", description: "Owns implementation work" },
+        { id: "agent-d", name: "delta", displayName: "Delta", description: "Coordinates planning and logistics" },
+        { id: "agent-e", name: "epsilon", displayName: "Epsilon", description: "Handles operations support" },
+        { id: "agent-b", name: "beta", displayName: "Beta", description: "Owns validation and test evidence" },
+      ],
+      space: "project_channel",
+      intents: ["request", "question", "verification_needed"],
+      topicKey: "message:msg-1",
+      recentMessages: [],
+      task: null,
+    });
+
+    expect(result.activated).toEqual([
+      expect.objectContaining({ agentId: "agent-b", reasons: expect.arrayContaining(["open_call_candidate"]) }),
+    ]);
+    expect(result.suppressed).not.toEqual(expect.arrayContaining([expect.objectContaining({ agentId: "agent-b", reason: "fanout_cap" })]));
+  });
+
+  it("does not treat longer hyphenated mentions as direct mentions of shorter agent names", () => {
+    const result = selectActivationCandidates({
+      message: msg({ content: "@beta-team please review the rollout plan." }),
+      agents,
+      space: "project_channel",
+      intents: ["request", "review_needed"],
+      topicKey: "message:msg-1",
+      recentMessages: [],
+      task: null,
+    });
+
+    expect(result.activated).not.toEqual(expect.arrayContaining([expect.objectContaining({ agentId: "agent-b", reasons: expect.arrayContaining(["direct_mention"]) })]));
+  });
+
+  it("does not treat agent names inside unrelated words as natural references", () => {
+    const result = selectActivationCandidates({
+      message: msg({ content: "Please review the alphabetized checklist." }),
+      agents,
+      space: "project_channel",
+      intents: ["request", "review_needed"],
+      topicKey: "message:msg-1",
+      recentMessages: [],
+      task: null,
+    });
+
+    expect(result.activated).not.toEqual(expect.arrayContaining([expect.objectContaining({ agentId: "agent-a", reasons: expect.arrayContaining(["natural_reference"]) })]));
+  });
+
+  it("does not use project-channel conversation continuation for broad you language", () => {
+    const result = selectActivationCandidates({
+      message: msg({ senderType: "agent", senderId: "agent-c", content: "Can you check the plan?" }),
+      agents,
+      space: "project_channel",
+      intents: ["question", "request"],
+      topicKey: "message:msg-1",
+      recentMessages: [recent({ senderId: "agent-b", content: "I mentioned a separate deploy concern." })],
+      task: null,
+    });
+
+    expect(result.activated).not.toEqual(expect.arrayContaining([expect.objectContaining({ agentId: "agent-b", reasons: expect.arrayContaining(["conversation_continuation"]) })]));
+  });
+
+  it("selects documentation agents for documentation open calls", () => {
+    const result = selectActivationCandidates({
+      message: msg({ content: "Can someone document the deployment checklist?" }),
+      agents,
+      space: "project_channel",
+      intents: ["request", "question"],
+      topicKey: "message:msg-1",
+      recentMessages: [],
+      task: null,
+    });
+
+    expect(result.activated).toEqual([
+      expect.objectContaining({ agentId: "agent-c", strength: "weak", reasons: expect.arrayContaining(["open_call_candidate"]) }),
+    ]);
+  });
+
   it("preserves all strong candidates and caps only non-strong fanout", () => {
     const result = selectActivationCandidates({
       message: msg({ content: "@alpha please validate, implement, and review the import timeout." }),
@@ -586,10 +666,14 @@ describe("selectActivationCandidates", () => {
 
   it("caps project channel natural fanout to two candidates", () => {
     const result = selectActivationCandidates({
-      message: msg({ content: "Can someone inspect and validate this?" }),
-      agents,
+      message: msg({ content: "Can someone validate and review this?" }),
+      agents: [
+        { id: "agent-a", name: "alpha", displayName: "Alpha", description: "Owns validation work" },
+        { id: "agent-b", name: "beta", displayName: "Beta", description: "Owns validation work" },
+        { id: "agent-c", name: "gamma", displayName: "Gamma", description: "Owns review work" },
+      ],
       space: "project_channel",
-      intents: ["request", "verification_needed"],
+      intents: ["request", "verification_needed", "review_needed"],
       topicKey: "message:msg-1",
       recentMessages: [],
       task: null,

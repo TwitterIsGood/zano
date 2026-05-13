@@ -225,9 +225,10 @@ export interface ActivationSelection {
   suppressed: SuppressedCandidate[];
 }
 
-const REVIEW_TERMS = ["review", "reviewer", "approve", "approval", "risk", "critique", "检查", "评审"];
-const VERIFY_TERMS = ["verify", "verifier", "validate", "validation", "test", "evidence", "smoke", "验证", "测试"];
-const IMPLEMENT_TERMS = ["implement", "implementation", "build", "code", "fix", "change", "实现", "修复"];
+const REVIEW_TERMS = ["review", "reviewer", "approve", "approval", "risk", "critique", "inspect", "检查", "评审"];
+const VERIFY_TERMS = ["verify", "verifier", "validate", "validation", "test", "evidence", "smoke", "qa", "检查", "验证", "测试"];
+const IMPLEMENT_TERMS = ["implement", "implementation", "build", "code", "fix", "change", "develop", "实现", "修复"];
+const DOCUMENTATION_TERMS = ["document", "documentation", "docs", "writeup", "guide", "readme", "checklist", "runbook", "说明", "文档"];
 
 function pushReason(map: Map<string, ActivationCandidate>, agentId: string, reason: ActivationReason, strength: ActivationStrength) {
   const current = map.get(agentId);
@@ -245,30 +246,66 @@ function normalizedIncludes(content: string, value: string) {
   return content.toLocaleLowerCase().includes(value.toLocaleLowerCase());
 }
 
+function escapeRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function tokenAwarePattern(value: string, prefix = "") {
+  return new RegExp(`(^|[^\\p{L}\\p{N}_-])${escapeRegex(prefix + value)}(?=$|[^\\p{L}\\p{N}_-])`, "iu");
+}
+
+function hasTokenAwareTerm(content: string, value: string, prefix = "") {
+  return tokenAwarePattern(value, prefix).test(content);
+}
+
 const REVIEW_ROLE_TERMS = ["reviewer", "review owner", "approval owner", "评审者"];
 const VERIFY_ROLE_TERMS = ["verifier", "verification owner", "validation owner", "tester", "验证者"];
 const IMPLEMENT_ROLE_TERMS = ["implementer", "implementation owner", "builder", "developer", "修复者", "实现者"];
+const DOCUMENTATION_ROLE_TERMS = ["documenter", "documentation owner", "docs owner", "writer", "technical writer", "文档负责人"];
+
+function matchesDirectMention(content: string, agent: ProtocolAgent) {
+  return hasTokenAwareTerm(content, agent.name, "@") || hasTokenAwareTerm(content, agent.displayName, "@");
+}
+
+function matchesNaturalName(content: string, agent: ProtocolAgent) {
+  return hasTokenAwareTerm(content, agent.displayName) || hasTokenAwareTerm(content, agent.name);
+}
 
 function matchesAgent(content: string, agent: ProtocolAgent) {
-  if (normalizedIncludes(content, `@${agent.name}`) || normalizedIncludes(content, agent.displayName) || normalizedIncludes(content, agent.name)) return true;
+  if (matchesDirectMention(content, agent) || matchesNaturalName(content, agent)) return true;
   const agentProfile = `${agent.displayName}\n${agent.name}\n${agent.description || ""}`;
   if (hasAnyTerm(content, REVIEW_ROLE_TERMS) && hasAnyTerm(agentProfile, REVIEW_TERMS)) return true;
   if (hasAnyTerm(content, VERIFY_ROLE_TERMS) && hasAnyTerm(agentProfile, VERIFY_TERMS)) return true;
   if (hasAnyTerm(content, IMPLEMENT_ROLE_TERMS) && hasAnyTerm(agentProfile, IMPLEMENT_TERMS)) return true;
+  if (hasAnyTerm(content, DOCUMENTATION_ROLE_TERMS) && hasAnyTerm(agentProfile, DOCUMENTATION_TERMS)) return true;
   return false;
 }
 
 function hasAnyTerm(content: string, terms: string[]) {
-  return terms.some((term) => normalizedIncludes(content, term));
+  return terms.some((term) => hasTokenAwareTerm(content, term));
+}
+
+function tokenOverlapCount(content: string, agent: ProtocolAgent) {
+  const contentTokens = new Set((content.toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu) || []).filter((token) => token.length >= 4));
+  if (contentTokens.size === 0) return 0;
+
+  const agentProfile = `${agent.displayName}\n${agent.name}\n${agent.description || ""}`;
+  return (agentProfile.toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu) || [])
+    .filter((token) => token.length >= 4 && contentTokens.has(token)).length;
+}
+
+function domainScore(content: string, agent: ProtocolAgent) {
+  const agentProfile = `${agent.displayName}\n${agent.name}\n${agent.description || ""}`;
+  let score = 0;
+  if (hasAnyTerm(content, REVIEW_TERMS) && hasAnyTerm(agentProfile, REVIEW_TERMS)) score += 3;
+  if (hasAnyTerm(content, VERIFY_TERMS) && hasAnyTerm(agentProfile, VERIFY_TERMS)) score += 3;
+  if (hasAnyTerm(content, IMPLEMENT_TERMS) && hasAnyTerm(agentProfile, IMPLEMENT_TERMS)) score += 3;
+  if (hasAnyTerm(content, DOCUMENTATION_TERMS) && hasAnyTerm(agentProfile, DOCUMENTATION_TERMS)) score += 3;
+  return score + Math.min(tokenOverlapCount(content, agent), 2);
 }
 
 function matchesDomain(content: string, agent: ProtocolAgent) {
-  const agentProfile = `${agent.displayName}\n${agent.name}\n${agent.description || ""}`;
-  return (
-    (hasAnyTerm(content, REVIEW_TERMS) && hasAnyTerm(agentProfile, REVIEW_TERMS)) ||
-    (hasAnyTerm(content, VERIFY_TERMS) && hasAnyTerm(agentProfile, VERIFY_TERMS)) ||
-    (hasAnyTerm(content, IMPLEMENT_TERMS) && hasAnyTerm(agentProfile, IMPLEMENT_TERMS))
-  );
+  return domainScore(content, agent) > 0;
 }
 
 function isOpenCall(content: string) {
@@ -291,7 +328,7 @@ export function selectActivationCandidates(input: ActivationSelectionInput): Act
 
   for (const agent of input.agents) {
     const isSender = agent.id === input.message.senderId;
-    const explicitMention = normalizedIncludes(input.message.content, `@${agent.name}`) || normalizedIncludes(input.message.content, `@${agent.displayName}`);
+    const explicitMention = matchesDirectMention(input.message.content, agent);
     const naturalReference = matchesAgent(input.message.content, agent) && !explicitMention;
 
     if (isSender) {
@@ -302,8 +339,8 @@ export function selectActivationCandidates(input: ActivationSelectionInput): Act
       if (input.task?.reviewerId === agent.id) senderReasons.push("review_owner");
       if (input.task?.createdById === agent.id) senderReasons.push("task_creator");
       if (naturalReference) senderReasons.push("natural_reference");
-      if (isOpenCall(input.message.content) && actionable && input.space === "project_channel") senderReasons.push("open_call_candidate");
-      if (lastOtherSpeaker?.senderId === agent.id && actionable && /\b(you|your|take another look|continue|please check|can you|could you)\b/i.test(input.message.content)) senderReasons.push("conversation_continuation");
+      if (isOpenCall(input.message.content) && actionable && input.space === "project_channel" && matchesDomain(input.message.content, agent)) senderReasons.push("open_call_candidate");
+      if (lastOtherSpeaker?.senderId === agent.id && actionable && (input.space === "thread" || input.space === "task_thread" || input.space === "dm") && /\b(you|your|take another look|continue|please check|can you|could you)\b/i.test(input.message.content)) senderReasons.push("conversation_continuation");
       if (!naturalReference && !explicitMention && actionable && matchesDomain(input.message.content, agent)) senderReasons.push(isOpenCall(input.message.content) ? "open_call_candidate" : "domain_fit");
       if (senderReasons.length > 0) suppressed.push({ agentId: agent.id, reason: "sender", reasons: senderReasons });
       continue;
@@ -322,11 +359,11 @@ export function selectActivationCandidates(input: ActivationSelectionInput): Act
       else suppressed.push({ agentId: agent.id, reason: "low_value_intent", reasons: ["natural_reference"] });
     }
 
-    if (isOpenCall(input.message.content) && actionable && input.space === "project_channel") {
+    if (isOpenCall(input.message.content) && actionable && input.space === "project_channel" && matchesDomain(input.message.content, agent)) {
       pushReason(candidates, agent.id, "open_call_candidate", "weak");
     }
 
-    if (lastOtherSpeaker?.senderId === agent.id && actionable && /\b(you|your|take another look|continue|please check|can you|could you)\b/i.test(input.message.content)) {
+    if (lastOtherSpeaker?.senderId === agent.id && actionable && (input.space === "thread" || input.space === "task_thread" || input.space === "dm") && /\b(you|your|take another look|continue|please check|can you|could you)\b/i.test(input.message.content)) {
       pushReason(candidates, agent.id, "conversation_continuation", input.space === "thread" || input.space === "task_thread" ? "strong" : "medium");
     }
 
@@ -344,7 +381,9 @@ export function selectActivationCandidates(input: ActivationSelectionInput): Act
   });
 
   const strong = activated.filter((candidate) => candidate.strength === "strong");
-  const natural = activated.filter((candidate) => candidate.strength !== "strong");
+  const natural = activated
+    .filter((candidate) => candidate.strength !== "strong")
+    .sort((a, b) => domainScore(input.message.content, input.agents.find((agent) => agent.id === b.agentId)!) - domainScore(input.message.content, input.agents.find((agent) => agent.id === a.agentId)!));
   const limit = fanoutLimit(input.space, input.message.senderType);
   const allowedNatural = natural.slice(0, limit);
   const capped = natural.slice(allowedNatural.length);
