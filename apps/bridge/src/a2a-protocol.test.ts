@@ -273,16 +273,21 @@ describe("classifyMessageIntent", () => {
     }
   });
 
-  it("marks Chinese verification and review requests as actionable", () => {
+  it("marks Chinese verification, review, and documentation requests as actionable", () => {
     const verificationIntents = classifyMessageIntent("请验证结账流程。");
     expect(verificationIntents).toEqual(expect.arrayContaining(["request", "verification_needed"]));
     expect(hasActionableIntent(verificationIntents)).toBe(true);
     expect(hasOnlyLowValueIntent(verificationIntents)).toBe(false);
 
-    const reviewIntents = classifyMessageIntent("请检查风险部分。");
+    const reviewIntents = classifyMessageIntent("请评审登录风险。");
     expect(reviewIntents).toEqual(expect.arrayContaining(["request", "review_needed"]));
     expect(hasActionableIntent(reviewIntents)).toBe(true);
     expect(hasOnlyLowValueIntent(reviewIntents)).toBe(false);
+
+    const documentationIntents = classifyMessageIntent("请补充结账文档。");
+    expect(documentationIntents).toEqual(expect.arrayContaining(["request"]));
+    expect(hasActionableIntent(documentationIntents)).toBe(true);
+    expect(hasOnlyLowValueIntent(documentationIntents)).toBe(false);
   });
 
   it("marks failed tests with an investigation request as actionable", () => {
@@ -569,6 +574,30 @@ describe("selectActivationCandidates", () => {
     expect(result.activated).toEqual([]);
   });
 
+  it("activates agents for allowlisted short domain tokens", () => {
+    const result = selectActivationCandidates({
+      message: msg({ content: "Can someone review the API and UI risks?" }),
+      agents: [
+        { id: "api-agent", name: "endpoint", displayName: "Endpoint Team", description: "Owns API auth and SSO work" },
+        { id: "ui-agent", name: "frontend", displayName: "Frontend Team", description: "Owns UI and UX work" },
+        { id: "ops-agent", name: "ops", displayName: "Ops", description: "Owns operations work" },
+      ],
+      space: "project_channel",
+      intents: ["request", "question", "review_needed"],
+      topicKey: "message:msg-1",
+      recentMessages: [],
+      task: null,
+    });
+
+    expect(result.activated).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ agentId: "api-agent", reasons: expect.arrayContaining(["open_call_candidate"]) }),
+        expect.objectContaining({ agentId: "ui-agent", reasons: expect.arrayContaining(["open_call_candidate"]) }),
+      ]),
+    );
+    expect(result.activated).not.toEqual(expect.arrayContaining([expect.objectContaining({ agentId: "ops-agent" })]));
+  });
+
   it("still activates implementation agents for specific implementation requests", () => {
     const result = selectActivationCandidates({
       message: msg({ content: "Can someone implement the checkout fallback?" }),
@@ -585,18 +614,19 @@ describe("selectActivationCandidates", () => {
     ]);
   });
 
-  it("activates agents for Chinese domain requests", () => {
+  it("activates agents for classifier-driven Chinese domain requests", () => {
     const chineseAgents: ProtocolAgent[] = [
       { id: "verify-agent", name: "verifier", displayName: "Verifier", description: "负责验证和测试结账流程" },
       { id: "review-agent", name: "reviewer", displayName: "Reviewer", description: "负责评审风险和代码审查" },
       { id: "docs-agent", name: "documenter", displayName: "Documenter", description: "负责文档和说明" },
     ];
 
+    const verificationMessage = msg({ content: "请验证结账流程。" });
     const verification = selectActivationCandidates({
-      message: msg({ content: "请验证结账流程。" }),
+      message: verificationMessage,
       agents: chineseAgents,
       space: "project_channel",
-      intents: ["request", "verification_needed"],
+      intents: classifyMessageIntent(verificationMessage.content),
       topicKey: "message:msg-1",
       recentMessages: [],
       task: null,
@@ -605,11 +635,12 @@ describe("selectActivationCandidates", () => {
       expect.objectContaining({ agentId: "verify-agent", strength: "weak", reasons: expect.arrayContaining(["domain_fit"]) }),
     ]);
 
+    const reviewMessage = msg({ content: "请评审登录风险。" });
     const review = selectActivationCandidates({
-      message: msg({ content: "请评审登录风险。" }),
+      message: reviewMessage,
       agents: chineseAgents,
       space: "project_channel",
-      intents: ["request", "review_needed"],
+      intents: classifyMessageIntent(reviewMessage.content),
       topicKey: "message:msg-1",
       recentMessages: [],
       task: null,
@@ -618,11 +649,12 @@ describe("selectActivationCandidates", () => {
       expect.objectContaining({ agentId: "review-agent", strength: "weak", reasons: expect.arrayContaining(["domain_fit"]) }),
     ]);
 
+    const documentationMessage = msg({ content: "请补充结账文档。" });
     const documentation = selectActivationCandidates({
-      message: msg({ content: "请补充结账文档。" }),
+      message: documentationMessage,
       agents: chineseAgents,
       space: "project_channel",
-      intents: ["request"],
+      intents: classifyMessageIntent(documentationMessage.content),
       topicKey: "message:msg-1",
       recentMessages: [],
       task: null,
@@ -741,9 +773,9 @@ describe("selectActivationCandidates", () => {
     ]);
   });
 
-  it("caps project channel natural fanout to two candidates", () => {
+  it("caps project channel natural fanout while covering requested domains", () => {
     const result = selectActivationCandidates({
-      message: msg({ content: "Can someone validate and review this?" }),
+      message: msg({ content: "Can someone cover validation and review?" }),
       agents: [
         { id: "agent-a", name: "alpha", displayName: "Alpha", description: "Owns validation work" },
         { id: "agent-b", name: "beta", displayName: "Beta", description: "Owns validation work" },
@@ -757,8 +789,14 @@ describe("selectActivationCandidates", () => {
     });
 
     expect(result.activated).toHaveLength(2);
+    expect(result.activated).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ agentId: "agent-a", reasons: expect.arrayContaining(["open_call_candidate"]) }),
+        expect.objectContaining({ agentId: "agent-c", reasons: expect.arrayContaining(["open_call_candidate"]) }),
+      ]),
+    );
     expect(result.suppressed).toEqual([
-      expect.objectContaining({ reason: "fanout_cap" }),
+      expect.objectContaining({ agentId: "agent-b", reason: "fanout_cap" }),
     ]);
   });
 

@@ -82,12 +82,12 @@ const ACTIONABLE_INTENTS: ReadonlySet<MessageIntent> = new Set([
 const LOW_VALUE_INTENTS: ReadonlySet<MessageIntent> = new Set(["ack", "thanks", "chatter", "status", "result", "decision"]);
 
 const ACTION_PATTERNS: Array<[MessageIntent, RegExp]> = [
-  ["request", /\b(can someone|could someone|can you|could you|please|need someone|needs to|must|do this|take this|handle this|look into|inspect|investigate|fix|implement|verify)\b|请(?:验证|检查|审核|审查|确认)/i],
+  ["request", /\b(can someone|could someone|can you|could you|please|need someone|needs to|must|do this|take this|handle this|look into|inspect|investigate|fix|implement|verify)\b|请(?:验证|检查|审核|审查|确认|评审|补充)/i],
   ["question", /\?|\b(which|what|why|how|when|where|who|should we|can you|could you)\b/i],
   ["handoff", /\b(handoff|hand off|pass to|over to|take over|continue|next step|follow up|should (?:check|review|verify)|please (?:check|review|verify))\b/i],
   ["blocker", /\b(blocked|blocker|critical issue|serious issue|major issue|bug|error|crash(?:es|ed|ing)?|failure|failed|regression|cannot|can't|unable|waiting on|until .* confirms?|depends on|need .* before)\b/i],
   ["decision_needed", /\b((?:please|can you|could you)\s+confirm|until .* confirms?|decide(?: whether)?|decision\s+(?:needed|required)|approve\b|approval\s+(?:needed|required|is required)|choose|select|sign[- ]?off(?:\s+is\s+(?:needed|required))?|sign off(?:\s+is\s+(?:needed|required))?|go\/no-go)\b/i],
-  ["review_needed", /\b(?:please|should|needs?|must|can you|could you)\s+review\b|\breview\s+(?:this|the|these|that)\b|\b(?:approval needed|check .* risk|look over|take another look|critique)\b|请(?:检查|审核|审查)/i],
+  ["review_needed", /\b(?:please|should|needs?|must|can you|could you)\s+review\b|\breview\s+(?:this|the|these|that)\b|\b(?:approval needed|check .* risk|look over|take another look|critique)\b|请(?:检查|审核|审查|评审)/i],
   ["verification_needed", /\b(verify|validate|evidence|regression|(?:please|can you|could you)\s+confirm .* works|(?:run|perform|need|needs|please|could someone)\s+(?:a\s+)?(?:smoke|test))\b|请(?:验证|确认)/i],
   ["correction", /\b(not that|instead|change|wrong|incorrect|revise|adjust|stop|don't|no,)\b/i],
   ["assignment", /\b(assign|owner|responsible|take|claim|belongs to|owned by)\b/i],
@@ -107,7 +107,7 @@ const BENIGN_COMPLETION_PATTERN =
   /\b(?:verification|verifier|review|reviewer|handoff|check|fix|next step|smoke test|test(?:s)?)\b[\s\S]*\b(?:is\s+)?(?:complete|completed|done|finished|passed|found no (?:issue|issues|problem|problems)|no (?:issue|issues|problem|problems)|no regression was found|confirms? .* works?)\b|\bit confirms?\b[\s\S]*\bworks?\b|\bno tests? failed\b/i;
 
 const EXPLICIT_ACTION_PATTERN =
-  /\b(?:please|can someone|could someone|can you|could you|need someone|needs to|must|look into|inspect|run|should (?:check|review|verify)|needs? review|decide(?: whether)?|decision\s+(?:needed|required)|approve\b|approval\s+(?:needed|required|is required)|choose|select|sign[- ]?off(?:\s+is\s+(?:needed|required))?|sign off(?:\s+is\s+(?:needed|required))?)\b|(?:^|[.!?;]\s*|,\s*|\bto\s+|\bthen\s+)(?:hand off|fix|implement|investigate|verify|review|check)\b|\breview\s+(?:this|the|these|that)\b|请(?:验证|检查|审核|审查|确认)/i;
+  /\b(?:please|can someone|could someone|can you|could you|need someone|needs to|must|look into|inspect|run|should (?:check|review|verify)|needs? review|decide(?: whether)?|decision\s+(?:needed|required)|approve\b|approval\s+(?:needed|required|is required)|choose|select|sign[- ]?off(?:\s+is\s+(?:needed|required))?|sign off(?:\s+is\s+(?:needed|required))?)\b|(?:^|[.!?;]\s*|,\s*|\bto\s+|\bthen\s+)(?:hand off|fix|implement|investigate|verify|review|check)\b|\breview\s+(?:this|the|these|that)\b|请(?:验证|检查|审核|审查|确认|评审|补充)/i;
 
 const PROBLEM_FINDING_PATTERN =
   /\b(?:critical issue|serious issue|major issue|bug|error|crash(?:es|ed|ing)?|failure|failed|regression|cannot|can't|unable|blocked|blocker)\b/i;
@@ -225,7 +225,7 @@ export interface ActivationSelection {
   suppressed: SuppressedCandidate[];
 }
 
-const REVIEW_TERMS = ["review", "reviewer", "approve", "approval", "risk", "critique", "inspect", "检查", "评审"];
+const REVIEW_TERMS = ["review", "reviewer", "approve", "approval", "risk", "critique", "inspect", "检查", "评审", "审查"];
 const VERIFY_TERMS = ["verify", "verifier", "validate", "validation", "test", "evidence", "smoke", "qa", "检查", "验证", "测试"];
 const IMPLEMENT_TERMS = ["implement", "implementation", "build", "code", "fix", "change", "develop", "实现", "修复"];
 const DOCUMENTATION_TERMS = ["document", "documentation", "docs", "writeup", "guide", "readme", "checklist", "runbook", "说明", "文档"];
@@ -263,6 +263,8 @@ const REVIEW_ROLE_TERMS = ["reviewer", "review owner", "approval owner", "评审
 const VERIFY_ROLE_TERMS = ["verifier", "verification owner", "validation owner", "tester", "验证者"];
 const IMPLEMENT_ROLE_TERMS = ["implementer", "implementation owner", "builder", "developer", "修复者", "实现者"];
 const DOCUMENTATION_ROLE_TERMS = ["documenter", "documentation owner", "docs owner", "writer", "technical writer", "文档负责人"];
+
+const SHORT_DOMAIN_TOKENS = new Set(["api", "ui", "ux", "db", "auth", "sso", "i18n"]);
 
 const GENERIC_DOMAIN_STOPWORDS = new Set([
   "work",
@@ -312,7 +314,7 @@ function hasAnyTerm(content: string, terms: string[]) {
 
 function meaningfulDomainTokens(content: string) {
   return (content.toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu) || []).filter(
-    (token) => token.length >= 5 && !GENERIC_DOMAIN_STOPWORDS.has(token),
+    (token) => (token.length >= 5 || SHORT_DOMAIN_TOKENS.has(token)) && !GENERIC_DOMAIN_STOPWORDS.has(token),
   );
 }
 
@@ -324,14 +326,33 @@ function tokenOverlapCount(content: string, agent: ProtocolAgent) {
   return meaningfulDomainTokens(agentProfile).filter((token) => contentTokens.has(token)).length;
 }
 
-function domainScore(content: string, agent: ProtocolAgent) {
+const DOMAIN_TERM_GROUPS = [
+  ["review", REVIEW_TERMS],
+  ["verification", VERIFY_TERMS],
+  ["implementation", IMPLEMENT_TERMS],
+  ["documentation", DOCUMENTATION_TERMS],
+] as const;
+
+function matchedDomainKeys(content: string, agent: ProtocolAgent) {
   const agentProfile = `${agent.displayName}\n${agent.name}\n${agent.description || ""}`;
-  let score = 0;
-  if (hasAnyTerm(content, REVIEW_TERMS) && hasAnyTerm(agentProfile, REVIEW_TERMS)) score += 3;
-  if (hasAnyTerm(content, VERIFY_TERMS) && hasAnyTerm(agentProfile, VERIFY_TERMS)) score += 3;
-  if (hasAnyTerm(content, IMPLEMENT_TERMS) && hasAnyTerm(agentProfile, IMPLEMENT_TERMS)) score += 3;
-  if (hasAnyTerm(content, DOCUMENTATION_TERMS) && hasAnyTerm(agentProfile, DOCUMENTATION_TERMS)) score += 3;
-  return score + Math.min(tokenOverlapCount(content, agent), 2);
+  return DOMAIN_TERM_GROUPS.filter(([, terms]) => hasAnyTerm(content, terms) && hasAnyTerm(agentProfile, terms)).map(
+    ([domain]) => domain,
+  );
+}
+
+function domainScore(content: string, agent: ProtocolAgent) {
+  return matchedDomainKeys(content, agent).length * 3 + Math.min(tokenOverlapCount(content, agent), 2);
+}
+
+function domainCoverageScore(content: string, agent: ProtocolAgent, selected: ActivationCandidate[], agentsById: Map<string, ProtocolAgent>) {
+  const selectedDomains = new Set(
+    selected.flatMap((candidate) => {
+      const selectedAgent = agentsById.get(candidate.agentId);
+      return selectedAgent ? matchedDomainKeys(content, selectedAgent) : [];
+    }),
+  );
+  const newDomainMatches = matchedDomainKeys(content, agent).filter((domain) => !selectedDomains.has(domain)).length;
+  return newDomainMatches * 3 + Math.min(tokenOverlapCount(content, agent), 2);
 }
 
 function matchesDomain(content: string, agent: ProtocolAgent) {
@@ -416,8 +437,21 @@ export function selectActivationCandidates(input: ActivationSelectionInput): Act
     .filter((candidate) => candidate.strength !== "strong")
     .sort((a, b) => domainScore(input.message.content, agentsById.get(b.agentId)!) - domainScore(input.message.content, agentsById.get(a.agentId)!));
   const limit = fanoutLimit(input.space, input.message.senderType);
-  const allowedNatural = natural.slice(0, limit);
-  const capped = natural.slice(allowedNatural.length);
+  const allowedNatural: ActivationCandidate[] = [];
+  const remainingNatural = [...natural];
+
+  while (allowedNatural.length < limit && remainingNatural.length > 0) {
+    remainingNatural.sort((a, b) => {
+      const coverageDifference =
+        domainCoverageScore(input.message.content, agentsById.get(b.agentId)!, allowedNatural, agentsById) -
+        domainCoverageScore(input.message.content, agentsById.get(a.agentId)!, allowedNatural, agentsById);
+      if (coverageDifference !== 0) return coverageDifference;
+      return domainScore(input.message.content, agentsById.get(b.agentId)!) - domainScore(input.message.content, agentsById.get(a.agentId)!);
+    });
+    allowedNatural.push(remainingNatural.shift()!);
+  }
+
+  const capped = remainingNatural;
 
   for (const candidate of capped) suppressed.push({ agentId: candidate.agentId, reason: "fanout_cap", reasons: candidate.reasons });
 
