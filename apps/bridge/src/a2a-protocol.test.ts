@@ -744,6 +744,141 @@ describe("selectActivationCandidates", () => {
     ]);
   });
 
+  it("uses classifier-driven selection for Chinese review risk requests", () => {
+    const message = msg({ content: "请审核登录风险。" });
+    const result = selectActivationCandidates({
+      message,
+      agents: [
+        { id: "impl-agent", name: "implementer", displayName: "Implementer", description: "负责实现登录功能" },
+        { id: "risk-agent", name: "reviewer", displayName: "Reviewer", description: "负责审核登录风险和代码审查" },
+      ],
+      space: "project_channel",
+      intents: classifyMessageIntent(message.content),
+      topicKey: "message:msg-1",
+      recentMessages: [],
+      task: null,
+    });
+
+    expect(result.activated).toEqual([
+      expect.objectContaining({ agentId: "risk-agent", strength: "weak", reasons: expect.arrayContaining(["domain_fit"]) }),
+    ]);
+  });
+
+  it("uses classifier-driven selection for Chinese confirmation risk requests", () => {
+    const message = msg({ content: "请确认发布风险。" });
+    const result = selectActivationCandidates({
+      message,
+      agents: [
+        { id: "release-agent", name: "release", displayName: "Release", description: "负责发布实施" },
+        { id: "decision-agent", name: "decision", displayName: "Decision", description: "负责确认发布风险和审批审查" },
+      ],
+      space: "project_channel",
+      intents: classifyMessageIntent(message.content),
+      topicKey: "message:msg-1",
+      recentMessages: [],
+      task: null,
+    });
+
+    expect(result.activated).toEqual([
+      expect.objectContaining({ agentId: "decision-agent", strength: "weak", reasons: expect.arrayContaining(["domain_fit"]) }),
+    ]);
+  });
+
+  it("uses classifier-driven selection for imperative documentation requests", () => {
+    const message = msg({ content: "Document the deployment checklist." });
+    const result = selectActivationCandidates({
+      message,
+      agents,
+      space: "project_channel",
+      intents: classifyMessageIntent(message.content),
+      topicKey: "message:msg-1",
+      recentMessages: [],
+      task: null,
+    });
+
+    expect(result.activated).toEqual([
+      expect.objectContaining({ agentId: "agent-c", strength: "weak", reasons: expect.arrayContaining(["domain_fit"]) }),
+    ]);
+  });
+
+  it("selects technical writers for classifier-driven documentation requests", () => {
+    const message = msg({ content: "Document the deployment checklist." });
+    const result = selectActivationCandidates({
+      message,
+      agents: [
+        { id: "ops-agent", name: "ops", displayName: "Ops", description: "Owns deployment operations" },
+        { id: "writer-agent", name: "writer", displayName: "Writer", description: "Technical writer for deployment guides and release checklists" },
+      ],
+      space: "project_channel",
+      intents: classifyMessageIntent(message.content),
+      topicKey: "message:msg-1",
+      recentMessages: [],
+      task: null,
+    });
+
+    expect(result.activated).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ agentId: "writer-agent", strength: "weak", reasons: expect.arrayContaining(["domain_fit"]) }),
+      ]),
+    );
+  });
+
+  it("prioritizes uncovered weak domains over duplicate domains already covered by strong candidates", () => {
+    const result = selectActivationCandidates({
+      message: msg({ content: "@alpha please implement, verify validation testing, and review checkout." }),
+      agents: [
+        { id: "agent-a", name: "alpha", displayName: "Alpha", description: "Owns implementation work" },
+        { id: "agent-b", name: "beta", displayName: "Beta", description: "Owns implementation work" },
+        { id: "agent-c", name: "gamma", displayName: "Gamma", description: "Owns verification validation testing work" },
+        { id: "agent-d", name: "delta", displayName: "Delta", description: "Owns review work" },
+      ],
+      space: "project_channel",
+      intents: ["request", "verification_needed", "review_needed"],
+      topicKey: "message:msg-1",
+      recentMessages: [],
+      task: null,
+    });
+
+    expect(result.activated).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ agentId: "agent-a", strength: "strong", reasons: expect.arrayContaining(["direct_mention"]) }),
+        expect.objectContaining({ agentId: "agent-c", strength: "weak", reasons: expect.arrayContaining(["domain_fit"]) }),
+        expect.objectContaining({ agentId: "agent-d", strength: "weak", reasons: expect.arrayContaining(["domain_fit"]) }),
+      ]),
+    );
+    expect(result.activated).toHaveLength(3);
+    expect(result.suppressed).toEqual([
+      expect.objectContaining({ agentId: "agent-b", reason: "fanout_cap" }),
+    ]);
+  });
+
+  it("covers allowlisted short-token domains under open-call fanout caps", () => {
+    const result = selectActivationCandidates({
+      message: msg({ content: "Can someone review API and UI risk?" }),
+      agents: [
+        { id: "api-agent-1", name: "api-one", displayName: "API agent 1", description: "Owns API review" },
+        { id: "api-agent-2", name: "api-two", displayName: "API agent 2", description: "Owns API review" },
+        { id: "ui-agent", name: "ui", displayName: "UI agent", description: "Owns UI review" },
+      ],
+      space: "project_channel",
+      intents: classifyMessageIntent("Can someone review API and UI risk?"),
+      topicKey: "message:msg-1",
+      recentMessages: [],
+      task: null,
+    });
+
+    expect(result.activated).toHaveLength(2);
+    expect(result.activated).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ agentId: "api-agent-1", reasons: expect.arrayContaining(["open_call_candidate"]) }),
+        expect.objectContaining({ agentId: "ui-agent", reasons: expect.arrayContaining(["open_call_candidate"]) }),
+      ]),
+    );
+    expect(result.suppressed).toEqual([
+      expect.objectContaining({ agentId: "api-agent-2", reason: "fanout_cap" }),
+    ]);
+  });
+
   it("preserves all strong candidates and caps only non-strong fanout", () => {
     const result = selectActivationCandidates({
       message: msg({ content: "@alpha please validate, implement, and review the import timeout." }),

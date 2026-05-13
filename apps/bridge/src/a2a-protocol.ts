@@ -82,11 +82,11 @@ const ACTIONABLE_INTENTS: ReadonlySet<MessageIntent> = new Set([
 const LOW_VALUE_INTENTS: ReadonlySet<MessageIntent> = new Set(["ack", "thanks", "chatter", "status", "result", "decision"]);
 
 const ACTION_PATTERNS: Array<[MessageIntent, RegExp]> = [
-  ["request", /\b(can someone|could someone|can you|could you|please|need someone|needs to|must|do this|take this|handle this|look into|inspect|investigate|fix|implement|verify)\b|请(?:验证|检查|审核|审查|确认|评审|补充)/i],
+  ["request", /\b(can someone|could someone|can you|could you|please|need someone|needs to|must|do this|take this|handle this|look into|inspect|investigate|fix|implement|verify|document)\b|请(?:验证|检查|审核|审查|确认|评审|补充)/i],
   ["question", /\?|\b(which|what|why|how|when|where|who|should we|can you|could you)\b/i],
   ["handoff", /\b(handoff|hand off|pass to|over to|take over|continue|next step|follow up|should (?:check|review|verify)|please (?:check|review|verify))\b/i],
   ["blocker", /\b(blocked|blocker|critical issue|serious issue|major issue|bug|error|crash(?:es|ed|ing)?|failure|failed|regression|cannot|can't|unable|waiting on|until .* confirms?|depends on|need .* before)\b/i],
-  ["decision_needed", /\b((?:please|can you|could you)\s+confirm|until .* confirms?|decide(?: whether)?|decision\s+(?:needed|required)|approve\b|approval\s+(?:needed|required|is required)|choose|select|sign[- ]?off(?:\s+is\s+(?:needed|required))?|sign off(?:\s+is\s+(?:needed|required))?|go\/no-go)\b/i],
+  ["decision_needed", /\b((?:please|can you|could you)\s+confirm|until .* confirms?|decide(?: whether)?|decision\s+(?:needed|required)|approve\b|approval\s+(?:needed|required|is required)|choose|select|sign[- ]?off(?:\s+is\s+(?:needed|required))?|sign off(?:\s+is\s+(?:needed|required))?|go\/no-go)\b|请确认/i],
   ["review_needed", /\b(?:please|should|needs?|must|can you|could you)\s+review\b|\breview\s+(?:this|the|these|that)\b|\b(?:approval needed|check .* risk|look over|take another look|critique)\b|请(?:检查|审核|审查|评审)/i],
   ["verification_needed", /\b(verify|validate|evidence|regression|(?:please|can you|could you)\s+confirm .* works|(?:run|perform|need|needs|please|could someone)\s+(?:a\s+)?(?:smoke|test))\b|请(?:验证|确认)/i],
   ["correction", /\b(not that|instead|change|wrong|incorrect|revise|adjust|stop|don't|no,)\b/i],
@@ -225,10 +225,10 @@ export interface ActivationSelection {
   suppressed: SuppressedCandidate[];
 }
 
-const REVIEW_TERMS = ["review", "reviewer", "approve", "approval", "risk", "critique", "inspect", "检查", "评审", "审查"];
-const VERIFY_TERMS = ["verify", "verifier", "validate", "validation", "test", "evidence", "smoke", "qa", "检查", "验证", "测试"];
+const REVIEW_TERMS = ["review", "reviewer", "approve", "approval", "risk", "critique", "inspect", "检查", "评审", "审查", "审核", "确认", "风险"];
+const VERIFY_TERMS = ["verify", "verifier", "validate", "validation", "test", "evidence", "smoke", "qa", "检查", "验证", "测试", "确认"];
 const IMPLEMENT_TERMS = ["implement", "implementation", "build", "code", "fix", "change", "develop", "实现", "修复"];
-const DOCUMENTATION_TERMS = ["document", "documentation", "docs", "writeup", "guide", "readme", "checklist", "runbook", "说明", "文档"];
+const DOCUMENTATION_TERMS = ["document", "documentation", "docs", "writeup", "guide", "readme", "checklist", "runbook", "writer", "technical writer", "说明", "文档"];
 
 function pushReason(map: Map<string, ActivationCandidate>, agentId: string, reason: ActivationReason, strength: ActivationStrength) {
   const current = map.get(agentId);
@@ -335,9 +335,13 @@ const DOMAIN_TERM_GROUPS = [
 
 function matchedDomainKeys(content: string, agent: ProtocolAgent) {
   const agentProfile = `${agent.displayName}\n${agent.name}\n${agent.description || ""}`;
-  return DOMAIN_TERM_GROUPS.filter(([, terms]) => hasAnyTerm(content, terms) && hasAnyTerm(agentProfile, terms)).map(
+  const domainKeys = DOMAIN_TERM_GROUPS.filter(([, terms]) => hasAnyTerm(content, terms) && hasAnyTerm(agentProfile, terms)).map(
     ([domain]) => domain,
   );
+  const contentTokens = new Set(meaningfulDomainTokens(content));
+  const agentTokens = new Set(meaningfulDomainTokens(agentProfile));
+  const shortDomainKeys = [...contentTokens].filter((token) => SHORT_DOMAIN_TOKENS.has(token) && agentTokens.has(token));
+  return [...domainKeys, ...shortDomainKeys];
 }
 
 function domainScore(content: string, agent: ProtocolAgent) {
@@ -351,8 +355,9 @@ function domainCoverageScore(content: string, agent: ProtocolAgent, selected: Ac
       return selectedAgent ? matchedDomainKeys(content, selectedAgent) : [];
     }),
   );
-  const newDomainMatches = matchedDomainKeys(content, agent).filter((domain) => !selectedDomains.has(domain)).length;
-  return newDomainMatches * 3 + Math.min(tokenOverlapCount(content, agent), 2);
+  const domainMatches = matchedDomainKeys(content, agent);
+  const newDomainMatches = domainMatches.filter((domain) => !selectedDomains.has(domain)).length;
+  return newDomainMatches * 10 + domainMatches.length * 3 + Math.min(tokenOverlapCount(content, agent), 2);
 }
 
 function matchesDomain(content: string, agent: ProtocolAgent) {
@@ -439,16 +444,19 @@ export function selectActivationCandidates(input: ActivationSelectionInput): Act
   const limit = fanoutLimit(input.space, input.message.senderType);
   const allowedNatural: ActivationCandidate[] = [];
   const remainingNatural = [...natural];
+  const selectedForCoverage = [...strong];
 
   while (allowedNatural.length < limit && remainingNatural.length > 0) {
     remainingNatural.sort((a, b) => {
       const coverageDifference =
-        domainCoverageScore(input.message.content, agentsById.get(b.agentId)!, allowedNatural, agentsById) -
-        domainCoverageScore(input.message.content, agentsById.get(a.agentId)!, allowedNatural, agentsById);
+        domainCoverageScore(input.message.content, agentsById.get(b.agentId)!, selectedForCoverage, agentsById) -
+        domainCoverageScore(input.message.content, agentsById.get(a.agentId)!, selectedForCoverage, agentsById);
       if (coverageDifference !== 0) return coverageDifference;
       return domainScore(input.message.content, agentsById.get(b.agentId)!) - domainScore(input.message.content, agentsById.get(a.agentId)!);
     });
-    allowedNatural.push(remainingNatural.shift()!);
+    const selected = remainingNatural.shift()!;
+    allowedNatural.push(selected);
+    selectedForCoverage.push(selected);
   }
 
   const capped = remainingNatural;
