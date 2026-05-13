@@ -3,6 +3,21 @@ import { readdir, readFile, stat, lstat } from "fs/promises";
 import { join, resolve } from "path";
 import { homedir } from "os";
 import { AgentManager } from "./agent-manager.js";
+import {
+  buildActivationEnvelope,
+  buildCooldownKey,
+  classifyConversationSpace,
+  classifyMessageIntent,
+  deriveTopicKey,
+  selectActivationCandidates,
+  shouldSuppressForCooldown,
+  type ActivationCooldownEntry,
+  type ActivationReason,
+  type ProtocolAgent,
+  type ProtocolMessage,
+  type ProtocolRecentMessage,
+  type ProtocolTaskRef,
+} from "./a2a-protocol.js";
 
 interface BridgeConfig {
   supabaseUrl: string;
@@ -43,6 +58,16 @@ interface DbChannelMember {
   member_type: string;
 }
 
+interface DbTaskRoutingRef {
+  id: string;
+  task_number: number;
+  message_id: string | null;
+  source_message_id: string | null;
+  assignee_id: string | null;
+  reviewer_id: string | null;
+  created_by_id: string | null;
+}
+
 export class Bridge {
   private supabase: SupabaseClient;
   private agentManager: AgentManager;
@@ -62,6 +87,8 @@ export class Bridge {
   // Heartbeat timer for machine_keys.last_used_at (polling fallback for online status)
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private processedMessageIds = new Set<string>();
+  private activationCooldowns = new Map<string, ActivationCooldownEntry>();
+  private topicHopCounts = new Map<string, number>();
 
   constructor(config: BridgeConfig) {
     this.config = config;
@@ -235,27 +262,80 @@ export class Bridge {
       });
   }
 
-  /**
-   * Parse @mentions from message content.
-   * Matches @DisplayName (case-insensitive) against agents in the channel.
-   */
-  private parseMentionedAgents(
-    content: string,
-    channelAgentIds: Set<string>
-  ): Set<string> {
-    const mentioned = new Set<string>();
-    for (const agentId of channelAgentIds) {
-      const agent = this.agentRecords.get(agentId);
-      if (!agent) continue;
-      // Match @DisplayName followed by whitespace, punctuation, or end of string
-      // (don't use \b — it doesn't work with CJK characters)
-      const escaped = agent.display_name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const pattern = new RegExp(`@${escaped}(?=[\\s,.:!?，。！？、；]|$)`, "i");
-      if (pattern.test(content)) {
-        mentioned.add(agentId);
-      }
-    }
-    return mentioned;
+  private toProtocolAgents(agentIds: Set<string>): ProtocolAgent[] {
+    return Array.from(agentIds)
+      .map((agentId) => {
+        const agent = this.agentRecords.get(agentId);
+        if (!agent) return null;
+        return {
+          id: agentId,
+          name: agent.name,
+          displayName: agent.display_name,
+          description: agent.description,
+        } satisfies ProtocolAgent;
+      })
+      .filter((agent): agent is ProtocolAgent => agent !== null);
+  }
+
+  private async findRoutingTaskForMessage(msg: DbMessage): Promise<ProtocolTaskRef | null> {
+    const messageIds = [msg.id, msg.thread_parent_id].filter(Boolean) as string[];
+    if (messageIds.length === 0) return null;
+
+    const { data } = await this.supabase
+      .from("tasks")
+      .select("id, task_number, message_id, source_message_id, assignee_id, reviewer_id, created_by_id")
+      .or(messageIds.map((id) => `message_id.eq.${id},source_message_id.eq.${id}`).join(","))
+      .limit(1)
+      .maybeSingle();
+
+    if (!data) return null;
+    const task = data as DbTaskRoutingRef;
+    return {
+      id: task.id,
+      taskNumber: task.task_number,
+      messageId: task.message_id,
+      sourceMessageId: task.source_message_id,
+      assigneeId: task.assignee_id,
+      reviewerId: task.reviewer_id,
+      createdById: task.created_by_id,
+    };
+  }
+
+  private async getRecentProtocolMessages(channelId: string, threadParentId: string | null): Promise<ProtocolRecentMessage[]> {
+    let query = this.supabase
+      .from("messages")
+      .select("sender_id, sender_type, content, created_at")
+      .eq("channel_id", channelId)
+      .order("created_at", { ascending: false })
+      .limit(8);
+
+    if (threadParentId) query = query.eq("thread_parent_id", threadParentId);
+    else query = query.is("thread_parent_id", null);
+
+    const { data } = await query;
+    return (data || []).reverse().map((message) => ({
+      senderId: message.sender_id,
+      senderType: message.sender_type,
+      content: message.content,
+      createdAt: message.created_at,
+    }));
+  }
+
+  private formatRoutingLog(input: {
+    messageId: string;
+    topicKey: string;
+    activated: Array<{ agentId: string; reasons: ActivationReason[]; strength: string }>;
+    suppressed: Array<{ agentId: string; reason: string; reasons: ActivationReason[] }>;
+  }) {
+    const activated = input.activated.map((candidate) => {
+      const agent = this.agentRecords.get(candidate.agentId);
+      return `${agent?.display_name || candidate.agentId}:${candidate.strength}:${candidate.reasons.join("+")}`;
+    });
+    const suppressed = input.suppressed.map((candidate) => {
+      const agent = this.agentRecords.get(candidate.agentId);
+      return `${agent?.display_name || candidate.agentId}:${candidate.reason}:${candidate.reasons.join("+")}`;
+    });
+    console.log(`  [A2A] route msg=${input.messageId.slice(0, 8)} topic=${input.topicKey} activated=[${activated.join(", ")}] suppressed=[${suppressed.join(", ")}]`);
   }
 
   /**
@@ -354,66 +434,109 @@ export class Bridge {
     if (this.processedMessageIds.has(msg.id)) return;
     this.processedMessageIds.add(msg.id);
 
-    // Only respond to human messages
-    if (msg.sender_type !== "human") return;
+    if (msg.sender_type === "system") return;
 
     // Check if any of our agents are in this channel
     const agentIdsInChannel = this.channelAgents.get(msg.channel_id);
     if (!agentIdsInChannel || agentIdsInChannel.size === 0) return;
 
-    const channelType = this.channelTypes.get(msg.channel_id);
+    const channelType = this.channelTypes.get(msg.channel_id) as "dm" | "public" | "private" | undefined;
     const isDm = channelType === "dm";
+    const task = await this.findRoutingTaskForMessage(msg);
+    const space = classifyConversationSpace({ channelType: channelType || "private", threadParentId: msg.thread_parent_id, task });
+    const protocolMessage: ProtocolMessage = {
+      id: msg.id,
+      channelId: msg.channel_id,
+      senderId: msg.sender_id,
+      senderType: msg.sender_type,
+      content: msg.content,
+      threadParentId: msg.thread_parent_id,
+      createdAt: msg.created_at,
+    };
+    const intents = classifyMessageIntent(msg.content);
+    const topicKey = deriveTopicKey(protocolMessage, task);
+    const recentMessages = await this.getRecentProtocolMessages(msg.channel_id, msg.thread_parent_id);
+    const selection = selectActivationCandidates({
+      message: protocolMessage,
+      agents: this.toProtocolAgents(agentIdsInChannel),
+      space,
+      intents,
+      topicKey,
+      recentMessages,
+      task,
+    });
 
-    // Determine which agents should respond
-    let respondingAgentIds: Set<string>;
-    const mentioned = isDm
-      ? new Set<string>()
-      : this.parseMentionedAgents(msg.content, agentIdsInChannel);
-
-    if (isDm) {
-      // DM: always respond with the single agent
-      respondingAgentIds = agentIdsInChannel;
-    } else {
-      respondingAgentIds = mentioned.size > 0 ? mentioned : agentIdsInChannel;
+    const now = Date.now();
+    const activated: typeof selection.activated = [];
+    const cooldownSuppressed: Array<{ agentId: string; reason: string; reasons: ActivationReason[] }> = [];
+    for (const candidate of selection.activated) {
+      const bypass = candidate.reasons.includes("direct_mention") || candidate.reasons.includes("dm_recipient") || msg.sender_type === "human";
+      const reason = candidate.reasons[0] || "conversation_continuation";
+      const key = buildCooldownKey({
+        topicKey,
+        channelId: msg.channel_id,
+        sourceAgentId: msg.sender_id,
+        targetAgentId: candidate.agentId,
+        reason,
+      });
+      const cooldown = shouldSuppressForCooldown({
+        key,
+        entries: this.activationCooldowns,
+        now,
+        cooldownMs: 10 * 60 * 1000,
+        bypass,
+      });
+      if (cooldown.suppress) {
+        cooldownSuppressed.push({ agentId: candidate.agentId, reason: cooldown.reason || "cooldown", reasons: candidate.reasons });
+        continue;
+      }
+      this.activationCooldowns.set(key, { lastActivatedAt: now, sourceMessageId: msg.id });
+      activated.push(candidate);
     }
 
-    // Resolve sender name for message context
-    const senderName = await this.resolveSenderName(
-      msg.sender_id,
-      msg.sender_type
-    );
+    this.formatRoutingLog({
+      messageId: msg.id,
+      topicKey,
+      activated,
+      suppressed: [...selection.suppressed, ...cooldownSuppressed],
+    });
 
-    // Build channel target for MCP context
+    if (activated.length === 0) return;
+
+    const senderName = await this.resolveSenderName(msg.sender_id, msg.sender_type);
     const channelTarget = this.buildChannelTarget(msg.channel_id, senderName);
-
-    // For channels (not DM), get conversation context
     let contextPrefix = "";
-    if (!isDm) {
-      contextPrefix = await this.getChannelContext(msg.channel_id);
-    }
+    if (!isDm) contextPrefix = await this.getChannelContext(msg.channel_id);
+    const previousHop = this.topicHopCounts.get(topicKey) || 0;
+    const hopCount = msg.sender_type === "agent" ? previousHop + 1 : 0;
+    this.topicHopCounts.set(topicKey, hopCount);
 
-    for (const agentId of respondingAgentIds) {
-      const agent = this.agentRecords.get(agentId);
+    for (const candidate of activated) {
+      const agent = this.agentRecords.get(candidate.agentId);
       if (!agent) continue;
 
       console.log(
-        `  [${agent.display_name}] Received${isDm ? "" : mentioned.has(agentId) ? " (@mention)" : " (channel)"}: "${msg.content.substring(0, 60)}${msg.content.length > 60 ? "..." : ""}"`
+        `  [${agent.display_name}] A2A activated (${candidate.strength}:${candidate.reasons.join("+")}): "${msg.content.substring(0, 60)}${msg.content.length > 60 ? "..." : ""}"`
       );
 
       try {
+        const envelope = buildActivationEnvelope({
+          targetAgentName: agent.display_name,
+          space,
+          intents,
+          reasons: candidate.reasons,
+          strength: candidate.strength,
+          sourceMessageId: msg.id,
+          topicKey,
+          hopCount,
+          loopConstraints: ["response-value-required", "no-idle-narration", "respect-ownership"],
+        });
         const msgHeader = `[target=${channelTarget} sender=@${senderName} type=${msg.sender_type}]`;
-        let prompt = contextPrefix
-          ? `${contextPrefix}\n\n${msgHeader} ${msg.content}`
-          : `${msgHeader} ${msg.content}`;
+        const prompt = contextPrefix
+          ? `${envelope}\n\n${contextPrefix}\n\n${msgHeader} ${msg.content}`
+          : `${envelope}\n\n${msgHeader} ${msg.content}`;
 
-        if (!isDm && !mentioned.has(agentId)) {
-          prompt = `[You are ${agent.display_name} in a group channel. This message was sent to everyone in the channel (not @mentioning you specifically). Respond naturally as a team member — greet back, acknowledge, or contribute based on your role. Keep responses concise (1-3 sentences unless asked for detail). Only reply "SKIP" if the message is completely irrelevant to your role.\n\n${prompt}]`;
-        } else if (!isDm && mentioned.has(agentId)) {
-          prompt = `[You are ${agent.display_name} and you were @mentioned directly. If this message asks you to do work (implement, review, test, investigate, etc.), claim the task and start executing immediately — do not only acknowledge or propose a plan. If it is a question, answer it directly.\n\n${prompt}]`;
-        }
-
-        // Fire-and-forget: agent handles all responses via `zano` CLI
-        await this.agentManager.sendToAgent(agentId, prompt);
+        await this.agentManager.sendToAgent(candidate.agentId, prompt);
       } catch (err) {
         console.error(
           `  [${agent.display_name}] Error:`,

@@ -1133,3 +1133,21 @@ describe("selectActivationCandidates", () => {
     ]);
   });
 });
+
+describe("bridge integration helpers", () => {
+  it("uses direct mentions as cooldown bypass", () => {
+    const result = selectActivationCandidates({
+      message: msg({ senderType: "agent", senderId: "agent-a", content: "@beta please check this." }),
+      agents,
+      space: "project_channel",
+      intents: ["request"],
+      topicKey: "message:msg-1",
+      recentMessages: [],
+      task: null,
+    });
+
+    expect(result.activated[0]).toEqual(
+      expect.objectContaining({ reasons: expect.arrayContaining(["direct_mention"]), strength: "strong" }),
+    );
+  });
+});
