@@ -6,6 +6,7 @@ import {
   type TaskStatus,
   type TaskTransitionContext,
 } from "./collaboration";
+import type { AgentActivity } from "./index";
 
 function ctx(overrides: Partial<TaskTransitionContext> = {}): TaskTransitionContext {
   return {
@@ -122,5 +123,14 @@ describe("hasDependencyCycle", () => {
     ];
 
     expect(hasDependencyCycle(edges)).toBe(true);
+  });
+});
+
+describe("AgentActivity", () => {
+  it("accepts A2A quiet collaboration states", () => {
+    const states: AgentActivity[] = ["idle", "thinking", "working", "working_silently", "observing", "blocked", "error"];
+    expect(states).toContain("working_silently");
+    expect(states).toContain("observing");
+    expect(states).toContain("blocked");
   });
 });

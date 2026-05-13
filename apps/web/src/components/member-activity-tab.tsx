@@ -117,13 +117,19 @@ export function MemberActivityTab({ serverId, serverSlug, memberType, memberId }
     setTaskDrawerOpen(true);
   }
 
+  const activityBadgeVariant = agentActivity?.activity === "error" || agentActivity?.activity === "blocked"
+    ? "error"
+    : agentActivity?.activity === "observing"
+      ? "secondary"
+      : "success";
+
   return (
     <div className="space-y-4">
       {memberType === "agent" && agentActivity && agentActivity.activity !== "idle" ? (
         <Card className="border-primary/20 bg-primary/5">
           <CardContent className="py-4">
             <div className="flex items-center gap-2 text-sm">
-              <Badge variant={agentActivity.activity === "error" ? "error" : "success"}>{agentActivity.activity}</Badge>
+              <Badge variant={activityBadgeVariant}>{agentActivity.activity}</Badge>
               <span className="font-medium">{agentActivity.label || "Active"}</span>
               {agentActivity.detail ? <span className="truncate text-muted-foreground">{agentActivity.detail}</span> : null}
             </div>

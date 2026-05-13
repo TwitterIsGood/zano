@@ -6,7 +6,7 @@ import { spawn, ChildProcess } from "child_process";
 import { SupabaseClient, RealtimeChannel } from "@supabase/supabase-js";
 import { buildSystemPrompt } from "./system-prompt.js";
 
-type AgentActivity = "idle" | "thinking" | "working" | "error";
+type AgentActivity = "idle" | "thinking" | "working" | "working_silently" | "observing" | "blocked" | "error";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);

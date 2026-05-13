@@ -32,7 +32,7 @@ export interface User {
 
 export type AgentModel = "opus" | "sonnet" | "haiku";
 export type AgentStatus = "online" | "sleeping" | "offline";
-export type AgentActivity = "idle" | "thinking" | "working" | "error";
+export type AgentActivity = "idle" | "thinking" | "working" | "working_silently" | "observing" | "blocked" | "error";
 
 export interface AgentActivityEvent {
   agentId: string;
