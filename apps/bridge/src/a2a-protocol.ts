@@ -61,7 +61,7 @@ export interface ProtocolTaskRef {
 }
 
 export interface ConversationSpaceInput {
-  channelType: ChannelKind;
+  channelType: ChannelKind | (string & {});
   threadParentId: string | null;
   task: ProtocolTaskRef | null;
 }
@@ -97,11 +97,14 @@ const ACTION_PATTERNS: Array<[MessageIntent, RegExp]> = [
 const INFORMATIONAL_PATTERNS: Array<[MessageIntent, RegExp]> = [
   ["ack", /\b(ok|okay|sounds good|sgtm|received|got it|ack|noted)\b/i],
   ["thanks", /\b(thanks|thank you|appreciate)\b|辛苦|谢谢/i],
-  ["result", /\b(done|completed|finished|result|findings|found|confirmed|fixed|implemented|verified|passed|failed)\b/i],
+  ["result", /\b(done|completed?|finished|result|findings|found|confirmed|fixed|implemented|verified|passed|failed)\b/i],
   ["decision", /\b(decided|approved|rejected|selected|we will|we'll|final decision)\b/i],
   ["status", /\b(in progress|working on|currently|status|progress|waiting|pending|in review|ongoing|already)\b|已|正在|等待/i],
   ["chatter", /\b(hello|hi|hey|good morning|good night|lol|haha)\b/i],
 ];
+
+const BENIGN_COMPLETION_PATTERN =
+  /\b(?:verification|review|check|smoke test|test(?:s)?)\b[\s\S]*\b(?:complete|completed|done|finished|passed|found no (?:issue|issues|problem|problems)|no (?:issue|issues|problem|problems))\b|\bno tests? failed\b/i;
 
 export function classifyConversationSpace(input: ConversationSpaceInput): ConversationSpace {
   if (input.channelType === "dm") return "dm";
@@ -120,6 +123,14 @@ export function classifyMessageIntent(content: string): MessageIntent[] {
 
   for (const [intent, pattern] of INFORMATIONAL_PATTERNS) {
     if (pattern.test(content)) intents.add(intent);
+  }
+
+  if (BENIGN_COMPLETION_PATTERN.test(content)) {
+    intents.add("result");
+    intents.delete("request");
+    intents.delete("blocker");
+    intents.delete("verification_needed");
+    intents.delete("review_needed");
   }
 
   if (intents.size === 0) intents.add("chatter");

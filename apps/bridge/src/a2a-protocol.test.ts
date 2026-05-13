@@ -5,7 +5,6 @@ import {
   deriveTopicKey,
   hasActionableIntent,
   hasOnlyLowValueIntent,
-  type ChannelKind,
   type ProtocolMessage,
 } from "./a2a-protocol";
 
@@ -46,7 +45,7 @@ describe("classifyConversationSpace", () => {
   });
 
   it("classifies unknown channel types as general channels", () => {
-    expect(classifyConversationSpace({ channelType: "unknown" as ChannelKind, threadParentId: null, task: null })).toBe("general_channel");
+    expect(classifyConversationSpace({ channelType: "unknown", threadParentId: null, task: null })).toBe("general_channel");
   });
 });
 
@@ -98,6 +97,40 @@ describe("classifyMessageIntent", () => {
     expect(hasOnlyLowValueIntent(intents)).toBe(true);
   });
 
+  it("does not mark completed verification summaries as actionable", () => {
+    const intents = classifyMessageIntent("The verification is complete and found no issue.");
+    expect(intents).toContain("result");
+    expect(intents).not.toContain("request");
+    expect(intents).not.toContain("verification_needed");
+    expect(hasActionableIntent(intents)).toBe(false);
+    expect(hasOnlyLowValueIntent(intents)).toBe(true);
+  });
+
+  it("does not mark completed smoke test status as actionable", () => {
+    const intents = classifyMessageIntent("The smoke test should be complete now.");
+    expect(intents).toContain("result");
+    expect(intents).not.toContain("request");
+    expect(intents).not.toContain("verification_needed");
+    expect(hasActionableIntent(intents)).toBe(false);
+    expect(hasOnlyLowValueIntent(intents)).toBe(true);
+  });
+
+  it("does not mark passing or negative test-result summaries as actionable", () => {
+    const intents = classifyMessageIntent("No tests failed.");
+    expect(intents).toContain("result");
+    expect(intents).not.toContain("blocker");
+    expect(intents).not.toContain("verification_needed");
+    expect(hasActionableIntent(intents)).toBe(false);
+    expect(hasOnlyLowValueIntent(intents)).toBe(true);
+  });
+
+  it("marks failed tests with an investigation request as actionable", () => {
+    const intents = classifyMessageIntent("The test failed, can someone investigate?");
+    expect(intents).toEqual(expect.arrayContaining(["request", "question", "blocker"]));
+    expect(hasActionableIntent(intents)).toBe(true);
+    expect(hasOnlyLowValueIntent(intents)).toBe(false);
+  });
+
   it("marks imperative review requests as actionable", () => {
     const intents = classifyMessageIntent("Please review the login flow changes.");
     expect(intents).toEqual(expect.arrayContaining(["request", "review_needed"]));
@@ -139,6 +172,10 @@ describe("classifyMessageIntent", () => {
 describe("intent helper semantics", () => {
   it("marks raw actionable intent arrays as actionable", () => {
     expect(hasActionableIntent(["request"])).toBe(true);
+  });
+
+  it("does not mark empty raw intent arrays as actionable", () => {
+    expect(hasActionableIntent([])).toBe(false);
   });
 
   it("marks benign raw status and result arrays as low-value", () => {
