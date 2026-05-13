@@ -82,13 +82,13 @@ const ACTIONABLE_INTENTS: ReadonlySet<MessageIntent> = new Set([
 const LOW_VALUE_INTENTS: ReadonlySet<MessageIntent> = new Set(["ack", "thanks", "chatter", "status", "result"]);
 
 const ACTION_PATTERNS: Array<[MessageIntent, RegExp]> = [
-  ["request", /\b(can someone|could someone|please|need someone|needs to|should|must|do this|take this|handle this|look into|inspect|investigate|fix|implement|verify)\b/i],
+  ["request", /\b(can someone|could someone|please|need someone|needs to|should|must|do this|take this|handle this|look into|inspect|investigate|fix|implement|verify)\b|请(?:验证|检查|审核|审查|确认)/i],
   ["question", /\?|\b(which|what|why|how|when|where|who|should we|can you|could you)\b/i],
   ["handoff", /\b(handoff|hand off|pass to|over to|take over|continue|next step|follow up|should check|should review|should verify|please check|please review|please verify)\b/i],
   ["blocker", /\b(blocked|blocker|critical issue|serious issue|major issue|failure|failed|cannot|can't|unable|waiting on|until .* confirms?|depends on|need .* before)\b/i],
-  ["decision_needed", /\b(confirms?|decide|decision|approve|approval|choose|select|sign off|go\/no-go)\b/i],
-  ["review_needed", /\b(?:please|should|needs?|must|can you|could you)\s+review\b|\breview\s+(?:this|the|these|that)\b|\b(?:approval needed|check .* risk|look over|take another look|critique)\b/i],
-  ["verification_needed", /\b(verify|verification|validate|evidence|regression|confirm .* works|(?:run|perform|need|needs|please)\s+(?:a\s+)?(?:smoke|test))\b/i],
+  ["decision_needed", /\b(confirms?|decide|decision|approve|approval|approval needed|choose|select|sign off|signoff|go\/no-go)\b/i],
+  ["review_needed", /\b(?:please|should|needs?|must|can you|could you)\s+review\b|\breview\s+(?:this|the|these|that)\b|\b(?:approval needed|check .* risk|look over|take another look|critique)\b|请(?:检查|审核|审查)/i],
+  ["verification_needed", /\b(verify|verification|validate|evidence|regression|confirm .* works|(?:run|perform|need|needs|please)\s+(?:a\s+)?(?:smoke|test))\b|请(?:验证|确认)/i],
   ["correction", /\b(not that|instead|change|wrong|incorrect|revise|adjust|stop|don't|no,)\b/i],
   ["assignment", /\b(assign|owner|responsible|take|claim|belongs to|owned by)\b/i],
   ["escalation", /\b(stuck|need help|escalate|urgent|blocked hard|can't proceed)\b/i],
@@ -107,7 +107,7 @@ const BENIGN_COMPLETION_PATTERN =
   /\b(?:verification|verifier|review|reviewer|check|smoke test|test(?:s)?)\b[\s\S]*\b(?:complete|completed|done|finished|passed|found no (?:issue|issues|problem|problems)|no (?:issue|issues|problem|problems))\b|\bno tests? failed\b/i;
 
 const EXPLICIT_ACTION_PATTERN =
-  /\b(?:please|can someone|could someone|can you|could you|need someone|look into|inspect|investigate|fix|implement|verify|review\s+(?:this|the|these|that)|run|critical issue|serious issue|major issue|failure)\b/i;
+  /\b(?:please|can someone|could someone|can you|could you|need someone|look into|inspect|investigate|fix|implement|verify|review\s+(?:this|the|these|that)|run|critical issue|serious issue|major issue|failure|decide|decision|approve|approval needed|choose|select|sign off|signoff)\b|请(?:验证|检查|审核|审查|确认)/i;
 
 function isPureBenignCompletionSummary(content: string): boolean {
   return BENIGN_COMPLETION_PATTERN.test(content) && !EXPLICIT_ACTION_PATTERN.test(content);

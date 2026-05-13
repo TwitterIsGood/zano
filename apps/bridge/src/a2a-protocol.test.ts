@@ -172,6 +172,34 @@ describe("classifyMessageIntent", () => {
     expect(hasOnlyLowValueIntent(intents)).toBe(false);
   });
 
+  it("keeps mixed completion and approval follow-up messages actionable", () => {
+    const cases = [
+      "The verification is complete; approval needed before deploy.",
+      "The code review is complete; approval needed before close.",
+      "The smoke test passed; sign off is needed before release.",
+      "The verification is complete; decide whether to ship.",
+    ];
+
+    for (const content of cases) {
+      const intents = classifyMessageIntent(content);
+      expect(intents).toEqual(expect.arrayContaining(["decision_needed", "result"]));
+      expect(hasActionableIntent(intents)).toBe(true);
+      expect(hasOnlyLowValueIntent(intents)).toBe(false);
+    }
+  });
+
+  it("marks Chinese verification and review requests as actionable", () => {
+    const verificationIntents = classifyMessageIntent("请验证结账流程。");
+    expect(verificationIntents).toEqual(expect.arrayContaining(["request", "verification_needed"]));
+    expect(hasActionableIntent(verificationIntents)).toBe(true);
+    expect(hasOnlyLowValueIntent(verificationIntents)).toBe(false);
+
+    const reviewIntents = classifyMessageIntent("请检查风险部分。");
+    expect(reviewIntents).toEqual(expect.arrayContaining(["request", "review_needed"]));
+    expect(hasActionableIntent(reviewIntents)).toBe(true);
+    expect(hasOnlyLowValueIntent(reviewIntents)).toBe(false);
+  });
+
   it("marks failed tests with an investigation request as actionable", () => {
     const intents = classifyMessageIntent("The test failed, can someone investigate?");
     expect(intents).toEqual(expect.arrayContaining(["request", "question", "blocker"]));
