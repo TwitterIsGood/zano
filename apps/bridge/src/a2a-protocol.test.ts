@@ -14,6 +14,7 @@ import {
   type ProtocolMessage,
   type ProtocolRecentMessage,
 } from "./a2a-protocol";
+import { buildSystemPrompt } from "./system-prompt";
 
 function msg(overrides: Partial<ProtocolMessage> = {}): ProtocolMessage {
   return {
@@ -27,6 +28,30 @@ function msg(overrides: Partial<ProtocolMessage> = {}): ProtocolMessage {
     ...overrides,
   };
 }
+
+describe("system prompt A2A contract", () => {
+  it("teaches agents all A2A decision modes", () => {
+    const prompt = buildSystemPrompt(
+      { display_name: "Beta", name: "beta", description: null, system_prompt: null },
+      "",
+    );
+
+    expect(prompt).toContain("REPLY_AND_WORK");
+    expect(prompt).toContain("WORK_SILENTLY");
+    expect(prompt).toContain("REPLY_ONLY");
+    expect(prompt).toContain("OBSERVE");
+    expect(prompt).toContain("SKIP");
+  });
+
+  it("forbids sending literal SKIP into chat", () => {
+    const prompt = buildSystemPrompt(
+      { display_name: "Beta", name: "beta", description: null, system_prompt: null },
+      "",
+    );
+
+    expect(prompt).toContain("Never send the literal word `SKIP` into chat");
+  });
+});
 
 describe("classifyConversationSpace", () => {
   it("classifies DMs as dm", () => {
