@@ -124,6 +124,13 @@ describe("classifyMessageIntent", () => {
     expect(hasOnlyLowValueIntent(intents)).toBe(true);
   });
 
+  it("keeps mixed completion and investigation messages actionable", () => {
+    const intents = classifyMessageIntent("The smoke test should be complete now, please investigate the checkout failure.");
+    expect(intents).toEqual(expect.arrayContaining(["request", "blocker", "result"]));
+    expect(hasActionableIntent(intents)).toBe(true);
+    expect(hasOnlyLowValueIntent(intents)).toBe(false);
+  });
+
   it("marks failed tests with an investigation request as actionable", () => {
     const intents = classifyMessageIntent("The test failed, can someone investigate?");
     expect(intents).toEqual(expect.arrayContaining(["request", "question", "blocker"]));

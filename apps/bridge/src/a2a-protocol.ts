@@ -106,6 +106,13 @@ const INFORMATIONAL_PATTERNS: Array<[MessageIntent, RegExp]> = [
 const BENIGN_COMPLETION_PATTERN =
   /\b(?:verification|review|check|smoke test|test(?:s)?)\b[\s\S]*\b(?:complete|completed|done|finished|passed|found no (?:issue|issues|problem|problems)|no (?:issue|issues|problem|problems))\b|\bno tests? failed\b/i;
 
+const EXPLICIT_ACTION_PATTERN =
+  /\b(?:please|can someone|could someone|can you|could you|need someone|look into|inspect|investigate|fix|implement|verify|review|run|critical issue|serious issue|major issue|failure)\b/i;
+
+function isPureBenignCompletionSummary(content: string): boolean {
+  return BENIGN_COMPLETION_PATTERN.test(content) && !EXPLICIT_ACTION_PATTERN.test(content);
+}
+
 export function classifyConversationSpace(input: ConversationSpaceInput): ConversationSpace {
   if (input.channelType === "dm") return "dm";
   if (input.threadParentId && input.task) return "task_thread";
@@ -125,7 +132,7 @@ export function classifyMessageIntent(content: string): MessageIntent[] {
     if (pattern.test(content)) intents.add(intent);
   }
 
-  if (BENIGN_COMPLETION_PATTERN.test(content)) {
+  if (isPureBenignCompletionSummary(content)) {
     intents.add("result");
     intents.delete("request");
     intents.delete("blocker");
