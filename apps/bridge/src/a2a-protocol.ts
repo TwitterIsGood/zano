@@ -82,12 +82,12 @@ const ACTIONABLE_INTENTS: ReadonlySet<MessageIntent> = new Set([
 const LOW_VALUE_INTENTS: ReadonlySet<MessageIntent> = new Set(["ack", "thanks", "chatter", "status", "result", "decision"]);
 
 const ACTION_PATTERNS: Array<[MessageIntent, RegExp]> = [
-  ["request", /\b(can someone|could someone|can you|could you|please|need someone|needs to|must|do this|take this|handle this|look into|inspect|investigate|fix|implement|verify|document)\b|请(?:验证|检查|审核|审查|确认|评审|补充)/i],
-  ["question", /\?|\b(which|what|why|how|when|where|who|should we|can you|could you)\b/i],
+  ["request", /\b(can someone|could someone|can you|could you|please|need someone|needs to|must|do this|take this|handle this|look into|inspect|investigate|fix|implement|verify|document|introduce yourselves?|introduce yourself|everyone introduce)\b|(?:大家|各位).*(?:自我介绍|介绍一下自己|介绍自己|说下自己|说一下自己|讲下自己|讲一下自己|自己负责什么)|(?:大家|各位).*(?:看一下|看下|看看|检查|审核|审查|评审|验证|确认|排查|处理|修复|实现)|(?:请|麻烦)(?:大家|各位).*(?:介绍自己|介绍一下自己|自我介绍)|请(?:验证|检查|审核|审查|确认|评审|补充|介绍)/i],
+  ["question", /\?|？|\b(which|what|why|how|when|where|who|should we|can you|could you)\b/i],
   ["handoff", /\b(handoff|hand off|pass to|over to|take over|continue|next step|follow up|should (?:check|review|verify)|please (?:check|review|verify))\b/i],
   ["blocker", /\b(blocked|blocker|critical issue|serious issue|major issue|bug|error|crash(?:es|ed|ing)?|failure|failed|regression|cannot|can't|unable|waiting on|until .* confirms?|depends on|need .* before)\b/i],
   ["decision_needed", /\b((?:please|can you|could you)\s+confirm|until .* confirms?|decide(?: whether)?|decision\s+(?:needed|required)|approve\b|approval\s+(?:needed|required|is required)|choose|select|sign[- ]?off(?:\s+is\s+(?:needed|required))?|sign off(?:\s+is\s+(?:needed|required))?|go\/no-go)\b|请确认/i],
-  ["review_needed", /\b(?:please|should|needs?|must|can you|could you)\s+review\b|\breview\s+(?:this|the|these|that)\b|\b(?:approval needed|check .* risk|look over|take another look|critique)\b|请(?:检查|审核|审查|评审)/i],
+  ["review_needed", /\b(?:please|should|needs?|must|can you|could you)\s+review\b|\bneeds?\s+(?:[^.!?;]*\s+)?review\b|\breview\s+(?:this|the|these|that)\b|\b(?:approval needed|check .* risk|look over|take another look|critique)\b|(?:请|需要)(?:检查|审核|审查|评审)/i],
   ["verification_needed", /\b(verify|validate|evidence|regression|(?:please|can you|could you)\s+confirm .* works|(?:run|perform|need|needs|please|could someone)\s+(?:a\s+)?(?:smoke|test))\b|请(?:验证|确认)/i],
   ["correction", /\b(not that|instead|change|wrong|incorrect|revise|adjust|stop|don't|no,)\b/i],
   ["assignment", /\b(assign|owner|responsible|take|claim|belongs to|owned by)\b/i],
@@ -97,9 +97,9 @@ const ACTION_PATTERNS: Array<[MessageIntent, RegExp]> = [
 const INFORMATIONAL_PATTERNS: Array<[MessageIntent, RegExp]> = [
   ["ack", /\b(ok|okay|sounds good|sgtm|received|got it|ack|noted)\b/i],
   ["thanks", /\b(thanks|thank you|appreciate)\b|辛苦|谢谢/i],
-  ["result", /\b(done|completed?|finished|result|findings|found|confirmed|fixed|implemented|verified|passed|failed|approved|received|granted)\b/i],
+  ["result", /\b(done|completed?|finished|result|findings|found|confirmed|fixed|implemented|verified|passed|failed|approved|received|granted|own|owns)\b|负责|我的默认工作方式/i],
   ["decision", /\b(decided|approved|rejected|selected|we will|we'll|final decision)\b/i],
-  ["status", /\b(in progress|working on|currently|status|progress|waiting|pending|in review|ongoing|already)\b|已|正在|等待/i],
+  ["status", /\b(in progress|working on|currently|status|progress|waiting|pending|in review|ongoing|already|i am|i'm)\b|已|正在|等待|我是|负责|我的默认工作方式/i],
   ["chatter", /\b(hello|hi|hey|good morning|good night|lol|haha)\b/i],
 ];
 
@@ -288,8 +288,8 @@ export interface ActivationSelection {
   suppressed: SuppressedCandidate[];
 }
 
-const REVIEW_TERMS = ["review", "reviewer", "approve", "approval", "risk", "critique", "inspect", "检查", "评审", "审查", "审核", "确认", "风险"];
-const VERIFY_TERMS = ["verify", "verifier", "validate", "validation", "test", "evidence", "smoke", "qa", "检查", "验证", "测试", "确认"];
+const REVIEW_TERMS = ["review", "reviewer", "approve", "approval", "risk", "critique", "inspect", "qa", "quality", "检查", "评审", "审查", "审核", "确认", "风险", "质量"];
+const VERIFY_TERMS = ["verify", "verifier", "validate", "validation", "inspect", "inspection", "test", "evidence", "smoke", "qa", "quality", "检查", "验证", "测试", "确认", "质量"];
 const IMPLEMENT_TERMS = ["implement", "implementation", "build", "code", "fix", "change", "develop", "实现", "修复"];
 const DOCUMENTATION_TERMS = ["document", "documentation", "docs", "writeup", "guide", "readme", "checklist", "runbook", "writer", "technical writer", "说明", "文档"];
 
@@ -381,6 +381,13 @@ function meaningfulDomainTokens(content: string) {
   );
 }
 
+function contentForDomainMatching(content: string) {
+  return content
+    .replace(/\bimplementation(?:\s+work)?\s+(?:(?:is|was|has been)\s+)?(?:complete|completed|done|finished)\b/gi, "")
+    .replace(/\b(?:complete|completed|done|finished)\s+implementation(?:\s+work)?\b/gi, "")
+    .replace(/(?:实现|开发)(?:工作)?(?:已经|已|目前)?(?:完成|结束)/g, "");
+}
+
 function tokenOverlapCount(content: string, agent: ProtocolAgent) {
   const contentTokens = new Set(meaningfulDomainTokens(content));
   if (contentTokens.size === 0) return 0;
@@ -398,17 +405,18 @@ const DOMAIN_TERM_GROUPS = [
 
 function matchedDomainKeys(content: string, agent: ProtocolAgent) {
   const agentProfile = `${agent.displayName}\n${agent.name}\n${agent.description || ""}`;
-  const domainKeys = DOMAIN_TERM_GROUPS.filter(([, terms]) => hasAnyTerm(content, terms) && hasAnyTerm(agentProfile, terms)).map(
+  const normalizedContent = contentForDomainMatching(content);
+  const domainKeys = DOMAIN_TERM_GROUPS.filter(([, terms]) => hasAnyTerm(normalizedContent, terms) && hasAnyTerm(agentProfile, terms)).map(
     ([domain]) => domain,
   );
-  const contentTokens = new Set(meaningfulDomainTokens(content));
+  const contentTokens = new Set(meaningfulDomainTokens(normalizedContent));
   const agentTokens = new Set(meaningfulDomainTokens(agentProfile));
   const shortDomainKeys = [...contentTokens].filter((token) => SHORT_DOMAIN_TOKENS.has(token) && agentTokens.has(token));
   return [...domainKeys, ...shortDomainKeys];
 }
 
 function domainScore(content: string, agent: ProtocolAgent) {
-  return matchedDomainKeys(content, agent).length * 3 + Math.min(tokenOverlapCount(content, agent), 2);
+  return matchedDomainKeys(content, agent).length * 3 + Math.min(tokenOverlapCount(contentForDomainMatching(content), agent), 2);
 }
 
 function domainCoverageScore(content: string, agent: ProtocolAgent, selected: ActivationCandidate[], agentsById: Map<string, ProtocolAgent>) {
@@ -420,7 +428,7 @@ function domainCoverageScore(content: string, agent: ProtocolAgent, selected: Ac
   );
   const domainMatches = matchedDomainKeys(content, agent);
   const newDomainMatches = domainMatches.filter((domain) => !selectedDomains.has(domain)).length;
-  return newDomainMatches * 10 + domainMatches.length * 3 + Math.min(tokenOverlapCount(content, agent), 2);
+  return newDomainMatches * 10 + domainMatches.length * 3 + Math.min(tokenOverlapCount(contentForDomainMatching(content), agent), 2);
 }
 
 function matchesDomain(content: string, agent: ProtocolAgent) {
@@ -429,6 +437,57 @@ function matchesDomain(content: string, agent: ProtocolAgent) {
 
 function isOpenCall(content: string) {
   return /\b(can someone|could someone|who can|need help|needs? someone)\b/i.test(content);
+}
+
+function hasNegatedSelfIntroduction(content: string) {
+  return (
+    /\b(?:no need(?:\s+for\s+everyone)?\s+to|do not|don't|dont|stop|not asking (?:everyone|all of you) to)\s+introduc(?:e|ing)\s+(?:yourself|yourselves)\b/i.test(content) ||
+    /(?:不要|不用|无需|没必要|不需要|避免|别|先别|停止|不是让).{0,16}(?:自我介绍|介绍一下自己|介绍自己|说下自己|说一下自己|讲下自己|讲一下自己|自己负责什么)/.test(content)
+  );
+}
+
+function hasSelfIntroductionRequest(content: string) {
+  return /\b(?:everyone|every\s+one|everybody|all of you)[\s,，]*(?:please\s+)?introduce (?:yourself|yourselves)\b|^(?:\s|[\s\S]*\b(?:everyone|every\s+one|everybody|all of you)\b[\s,，]*)introduce yourselves\b|(?:大家|各位).*(?:自我介绍|介绍一下自己|介绍自己|说下自己|说一下自己|讲下自己|讲一下自己|自己负责什么)/i.test(content);
+}
+
+function hasGroupAddressedGreeting(content: string) {
+  return (
+    /^\s*(?:hello|hi|hey|good\s+(?:morning|afternoon|evening))[\s,，]*(?:everyone|every\s+one|everybody|all|team|folks)[!.。！\s]*$/i.test(content) ||
+    /^\s*(?:hello|hi|hey)[\s,，]*(?:大家|各位)[!.。！\s]*$/i.test(content) ||
+    /^\s*(?:大家|各位)好[!.。！\s]*$/.test(content)
+  );
+}
+
+function hasConcreteRoomActionRequest(content: string) {
+  return (
+    /\b(?:please|can someone|could someone|can you|could you|everyone|every\s+one|everybody|team|all|folks)[\s\S]{0,40}\b(?:inspect|review|validate|verify|fix|implement|check|look into|run|document|handle|investigate)\b/i.test(content) ||
+    /(?:大家|各位).{0,16}(?:看一下|看下|看看|检查|审核|审查|评审|验证|确认|排查|处理|修复|实现)/.test(content)
+  );
+}
+
+function hasRoomAddressedCheckIn(content: string) {
+  if (hasConcreteRoomActionRequest(content)) return false;
+  return (
+    /(?:大家|各位).{0,32}(?:怎么看|怎么想|觉得.{0,12}(?:吗|呢|\?|？)|有什么(?:更新|进展|想法|意见|阻塞|问题)|有(?:更新|进展|想法|意见|阻塞|问题).{0,8}(?:吗|没|没有|\?|？)|有没有(?:更新|进展|想法|意见|阻塞|问题)|(?:任务|进度|状态|进展|完成).{0,12}(?:怎么样|怎样|咋样|如何|吗|呢|啦|\?|？))/.test(content) ||
+    /\bwhat\s+does\s+(?:everyone|every\s+one|everybody)\s+think\b/i.test(content) ||
+    /\bwhat\s+do\s+you\s+all\s+think\b/i.test(content) ||
+    /\bhow\s+is\s+(?:everyone|every\s+one|everybody)\s+doing\b/i.test(content) ||
+    /^\s*(?:team|all|folks)[\s,，]+(?:any\s+(?:updates?|status|blockers?)|status\s+updates?|thoughts|blockers?\s+or\s+updates|how\s+are\s+we\s+looking)[?.!？。！\s]*$/i.test(content) ||
+    /^\s*(?:everyone|every\s+one|everybody)[\s,，]+(?:how\s+are\s+we\s+looking|any\s+(?:updates?|status|blockers?)|thoughts|status\s+updates?)\s*[?.!？。！\s]*$/i.test(content)
+  );
+}
+
+function isAgentSelfIntroduction(content: string) {
+  return /(?:^|[\s\n])(?:大家好|各位好|(?:hello|hi|hey)[\s,，]*(?:everyone|every\s+one|everybody|all|team|folks))[\s\S]{0,120}(?:我是|I'm|I am|负责|my role|my default|own|owns)/i.test(content);
+}
+
+function isHumanChannelBroadcast(input: ActivationSelectionInput) {
+  return (
+    input.message.senderType === "human" &&
+    input.space === "project_channel" &&
+    !hasNegatedSelfIntroduction(input.message.content) &&
+    (hasSelfIntroductionRequest(input.message.content) || (hasGroupAddressedGreeting(input.message.content) && hasOnlyLowValueIntent(input.intents)) || hasRoomAddressedCheckIn(input.message.content))
+  );
 }
 
 function fanoutLimit(space: ConversationSpace, senderType: SenderType) {
@@ -443,6 +502,8 @@ export function selectActivationCandidates(input: ActivationSelectionInput): Act
   const suppressed: SuppressedCandidate[] = [];
   const actionable = hasActionableIntent(input.intents);
   const lowValue = hasOnlyLowValueIntent(input.intents);
+  const broadcast = isHumanChannelBroadcast(input);
+  const suppressAgentSelfIntroCascade = input.message.senderType === "agent" && isAgentSelfIntroduction(input.message.content);
   const lastOtherSpeaker = [...input.recentMessages].reverse().find((m) => m.senderType === "agent" && m.senderId !== input.message.senderId);
 
   for (const agent of input.agents) {
@@ -457,10 +518,10 @@ export function selectActivationCandidates(input: ActivationSelectionInput): Act
       if (input.task?.assigneeId === agent.id) senderReasons.push("task_owner");
       if (input.task?.reviewerId === agent.id) senderReasons.push("review_owner");
       if (input.task?.createdById === agent.id) senderReasons.push("task_creator");
-      if (naturalReference) senderReasons.push("natural_reference");
-      if (isOpenCall(input.message.content) && actionable && input.space === "project_channel" && matchesDomain(input.message.content, agent)) senderReasons.push("open_call_candidate");
+      if (naturalReference && !suppressAgentSelfIntroCascade) senderReasons.push("natural_reference");
+      if (!suppressAgentSelfIntroCascade && isOpenCall(input.message.content) && actionable && input.space === "project_channel" && matchesDomain(input.message.content, agent)) senderReasons.push("open_call_candidate");
       if (lastOtherSpeaker?.senderId === agent.id && actionable && (input.space === "thread" || input.space === "task_thread" || input.space === "dm") && /\b(you|your|take another look|continue|please check|can you|could you)\b/i.test(input.message.content)) senderReasons.push("conversation_continuation");
-      if (!naturalReference && !explicitMention && actionable && matchesDomain(input.message.content, agent)) senderReasons.push(isOpenCall(input.message.content) ? "open_call_candidate" : "domain_fit");
+      if (!suppressAgentSelfIntroCascade && !naturalReference && !explicitMention && actionable && matchesDomain(input.message.content, agent)) senderReasons.push(isOpenCall(input.message.content) ? "open_call_candidate" : "domain_fit");
       if (senderReasons.length > 0) suppressed.push({ agentId: agent.id, reason: "sender", reasons: senderReasons });
       continue;
     }
@@ -473,12 +534,14 @@ export function selectActivationCandidates(input: ActivationSelectionInput): Act
     if (input.task?.reviewerId === agent.id) pushReason(candidates, agent.id, "review_owner", "strong");
     if (input.task?.createdById === agent.id) pushReason(candidates, agent.id, "task_creator", "medium");
 
-    if (naturalReference) {
+    if (broadcast) pushReason(candidates, agent.id, "channel_broadcast", "medium");
+
+    if (naturalReference && !suppressAgentSelfIntroCascade) {
       if (actionable) pushReason(candidates, agent.id, "natural_reference", "medium");
       else suppressed.push({ agentId: agent.id, reason: "low_value_intent", reasons: ["natural_reference"] });
     }
 
-    if (isOpenCall(input.message.content) && actionable && input.space === "project_channel" && matchesDomain(input.message.content, agent)) {
+    if (!suppressAgentSelfIntroCascade && isOpenCall(input.message.content) && actionable && input.space === "project_channel" && matchesDomain(input.message.content, agent)) {
       pushReason(candidates, agent.id, "open_call_candidate", "weak");
     }
 
@@ -486,13 +549,13 @@ export function selectActivationCandidates(input: ActivationSelectionInput): Act
       pushReason(candidates, agent.id, "conversation_continuation", input.space === "thread" || input.space === "task_thread" ? "strong" : "medium");
     }
 
-    if (!naturalReference && !explicitMention && actionable && matchesDomain(input.message.content, agent)) {
+    if (!suppressAgentSelfIntroCascade && !naturalReference && !explicitMention && actionable && matchesDomain(input.message.content, agent)) {
       pushReason(candidates, agent.id, isOpenCall(input.message.content) ? "open_call_candidate" : "domain_fit", "weak");
     }
   }
 
   const activated = Array.from(candidates.values()).filter((candidate) => {
-    if (lowValue && !candidate.reasons.includes("direct_mention") && !candidate.reasons.includes("dm_recipient")) {
+    if (lowValue && !candidate.reasons.includes("direct_mention") && !candidate.reasons.includes("dm_recipient") && !candidate.reasons.includes("channel_broadcast")) {
       suppressed.push({ agentId: candidate.agentId, reason: "low_value_intent", reasons: candidate.reasons });
       return false;
     }
@@ -501,8 +564,9 @@ export function selectActivationCandidates(input: ActivationSelectionInput): Act
 
   const agentsById = new Map(input.agents.map((agent) => [agent.id, agent]));
   const strong = activated.filter((candidate) => candidate.strength === "strong");
+  const channelBroadcast = activated.filter((candidate) => candidate.strength !== "strong" && candidate.reasons.includes("channel_broadcast"));
   const natural = activated
-    .filter((candidate) => candidate.strength !== "strong")
+    .filter((candidate) => candidate.strength !== "strong" && !candidate.reasons.includes("channel_broadcast"))
     .sort((a, b) => domainScore(input.message.content, agentsById.get(b.agentId)!) - domainScore(input.message.content, agentsById.get(a.agentId)!));
   const limit = fanoutLimit(input.space, input.message.senderType);
   const allowedNatural: ActivationCandidate[] = [];
@@ -526,5 +590,5 @@ export function selectActivationCandidates(input: ActivationSelectionInput): Act
 
   for (const candidate of capped) suppressed.push({ agentId: candidate.agentId, reason: "fanout_cap", reasons: candidate.reasons });
 
-  return { activated: [...strong, ...allowedNatural], suppressed };
+  return { activated: [...strong, ...channelBroadcast, ...allowedNatural], suppressed };
 }

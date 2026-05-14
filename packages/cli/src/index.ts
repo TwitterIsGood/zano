@@ -919,15 +919,88 @@ async function resolveTask(flags: Record<string, string>, code = "TASK_NOT_FOUND
     return tasks[0];
   }
 
-  // --message-id fallback: look up task by message_id field
+  const task = await findTaskByMessageId(messageId!, flags);
+  if (!task) fail(code, `Task with message ID ${messageId} not found`);
+  return task;
+}
+
+async function findTaskByMessageId(messageIdOrShort: string, flags: Record<string, string>) {
+  const channelId = flags.channel ? (await resolveTarget(flags.channel)).channelId : null;
+  const message = await findMessageForTaskClaim(messageIdOrShort, channelId);
+  if (!message) return null;
+
   const { data: tasksByMsg, error: msgError } = await supabase
     .from("tasks")
     .select("id, task_number, status, assignee_id, assignee_type, channel_id")
-    .eq("message_id", messageId!);
+    .or(`message_id.eq.${message.id},source_message_id.eq.${message.id}`);
 
-  if (msgError) fail(code, msgError.message);
-  if (!tasksByMsg || tasksByMsg.length === 0) fail(code, `Task with message ID ${messageId} not found`);
-  return tasksByMsg[0];
+  if (msgError) fail("TASK_NOT_FOUND", msgError.message);
+  return tasksByMsg?.[0] ?? null;
+}
+
+async function createTaskFromMessage(messageIdOrShort: string, flags: Record<string, string>) {
+  const channelId = flags.channel ? (await resolveTarget(flags.channel)).channelId : null;
+  const message = await findMessageForTaskClaim(messageIdOrShort, channelId);
+  if (!message) fail("CLAIM_FAILED", `Message ${messageIdOrShort} not found`);
+  if (message.thread_parent_id) fail("CLAIM_FAILED", "Only top-level messages can be claimed as tasks");
+
+  const title = message.content.trim().split(/\n+/)[0]?.slice(0, 160) || "Untitled task";
+  const { data: task, error: createError } = await supabase
+    .from("tasks")
+    .insert({
+      message_id: message.id,
+      channel_id: message.channel_id,
+      title,
+      description: message.content,
+      priority: "medium",
+      tags: [],
+      source_message_id: message.id,
+      created_by_id: message.sender_id,
+      created_by_type: message.sender_type,
+      assignee_id: AGENT_ID,
+      assignee_type: "agent",
+      status: "in_progress",
+      started_at: new Date().toISOString(),
+      current_gate: "executing",
+    })
+    .select("id, task_number, status, assignee_id, assignee_type, channel_id")
+    .single();
+
+  if (createError || !task) fail("CLAIM_FAILED", createError?.message ?? "Failed to create task from message");
+  return task;
+}
+
+async function findMessageForTaskClaim(messageIdOrShort: string, channelId: string | null) {
+  if (messageIdOrShort.length > 8) {
+    let query = supabase
+      .from("messages")
+      .select("id, channel_id, sender_id, sender_type, content, thread_parent_id")
+      .eq("id", messageIdOrShort);
+    if (channelId) query = query.eq("channel_id", channelId);
+
+    const { data, error } = await query.single();
+    if (error) return null;
+    return data;
+  }
+
+  let query = supabase
+    .from("messages")
+    .select("id, channel_id, sender_id, sender_type, content, thread_parent_id")
+    .order("created_at", { ascending: false })
+    .limit(100);
+  if (channelId) query = query.eq("channel_id", channelId);
+  else {
+    const { data: memberships } = await supabase
+      .from("channel_members")
+      .select("channel_id")
+      .eq("member_id", AGENT_ID)
+      .eq("member_type", "agent");
+    if (!memberships || memberships.length === 0) return null;
+    query = query.in("channel_id", memberships.map((m) => m.channel_id));
+  }
+
+  const { data: messages } = await query;
+  return messages?.find((message) => shortId(message.id) === messageIdOrShort) ?? null;
 }
 
 async function resolveTaskByNumber(taskNumber: number, channelId?: string) {
@@ -1011,6 +1084,27 @@ async function cmdTaskCreate(flags: Record<string, string>) {
   const tagValues = collectFlagValues(flags, "tag");
   const shouldClaim = flags.claim === "true";
 
+  const { data: task, error: taskError } = await supabase
+    .from("tasks")
+    .insert({
+      channel_id: channelId,
+      title,
+      description: flags.description ?? null,
+      priority: flags.priority ?? "medium",
+      tags: tagValues.length > 0 ? tagValues : [],
+      parent_task_id: parentTask?.id ?? null,
+      created_by_id: AGENT_ID,
+      created_by_type: "agent",
+      current_gate: shouldClaim ? "executing" : "ready_to_execute",
+      ...(shouldClaim
+        ? { assignee_id: AGENT_ID, assignee_type: "agent", status: "in_progress", started_at: new Date().toISOString() }
+        : {}),
+    })
+    .select("id, task_number")
+    .single();
+
+  if (taskError) fail("CREATE_FAILED", taskError.message);
+
   const { data: msg, error: msgError } = await supabase
     .from("messages")
     .insert({
@@ -1022,36 +1116,32 @@ async function cmdTaskCreate(flags: Record<string, string>) {
     .select("id")
     .single();
 
-  if (msgError) fail("CREATE_FAILED", msgError.message);
+  if (msgError) {
+    await supabase.from("tasks").delete().eq("id", task.id);
+    fail("CREATE_FAILED", msgError.message);
+  }
 
-  const { data: task, error: taskError } = await supabase
+  const { error: bindError } = await supabase
     .from("tasks")
-    .insert({
-      message_id: msg.id,
-      channel_id: channelId,
-      title,
-      description: flags.description ?? null,
-      priority: flags.priority ?? "medium",
-      tags: tagValues.length > 0 ? tagValues : [],
-      source_message_id: msg.id,
-      parent_task_id: parentTask?.id ?? null,
-      created_by_id: AGENT_ID,
-      created_by_type: "agent",
-      current_gate: shouldClaim ? "executing" : "ready_to_execute",
-      ...(shouldClaim
-        ? { assignee_id: AGENT_ID, assignee_type: "agent", status: "in_progress", started_at: new Date().toISOString() }
-        : {}),
-    })
-    .select("task_number")
-    .single();
+    .update({ message_id: msg.id, source_message_id: msg.id })
+    .eq("id", task.id);
 
-  if (taskError) fail("CREATE_FAILED", taskError.message);
+  if (bindError) {
+    await supabase.from("messages").delete().eq("id", msg.id);
+    await supabase.from("tasks").delete().eq("id", task.id);
+    fail("CREATE_FAILED", bindError.message);
+  }
 
   console.log(`Task #${task.task_number} created${shouldClaim ? " and claimed" : ""} in ${channel}.`);
 }
 
 async function cmdTaskClaim(flags: Record<string, string>) {
-  const task = await resolveTask(flags, "CLAIM_FAILED");
+  let task = flags["message-id"] ? await findTaskByMessageId(flags["message-id"], flags) : null;
+  if (!task && flags["message-id"]) {
+    task = await createTaskFromMessage(flags["message-id"], flags);
+  } else if (!task) {
+    task = await resolveTask(flags, "CLAIM_FAILED");
+  }
 
   if (task.assignee_id && task.assignee_id !== AGENT_ID) {
     const owner = await resolveSenderName(task.assignee_id, task.assignee_type || "agent");
@@ -1061,7 +1151,7 @@ async function cmdTaskClaim(flags: Record<string, string>) {
     );
   }
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("tasks")
     .update({
       assignee_id: AGENT_ID,
@@ -1070,10 +1160,11 @@ async function cmdTaskClaim(flags: Record<string, string>) {
       started_at: new Date().toISOString(),
       current_gate: "executing",
     })
-    .eq("id", task.id)
-    .is("assignee_id", null)
-    .select("task_number")
-    .single();
+    .eq("id", task.id);
+
+  query = task.assignee_id ? query.eq("assignee_id", AGENT_ID) : query.is("assignee_id", null);
+
+  const { data, error } = await query.select("task_number").single();
 
   if (error || !data) fail("CLAIM_FAILED", error?.message ?? "Task is already claimed");
 

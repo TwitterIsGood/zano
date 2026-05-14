@@ -178,15 +178,15 @@ export function MemberDetailPage({
           <MessageArea channel={messageChannel} />
         </div>
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col gap-4 px-6 py-4">
-          <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "profile" | "activity" | "tasks" | "workspace")}>
+        <div className="flex min-h-0 flex-1 flex-col px-6 py-4">
+          <Tabs className="min-h-0 flex-1" value={activeTab} onValueChange={(value) => setActiveTab(value as "profile" | "activity" | "tasks" | "workspace")}>
             <TabsList>
               <TabsTrigger value="profile">Profile</TabsTrigger>
               <TabsTrigger value="activity">Activity</TabsTrigger>
               <TabsTrigger value="tasks">Tasks</TabsTrigger>
               {memberType === "agent" ? <TabsTrigger value="workspace">Workspace</TabsTrigger> : null}
             </TabsList>
-            <TabsContent value="profile" className="mt-4">
+            <TabsContent value="profile" className="mt-4 min-h-0 overflow-y-auto pr-1">
               <MemberProfileTab
                 memberType={memberType}
                 member={member}
@@ -196,7 +196,7 @@ export function MemberDetailPage({
                 humanMembership={humanMembership}
               />
             </TabsContent>
-            <TabsContent value="activity" className="mt-4">
+            <TabsContent value="activity" className="mt-4 min-h-0 overflow-y-auto pr-1">
               <MemberActivityTab
                 serverId={serverId}
                 serverSlug={serverSlug}
@@ -204,7 +204,7 @@ export function MemberDetailPage({
                 memberId={memberId}
               />
             </TabsContent>
-            <TabsContent value="tasks" className="mt-4">
+            <TabsContent value="tasks" className="mt-4 min-h-0 overflow-y-auto pr-1">
               <MemberTasksTab
                 serverId={serverId}
                 memberType={memberType}
@@ -212,7 +212,7 @@ export function MemberDetailPage({
               />
             </TabsContent>
             {memberType === "agent" ? (
-              <TabsContent value="workspace" className="mt-4">
+              <TabsContent value="workspace" className="mt-4 min-h-0 overflow-y-auto pr-1">
                 <MemberWorkspaceTab memberType={memberType} agentId={memberId} />
               </TabsContent>
             ) : null}

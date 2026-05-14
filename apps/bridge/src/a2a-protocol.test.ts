@@ -63,6 +63,19 @@ describe("system prompt A2A contract", () => {
     expect(prompt).toMatch(/WORK_SILENTLY[\s\S]*do not send a visible acknowledgement\/plan before starting/);
     expect(prompt).toContain("`SKIP` and `OBSERVE` are internal decisions");
   });
+
+  it("forbids leaking internal handles during self-introductions", () => {
+    const prompt = buildSystemPrompt(
+      { display_name: "SA 工程师", name: "sa-17b1a80d-nlo1", description: null, system_prompt: null },
+      "",
+    );
+
+    expect(prompt).toContain("When introducing yourself");
+    expect(prompt).toContain("SA 工程师");
+    expect(prompt).toMatch(/do not include your stable @mention handle/i);
+    expect(prompt).toMatch(/UUID-like suffixes/i);
+    expect(prompt).toMatch(/unless a human explicitly asks for your mention handle/i);
+  });
 });
 
 describe("classifyConversationSpace", () => {
@@ -830,6 +843,347 @@ describe("selectActivationCandidates", () => {
 
     expect(result.activated).toEqual([
       expect.objectContaining({ agentId: "agent-a", strength: "weak", reasons: expect.arrayContaining(["open_call_candidate"]) }),
+    ]);
+  });
+
+  it("activates all agents for explicit human introduction broadcasts", () => {
+    for (const content of [
+      "hello 各位 大家介绍一下自己吧？",
+      "各位请自我介绍一下。",
+      "大家说下自己负责什么？",
+      "everyone, please introduce yourself.",
+      "all of you, introduce yourselves please.",
+    ]) {
+      const result = selectActivationCandidates({
+        message: msg({ content }),
+        agents,
+        space: "project_channel",
+        intents: classifyMessageIntent(content),
+        topicKey: "message:msg-1",
+        recentMessages: [],
+        task: null,
+      });
+
+      expect(classifyMessageIntent(content)).toEqual(expect.arrayContaining(["request"]));
+      expect(result.activated).toHaveLength(agents.length);
+      expect(result.activated).toEqual(
+        expect.arrayContaining(agents.map((agent) => expect.objectContaining({ agentId: agent.id, strength: "medium", reasons: expect.arrayContaining(["channel_broadcast"]) }))),
+      );
+    }
+  });
+
+  it("activates all agents for human group-addressed greetings", () => {
+    for (const content of [
+      "hello every one",
+      "hello everyone",
+      "Hello everyone!",
+      "hi all",
+      "hi, all",
+      "hey team",
+      "hey folks",
+      "hello 各位",
+      "大家好",
+      "大家好！",
+      "各位好",
+      "各位好。",
+    ]) {
+      const result = selectActivationCandidates({
+        message: msg({ content }),
+        agents,
+        space: "project_channel",
+        intents: classifyMessageIntent(content),
+        topicKey: "message:msg-1",
+        recentMessages: [],
+        task: null,
+      });
+
+      expect(hasOnlyLowValueIntent(classifyMessageIntent(content))).toBe(true);
+      expect(result.activated).toHaveLength(agents.length);
+      expect(result.activated).toEqual(
+        expect.arrayContaining(agents.map((agent) => expect.objectContaining({ agentId: agent.id, strength: "medium", reasons: expect.arrayContaining(["channel_broadcast"]) }))),
+      );
+      expect(result.suppressed).not.toEqual(expect.arrayContaining([expect.objectContaining({ reason: "low_value_intent" })]));
+    }
+  });
+
+  it("does not broadcast generic greetings, topic-introduction requests, group-addressed work, or negated intro text", () => {
+    for (const content of [
+      "hello",
+      "hi",
+      "hey",
+      "hello world",
+      "hello Redis team",
+      "hello backend team",
+      "hi frontend team",
+      "all tests passed",
+      "team status is green",
+      "大家介绍一下 Redis 方案",
+      "各位讲一下架构风险",
+      "everyone explain your domain",
+      "大家介绍一下这个项目",
+      "hi all, can someone validate the import timeout?",
+      "hey team, please review the API risk.",
+      "大家帮忙看一下 Supabase 验证问题",
+      "各位请审核登录风险",
+      "frontend team, introduce yourselves",
+      "backend team, please introduce yourselves",
+      "QA folks, introduce yourselves",
+      "No need to introduce yourselves.",
+      "No need for everyone to introduce yourselves.",
+      "I'm not asking everyone to introduce yourselves.",
+      "hello everyone, don't introduce yourselves.",
+      "大家不要自我介绍了。",
+      "大家没必要介绍一下自己。",
+      "大家不需要介绍自己。",
+      "大家避免介绍自己。",
+      "不是让大家介绍自己。",
+      "大家介绍一下 Redis 方案，不要介绍自己。",
+      "各位先别说自己负责什么。",
+    ]) {
+      const result = selectActivationCandidates({
+        message: msg({ content }),
+        agents,
+        space: "project_channel",
+        intents: classifyMessageIntent(content),
+        topicKey: "message:msg-1",
+        recentMessages: [],
+        task: null,
+      });
+
+      expect(result.activated.every((candidate) => !candidate.reasons.includes("channel_broadcast"))).toBe(true);
+    }
+  });
+
+  it("only broadcasts group-addressed greetings in project channels", () => {
+    for (const space of ["thread", "task_thread", "general_channel", "dm"] as const) {
+      const result = selectActivationCandidates({
+        message: msg({ content: "hello everyone" }),
+        agents,
+        space,
+        intents: classifyMessageIntent("hello everyone"),
+        topicKey: "message:msg-1",
+        recentMessages: [],
+        task: null,
+      });
+
+      expect(result.activated.every((candidate) => !candidate.reasons.includes("channel_broadcast"))).toBe(true);
+    }
+  });
+
+  it("activates all agents for human room-addressed check-in questions", () => {
+    for (const content of [
+      "那大家任务进度是怎么样的？",
+      "大家任务完成怎么样啦",
+      "大家怎么看？",
+      "各位觉得呢？",
+      "大家有什么更新吗？",
+      "大家有什么想法？",
+      "各位有什么意见吗？",
+      "大家有什么进展吗？",
+      "各位有更新吗？",
+      "what does everyone think?",
+      "how is everyone doing on their tasks?",
+      "team, any updates?",
+      "team, any status?",
+      "all, status update?",
+      "everyone, any blockers?",
+      "folks, thoughts?",
+      "what do you all think?",
+      "everyone, how are we looking?",
+      "team, blockers or updates?",
+    ]) {
+      const result = selectActivationCandidates({
+        message: msg({ content }),
+        agents,
+        space: "project_channel",
+        intents: classifyMessageIntent(content),
+        topicKey: "message:msg-1",
+        recentMessages: [],
+        task: null,
+      });
+
+      expect(result.activated).toHaveLength(agents.length);
+      expect(result.activated).toEqual(
+        expect.arrayContaining(agents.map((agent) => expect.objectContaining({ agentId: agent.id, strength: "medium", reasons: expect.arrayContaining(["channel_broadcast"]) }))),
+      );
+    }
+  });
+
+  it("does not all-agent broadcast unaddressed, scoped, or concrete work questions", () => {
+    for (const content of [
+      "进度如何？",
+      "任务进度怎么样？",
+      "backend team, what's the current progress?",
+      "frontend team, thoughts?",
+      "QA folks, any updates?",
+      "前端进度如何？",
+      "大家看一下登录接口进度风险",
+      "team, please review the progress risk",
+      "everyone inspect the import timeout?",
+      "大家状态已更新",
+      "大家觉得这个方案不错",
+      "各位觉得这个方案不错",
+      "team status is green",
+      "all status updates are posted",
+      "大家的进展已经同步了",
+    ]) {
+      const result = selectActivationCandidates({
+        message: msg({ content }),
+        agents,
+        space: "project_channel",
+        intents: classifyMessageIntent(content),
+        topicKey: "message:msg-1",
+        recentMessages: [],
+        task: null,
+      });
+
+      expect(result.activated.every((candidate) => !candidate.reasons.includes("channel_broadcast"))).toBe(true);
+    }
+  });
+
+  it("routes concrete room-addressed work normally instead of dropping it", () => {
+    const reviewerAgents: ProtocolAgent[] = [
+      { id: "reviewer-agent", name: "reviewer", displayName: "Reviewer", description: "Owns review, approval, risk, and quality checks" },
+      { id: "builder-agent", name: "builder", displayName: "Builder", description: "Owns implementation and build work" },
+      { id: "docs-agent", name: "docs", displayName: "Docs", description: "Owns documentation work" },
+    ];
+
+    for (const content of ["team, please review the progress risk", "大家看一下登录接口进度风险", "各位请审核登录风险"]) {
+      const result = selectActivationCandidates({
+        message: msg({ content }),
+        agents: reviewerAgents,
+        space: "project_channel",
+        intents: classifyMessageIntent(content),
+        topicKey: "message:msg-1",
+        recentMessages: [],
+        task: null,
+      });
+
+      expect(result.activated).toEqual([
+        expect.objectContaining({ agentId: "reviewer-agent", reasons: expect.arrayContaining(["domain_fit"]) }),
+      ]);
+      expect(result.activated.every((candidate) => !candidate.reasons.includes("channel_broadcast"))).toBe(true);
+    }
+  });
+
+  it("does not broadcast room-addressed check-ins from agents or non-project spaces", () => {
+    const agentResult = selectActivationCandidates({
+      message: msg({ senderId: "agent-a", senderType: "agent", content: "team, any updates?" }),
+      agents,
+      space: "project_channel",
+      intents: classifyMessageIntent("team, any updates?"),
+      topicKey: "message:msg-1",
+      recentMessages: [],
+      task: null,
+    });
+    expect(agentResult.activated.every((candidate) => !candidate.reasons.includes("channel_broadcast"))).toBe(true);
+
+    for (const space of ["thread", "task_thread", "general_channel", "dm"] as const) {
+      const result = selectActivationCandidates({
+        message: msg({ content: "team, any updates?" }),
+        agents,
+        space,
+        intents: classifyMessageIntent("team, any updates?"),
+        topicKey: "message:msg-1",
+        recentMessages: [],
+        task: null,
+      });
+
+      expect(result.activated.every((candidate) => !candidate.reasons.includes("channel_broadcast"))).toBe(true);
+    }
+  });
+
+  it("does not treat agent-authored group intro text as a channel broadcast", () => {
+    const result = selectActivationCandidates({
+      message: msg({ senderId: "agent-a", senderType: "agent", content: "各位请自我介绍一下。" }),
+      agents,
+      space: "project_channel",
+      intents: classifyMessageIntent("各位请自我介绍一下。"),
+      topicKey: "message:msg-1",
+      recentMessages: [],
+      task: null,
+    });
+
+    expect(result.activated).toEqual([]);
+    expect(result.suppressed).not.toEqual(expect.arrayContaining([expect.objectContaining({ reasons: ["channel_broadcast"] })]));
+  });
+
+  it("does not reactivate other agents from an agent self-introduction", () => {
+    for (const content of [
+      "大家好，我是 QA 工程师 @qa-17b1a80d-63dd，负责测试策略、集成/E2E 测试和发布前验证。我的默认工作方式是补齐验证证据。",
+      "大家好，我是 SA 工程师（@sa-17b1a80d-nlo1），负责接口契约、状态机、边界条件与跨模块依赖。",
+      "大家好，我是架构师（@-17b1a80d-n3fk），负责整体技术架构与技术选型把关。",
+      "大家好，我是后端工程师，负责服务端逻辑、接口与数据层。我的主要工作包括实现 API、业务服务、数据库 schema 与 migration；开发时会先定契约，再按 TDD 使用真实 Supabase 和真实 Claude Code 子进程验证，遇到 bug 会先定位根因再修复。",
+      "Hello, everyone, I am QA engineer and I own testing, validation, Supabase evidence, and release gates.",
+      "Hi everyone, I'm backend engineer and I own APIs, database schema, TDD, Supabase, and verification.",
+      "Hello all, I'm frontend engineer and I own UI implementation, browser validation, and TDD.",
+    ]) {
+      const result = selectActivationCandidates({
+        message: msg({ senderId: "qa-agent", senderType: "agent", content }),
+        agents: [
+          { id: "qa-agent", name: "qa", displayName: "QA 工程师", description: "负责测试与质量保障" },
+          { id: "product-agent", name: "product", displayName: "产品工程师", description: "负责产品规划" },
+          { id: "frontend-agent", name: "frontend", displayName: "前端工程师", description: "负责前端实现、TDD 和浏览器验证" },
+          { id: "sa-agent", name: "sa", displayName: "SA 工程师", description: "负责技术规格和接口契约" },
+          { id: "backend-agent", name: "backend", displayName: "后端工程师", description: "负责 API、Supabase、数据库 schema 与 migration" },
+        ],
+        space: "project_channel",
+        intents: classifyMessageIntent(content),
+        topicKey: "message:msg-1",
+        recentMessages: [],
+        task: null,
+      });
+
+      expect(classifyMessageIntent(content)).toEqual(expect.arrayContaining(["status", "result"]));
+      expect(result.activated).toEqual([]);
+    }
+  });
+
+  it("routes completed implementation handoffs to review roles instead of implementation roles", () => {
+    for (const content of [
+      "The implementation is complete; the risk section needs review before close.",
+      "Implementation work has been completed; the risk section needs review before close.",
+      "Completed implementation work now needs risk review before close.",
+      "实现已完成，风险部分需要评审后才能关闭。",
+    ]) {
+      const message = msg({ content });
+      const result = selectActivationCandidates({
+        message,
+        agents: [
+          { id: "implementation-agent", name: "builder", displayName: "Builder", description: "Owns implementation and build work" },
+          { id: "quality-agent", name: "qa", displayName: "QA 工程师", description: "负责测试与质量保障" },
+        ],
+        space: "project_channel",
+        intents: classifyMessageIntent(message.content),
+        topicKey: "message:msg-1",
+        recentMessages: [],
+        task: null,
+      });
+
+      expect(result.activated).toEqual([
+        expect.objectContaining({ agentId: "quality-agent", strength: "weak", reasons: expect.arrayContaining(["domain_fit"]) }),
+      ]);
+      expect(result.activated).not.toEqual(expect.arrayContaining([expect.objectContaining({ agentId: "implementation-agent" })]));
+    }
+  });
+
+  it("activates verification agents for English inspection open calls with localized role descriptions", () => {
+    const result = selectActivationCandidates({
+      message: msg({ content: "Can someone inspect why the import flow is timing out?" }),
+      agents: [
+        { id: "product-agent", name: "product", displayName: "Product", description: "负责产品迭代" },
+        { id: "quality-agent", name: "quality", displayName: "Quality", description: "负责测试与质量保障" },
+        { id: "architecture-agent", name: "architecture", displayName: "Architecture", description: "负责整体架构设计与技术选型" },
+      ],
+      space: "project_channel",
+      intents: classifyMessageIntent("Can someone inspect why the import flow is timing out?"),
+      topicKey: "message:msg-1",
+      recentMessages: [],
+      task: null,
+    });
+
+    expect(result.activated).toEqual([
+      expect.objectContaining({ agentId: "quality-agent", strength: "weak", reasons: expect.arrayContaining(["open_call_candidate"]) }),
     ]);
   });
 

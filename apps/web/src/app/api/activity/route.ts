@@ -61,7 +61,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const parsedLimit = Number(rawLimit);
+  const parsedLimit = rawLimit ? Number(rawLimit) : 50;
   const limit = Math.min(Math.max(Number.isNaN(parsedLimit) ? 50 : parsedLimit, 1), 100);
 
   const admin = createAdminClient();
@@ -108,6 +108,7 @@ export async function GET(request: NextRequest) {
   if (channelEventsResult.error) {
     return NextResponse.json({ error: channelEventsResult.error.message }, { status: 500 });
   }
+
 
   const events = [...(serverEventsResult.data ?? []), ...(channelEventsResult.data ?? [])]
     .sort((a, b) => new Date(b.occurred_at).getTime() - new Date(a.occurred_at).getTime())

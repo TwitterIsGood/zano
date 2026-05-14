@@ -150,7 +150,7 @@ async function main() {
   const refreshInterval = setInterval(async () => {
     try {
       const fresh = await authenticate(serverUrl, apiKey);
-      bridge.updateAuthToken(fresh.token);
+      await bridge.updateAuthToken(fresh.token);
       console.log("  Auth token refreshed.");
     } catch (err) {
       console.error(

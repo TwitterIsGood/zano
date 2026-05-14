@@ -126,12 +126,12 @@ export function MemberActivityTab({ serverId, serverSlug, memberType, memberId }
   return (
     <div className="space-y-4">
       {memberType === "agent" && agentActivity && agentActivity.activity !== "idle" ? (
-        <Card className="border-primary/20 bg-primary/5">
-          <CardContent className="py-4">
-            <div className="flex items-center gap-2 text-sm">
+        <Card className="min-w-0 max-w-full overflow-hidden border-primary/20 bg-primary/5">
+          <CardContent className="min-w-0 max-w-full py-4">
+            <div className="flex min-w-0 max-w-full items-start gap-2 text-sm">
               <Badge className="shrink-0" variant={activityBadgeVariant}>{agentActivity.activity}</Badge>
-              <span className="font-medium">{agentActivity.label || "Active"}</span>
-              {agentActivity.detail ? <span className="truncate text-muted-foreground">{agentActivity.detail}</span> : null}
+              <span className="shrink-0 font-medium">{agentActivity.label || "Active"}</span>
+              {agentActivity.detail ? <span className="min-w-0 max-w-full flex-1 break-words whitespace-pre-wrap text-muted-foreground">{agentActivity.detail}</span> : null}
             </div>
           </CardContent>
         </Card>
@@ -163,13 +163,15 @@ export function MemberActivityTab({ serverId, serverSlug, memberType, memberId }
             <Card key={event.id}>
               <CardContent className="py-4">
                 <div className="flex items-start gap-3">
-                  <div className="mt-1 size-2 rounded-full bg-primary" />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="text-sm font-medium">{event.label || toTitle(event.event_type)}</h3>
-                      <span className="text-xs text-muted-foreground">{formatTime(event.occurred_at)}</span>
+                  <div className="mt-1 shrink-0 size-2 rounded-full bg-primary" />
+                  <div className="min-w-0 max-w-full flex-1">
+                    <div className="min-w-0 flex items-center gap-2">
+                      <h3 className="truncate text-sm font-medium">{event.label || toTitle(event.event_type)}</h3>
+                      <span className="shrink-0 text-xs text-muted-foreground">{formatTime(event.occurred_at)}</span>
                     </div>
-                    {event.summary ? <p className="mt-1 text-sm text-muted-foreground">{event.summary}</p> : null}
+                    {event.summary ? (
+                      <p className="mt-1 break-words whitespace-pre-wrap text-sm text-muted-foreground">{event.summary}</p>
+                    ) : null}
                     <SourceLinks serverSlug={serverSlug} event={event} onOpenTask={openTask} />
                   </div>
                 </div>

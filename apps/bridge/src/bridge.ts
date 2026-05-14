@@ -110,17 +110,12 @@ export class Bridge {
   }
 
   /** Update the auth token (called on periodic refresh) */
-  updateAuthToken(token: string) {
+  async updateAuthToken(token: string) {
     this.config.authToken = token;
-    // Remove old channels before recreating client
-    if (this.workspaceRpcChannel) {
-      this.supabase.removeChannel(this.workspaceRpcChannel);
-      this.workspaceRpcChannel = null;
-    }
-    if (this.presenceChannel) {
-      this.supabase.removeChannel(this.presenceChannel);
-      this.presenceChannel = null;
-    }
+    // Remove all channels before recreating client
+    await this.supabase.removeAllChannels();
+    this.workspaceRpcChannel = null;
+    this.presenceChannel = null;
     // Recreate the Supabase client with the new token
     this.supabase = createClient(this.config.supabaseUrl, this.config.supabaseKey, {
       auth: { autoRefreshToken: false, persistSession: false },
@@ -131,7 +126,9 @@ export class Bridge {
     this.supabase.realtime.setAuth(token);
     // Update agent manager's client too
     this.agentManager.updateSupabaseClient(this.supabase, token);
-    // Re-subscribe workspace RPC and presence on new client
+    // Re-subscribe everything on new client
+    this.subscribeToMessages();
+    this.subscribeToNewAgents();
     this.subscribeToWorkspaceRpc();
     this.trackPresence();
   }
