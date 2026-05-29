@@ -1,5 +1,6 @@
 "use client";
 
+import type { Task } from "@zano/shared";
 import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -21,7 +22,9 @@ interface ThreadMessage {
 interface ThreadPanelProps {
   parentMessageId: string | null;
   userId: string | null;
-  mentions?: Array<{ name: string; displayName: string }>;
+  mentions?: Array<{ id?: string; name: string; displayName: string; aliases?: string[] }>;
+  tasksByNumber?: Map<number, Task>;
+  onOpenTask?: (task: Task) => void;
   onClose: () => void;
 }
 
@@ -29,7 +32,7 @@ function formatTime(dateStr: string) {
   return new Date(dateStr).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-export function ThreadPanel({ parentMessageId, userId, mentions = [], onClose }: ThreadPanelProps) {
+export function ThreadPanel({ parentMessageId, userId, mentions = [], tasksByNumber, onOpenTask, onClose }: ThreadPanelProps) {
   const [parent, setParent] = useState<ThreadMessage | null>(null);
   const [replies, setReplies] = useState<ThreadMessage[]>([]);
   const [sending, setSending] = useState(false);
@@ -93,8 +96,14 @@ export function ThreadPanel({ parentMessageId, userId, mentions = [], onClose }:
     }
   }
 
+  function getSenderLabel(msg: ThreadMessage) {
+    if (msg.sender_type === "system") return "System";
+    if (msg.sender_type === "human") return msg.sender_id === userId ? "You" : "Human";
+    return mentions.find((mention) => mention.id === msg.sender_id)?.displayName ?? "Agent";
+  }
+
   function renderThreadMessage(msg: ThreadMessage, isParent?: boolean) {
-    const label = msg.sender_type === "human" ? "You" : msg.sender_type === "agent" ? "Agent" : "System";
+    const label = getSenderLabel(msg);
     return (
       <div className={`flex gap-3 rounded-lg px-2 py-1.5 ${isParent ? "rounded-lg border bg-muted/30 p-3" : ""}`}>
         <div className="w-8 shrink-0 pt-0.5">
@@ -105,7 +114,13 @@ export function ThreadPanel({ parentMessageId, userId, mentions = [], onClose }:
             <span className="text-[13px] font-semibold">{label}</span>
             <span className="text-[11px] text-muted-foreground">{formatTime(msg.created_at)}</span>
           </div>
-          <MessageBody content={msg.content} senderType={msg.sender_type} mentions={mentions} />
+          <MessageBody
+            content={msg.content}
+            senderType={msg.sender_type}
+            mentions={mentions}
+            tasksByNumber={tasksByNumber}
+            onOpenTask={onOpenTask}
+          />
         </div>
       </div>
     );

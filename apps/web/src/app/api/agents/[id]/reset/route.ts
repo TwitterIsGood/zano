@@ -51,13 +51,20 @@ export async function POST(
   // Verify ownership
   const { data: agent } = await supabase
     .from("agents")
-    .select("id, display_name, server_id")
+    .select("id, display_name, server_id, parent_agent_id")
     .eq("id", id)
     .eq("owner_id", user.id)
     .single();
 
   if (!agent) {
     return NextResponse.json({ error: "Agent not found" }, { status: 404 });
+  }
+
+  if (agent.parent_agent_id) {
+    return NextResponse.json(
+      { error: "Cannot reset child agent. Archive child agents instead." },
+      { status: 400 }
+    );
   }
 
   // Find the DM channel for this agent
@@ -73,13 +80,24 @@ export async function POST(
     for (const m of memberships) {
       const { data: ch } = await supabase
         .from("channels")
-        .select("id, type")
+        .select("id, type, name")
         .eq("id", m.channel_id)
         .eq("type", "dm")
         .single();
 
       if (ch) {
-        // Delete all messages in the DM channel
+        let canResetChannel = ch.name === `dm-${id}`;
+        if (!canResetChannel) {
+          const { data: agentMembers } = await supabase
+            .from("channel_members")
+            .select("member_id")
+            .eq("channel_id", ch.id)
+            .eq("member_type", "agent");
+          canResetChannel = (agentMembers ?? []).length === 1 && agentMembers?.[0]?.member_id === id;
+        }
+
+        if (!canResetChannel) continue;
+
         const { count } = await supabase
           .from("messages")
           .delete({ count: "exact" })

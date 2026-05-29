@@ -12,6 +12,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/index.ts",
+    "test": "vitest run",
     "prepublishOnly": "npm run build"
   },
   "keywords": ["zano", "claude", "ai", "agent", "cli"],

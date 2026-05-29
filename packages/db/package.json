@@ -5,6 +5,11 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "scripts": {
+    "apply:autonomous": "node scripts/apply-autonomous-schema.mjs",
+    "apply:daemon": "node scripts/apply-daemon-schema.mjs",
+    "verify:autonomous": "node scripts/verify-autonomous-schema.mjs",
+    "verify:daemon": "node scripts/verify-daemon-schema.mjs",
+    "verify:agent-lineage-archive": "node scripts/verify-agent-lineage-archive.mjs",
     "build": "tsc",
     "lint": "tsc --noEmit"
   },

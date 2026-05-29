@@ -12,6 +12,8 @@ export type TaskStatus =
   | "done"
   | "archived";
 
+export type ReminderStatus = "pending" | "snoozed" | "firing" | "fired" | "completed" | "cancelled" | "failed";
+
 export type TaskPriority = "critical" | "high" | "medium" | "low";
 
 export type TaskGate =

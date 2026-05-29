@@ -3,6 +3,21 @@
 -- Threads, Tasks, Agent Autonomy, Notifications
 -- ============================================================
 
+create or replace function public.auth_actor_is_not_archived_agent()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select not exists (
+    select 1
+    from public.agents
+    where id = auth.uid()
+      and archived_at is not null
+  );
+$$;
+
 -- -----------------------------------------------------------
 -- Thread metadata on messages
 -- -----------------------------------------------------------
@@ -280,6 +295,32 @@ create table if not exists public.notifications (
   created_at timestamptz default now() not null
 );
 
+create table if not exists public.reminders (
+  id uuid default uuid_generate_v4() primary key,
+  server_id uuid references public.servers(id) on delete cascade not null,
+  created_by_id uuid not null,
+  created_by_type text not null check (created_by_type in ('human', 'agent', 'system')),
+  recipient_id uuid not null,
+  recipient_type text not null check (recipient_type in ('human', 'agent')),
+  channel_id uuid references public.channels(id) on delete cascade not null,
+  source_message_id uuid references public.messages(id) on delete set null,
+  thread_parent_id uuid references public.messages(id) on delete set null,
+  task_id uuid references public.tasks(id) on delete set null,
+  target text not null,
+  body text not null,
+  due_at timestamptz not null,
+  snoozed_until timestamptz,
+  state text default 'pending' not null check (state in ('pending', 'snoozed', 'firing', 'fired', 'completed', 'cancelled', 'failed')),
+  fired_at timestamptz,
+  fired_delivery_id uuid,
+  cancelled_at timestamptz,
+  completed_at timestamptz,
+  last_error text,
+  metadata jsonb default '{}' not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null
+);
+
 create index if not exists idx_task_comments_task on public.task_comments(task_id, created_at);
 create index if not exists idx_task_artifacts_task on public.task_artifacts(task_id, created_at);
 create index if not exists idx_task_events_task on public.task_events(task_id, created_at);
@@ -290,6 +331,10 @@ create index if not exists idx_task_verifications_task on public.task_verificati
 create index if not exists idx_task_agent_runs_task on public.task_agent_runs(task_id, created_at);
 create index if not exists idx_task_reviews_task on public.task_reviews(task_id, created_at);
 create index if not exists idx_notifications_recipient on public.notifications(recipient_id, recipient_type, read_at, created_at desc);
+create index if not exists idx_reminders_server_due on public.reminders(server_id, state, due_at);
+create index if not exists idx_reminders_recipient_due on public.reminders(recipient_id, recipient_type, state, due_at);
+create index if not exists idx_reminders_channel on public.reminders(channel_id, created_at desc);
+create index if not exists idx_reminders_task on public.reminders(task_id, created_at desc);
 
 -- -----------------------------------------------------------
 -- RLS
@@ -307,9 +352,11 @@ alter table public.task_verifications enable row level security;
 alter table public.task_agent_runs enable row level security;
 alter table public.task_reviews enable row level security;
 alter table public.notifications enable row level security;
+alter table public.reminders enable row level security;
 
 create policy "Thread participants follow message access" on public.thread_participants for all using (
-  exists (
+  public.auth_actor_is_not_archived_agent()
+  and exists (
     select 1 from public.messages m
     join public.channel_members cm on cm.channel_id = m.channel_id
     where m.id = thread_participants.thread_parent_id
@@ -318,7 +365,8 @@ create policy "Thread participants follow message access" on public.thread_parti
 );
 
 create policy "Thread subscriptions follow message access" on public.thread_subscriptions for all using (
-  exists (
+  public.auth_actor_is_not_archived_agent()
+  and exists (
     select 1 from public.messages m
     join public.channel_members cm on cm.channel_id = m.channel_id
     where m.id = thread_subscriptions.thread_parent_id
@@ -327,7 +375,8 @@ create policy "Thread subscriptions follow message access" on public.thread_subs
 );
 
 create policy "Task dependencies follow successor access" on public.task_dependencies for all using (
-  exists (
+  public.auth_actor_is_not_archived_agent()
+  and exists (
     select 1 from public.tasks t
     join public.channel_members cm on cm.channel_id = t.channel_id
     where t.id = task_dependencies.successor_task_id
@@ -336,7 +385,8 @@ create policy "Task dependencies follow successor access" on public.task_depende
 );
 
 create policy "Task comments follow task access" on public.task_comments for all using (
-  exists (
+  public.auth_actor_is_not_archived_agent()
+  and exists (
     select 1 from public.tasks t
     join public.channel_members cm on cm.channel_id = t.channel_id
     where t.id = task_comments.task_id
@@ -345,7 +395,8 @@ create policy "Task comments follow task access" on public.task_comments for all
 );
 
 create policy "Task artifacts follow task access" on public.task_artifacts for all using (
-  exists (
+  public.auth_actor_is_not_archived_agent()
+  and exists (
     select 1 from public.tasks t
     join public.channel_members cm on cm.channel_id = t.channel_id
     where t.id = task_artifacts.task_id
@@ -354,7 +405,8 @@ create policy "Task artifacts follow task access" on public.task_artifacts for a
 );
 
 create policy "Task events follow task access" on public.task_events for select using (
-  exists (
+  public.auth_actor_is_not_archived_agent()
+  and exists (
     select 1 from public.tasks t
     join public.channel_members cm on cm.channel_id = t.channel_id
     where t.id = task_events.task_id
@@ -366,7 +418,8 @@ create policy "Task events follow task access" on public.task_events for select 
 -- never by arbitrary client requests. No INSERT/UPDATE/DELETE policies are intentional.
 
 create policy "Task specs follow task access" on public.task_specs for all using (
-  exists (
+  public.auth_actor_is_not_archived_agent()
+  and exists (
     select 1 from public.tasks t
     join public.channel_members cm on cm.channel_id = t.channel_id
     where t.id = task_specs.task_id
@@ -375,7 +428,8 @@ create policy "Task specs follow task access" on public.task_specs for all using
 );
 
 create policy "Task plans follow task access" on public.task_plans for all using (
-  exists (
+  public.auth_actor_is_not_archived_agent()
+  and exists (
     select 1 from public.tasks t
     join public.channel_members cm on cm.channel_id = t.channel_id
     where t.id = task_plans.task_id
@@ -384,7 +438,8 @@ create policy "Task plans follow task access" on public.task_plans for all using
 );
 
 create policy "Task steps follow task access" on public.task_steps for all using (
-  exists (
+  public.auth_actor_is_not_archived_agent()
+  and exists (
     select 1 from public.tasks t
     join public.channel_members cm on cm.channel_id = t.channel_id
     where t.id = task_steps.task_id
@@ -393,7 +448,8 @@ create policy "Task steps follow task access" on public.task_steps for all using
 );
 
 create policy "Task verifications follow task access" on public.task_verifications for all using (
-  exists (
+  public.auth_actor_is_not_archived_agent()
+  and exists (
     select 1 from public.tasks t
     join public.channel_members cm on cm.channel_id = t.channel_id
     where t.id = task_verifications.task_id
@@ -402,7 +458,8 @@ create policy "Task verifications follow task access" on public.task_verificatio
 );
 
 create policy "Task agent runs follow task access" on public.task_agent_runs for all using (
-  exists (
+  public.auth_actor_is_not_archived_agent()
+  and exists (
     select 1 from public.tasks t
     join public.channel_members cm on cm.channel_id = t.channel_id
     where t.id = task_agent_runs.task_id
@@ -411,7 +468,8 @@ create policy "Task agent runs follow task access" on public.task_agent_runs for
 );
 
 create policy "Task reviews follow task access" on public.task_reviews for all using (
-  exists (
+  public.auth_actor_is_not_archived_agent()
+  and exists (
     select 1 from public.tasks t
     join public.channel_members cm on cm.channel_id = t.channel_id
     where t.id = task_reviews.task_id
@@ -420,14 +478,67 @@ create policy "Task reviews follow task access" on public.task_reviews for all u
 );
 
 create policy "Recipients can view own notifications" on public.notifications for select using (
-  recipient_id = auth.uid()
+  public.auth_actor_is_not_archived_agent()
+  and recipient_id = auth.uid()
 );
 
 create policy "Recipients can update own notifications" on public.notifications for update using (
-  recipient_id = auth.uid()
+  public.auth_actor_is_not_archived_agent()
+  and recipient_id = auth.uid()
 );
 -- NOTE: notifications are created only by trusted server-side routes / service-role helpers.
 -- Client access is limited to recipients reading and marking their own notifications.
+
+drop policy if exists "Reminder participants can view" on public.reminders;
+drop policy if exists "Reminder creators can insert" on public.reminders;
+drop policy if exists "Reminder participants can update" on public.reminders;
+
+create policy "Reminder participants can view" on public.reminders for select using (
+  public.auth_actor_is_not_archived_agent()
+  and (
+    created_by_id = auth.uid()
+    or recipient_id = auth.uid()
+    or exists (
+      select 1 from public.channel_members cm
+      where cm.channel_id = reminders.channel_id
+        and cm.member_id = auth.uid()
+    )
+    or (
+      auth.jwt()->>'scope' = 'bridge'
+      and auth.jwt()->>'server_id' = reminders.server_id::text
+    )
+  )
+);
+
+create policy "Reminder creators can insert" on public.reminders for insert with check (
+  created_by_id = auth.uid()
+  and public.auth_actor_is_not_archived_agent()
+  and exists (
+    select 1 from public.channel_members cm
+    where cm.channel_id = reminders.channel_id
+      and cm.member_id = auth.uid()
+  )
+);
+
+create policy "Reminder participants can update" on public.reminders for update using (
+  (
+    public.auth_actor_is_not_archived_agent()
+    and (created_by_id = auth.uid() or recipient_id = auth.uid())
+  )
+  or (
+    auth.jwt()->>'scope' = 'bridge'
+    and auth.jwt()->>'server_id' = reminders.server_id::text
+  )
+) with check (
+  (
+    public.auth_actor_is_not_archived_agent()
+    and (created_by_id = auth.uid() or recipient_id = auth.uid())
+  )
+  or (
+    auth.jwt()->>'scope' = 'bridge'
+    and auth.jwt()->>'server_id' = reminders.server_id::text
+  )
+);
 
 -- -----------------------------------------------------------
 -- Realtime
@@ -471,5 +582,11 @@ end $$;
 do $$
 begin
   alter publication supabase_realtime add table public.notifications;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.reminders;
 exception when duplicate_object then null;
 end $$;

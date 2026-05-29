@@ -11,8 +11,9 @@ import { EditChannelDialog } from "./edit-channel-dialog";
 import { MachineDetailDialog } from "./machine-detail-dialog";
 import { ContextMenu } from "./context-menu";
 import { useAgentActivity } from "@/hooks/use-agent-activity";
+import { usePageRecovery } from "@/hooks/use-page-recovery";
 import { Separator } from "@/components/ui/separator";
-import { ChevronDownIcon, CheckIcon, PlusIcon, PencilIcon, LogOutIcon, MonitorIcon, ClipboardList } from "lucide-react";
+import { ChevronDownIcon, CheckIcon, PlusIcon, PencilIcon, LogOutIcon, MonitorIcon, ClipboardList, SparklesIcon } from "lucide-react";
 import { GeneratedAvatar } from "./generated-avatar";
 import { NotificationsMenu } from "./notifications-menu";
 import type { HumanMember } from "@zano/shared";
@@ -35,8 +36,18 @@ interface Agent {
   name: string;
   display_name: string;
   status: string;
-  avatar_url: string | null;
   description: string | null;
+  created_by_id: string | null;
+  created_by_type: "human" | "agent" | "system";
+  parent_agent_id: string | null;
+  root_agent_id: string | null;
+  creation_source: "human" | "agent" | "blueprint" | "system" | "migration";
+  creation_reason: string | null;
+  creation_context: Record<string, unknown>;
+  provenance: Record<string, unknown>;
+  generation: number;
+  archived_at: string | null;
+  created_at: string;
 }
 
 interface MachineKey {
@@ -49,6 +60,16 @@ interface MachineKey {
 
 interface DmChannel extends Channel {
   agent?: Agent;
+}
+
+interface AgentTreeNode {
+  dm: DmChannel;
+  children: AgentTreeNode[];
+  depth: number;
+}
+
+interface RealtimePayload {
+  new: unknown;
 }
 
 export interface SidebarInitialData {
@@ -65,16 +86,29 @@ export interface SidebarInitialData {
   humans: HumanMember[];
 }
 
+function hasRecentMachineHeartbeat(machineKeys: MachineKey[]) {
+  const now = Date.now();
+  return machineKeys.some((key) => key.last_used_at && now - new Date(key.last_used_at).getTime() < 60_000);
+}
+
+function agentIdFromDmChannelName(name: string) {
+  return name.startsWith("dm-") ? name.slice(3) : null;
+}
+
 function splitChannels(channels: Channel[], agents: Agent[], dmMembers: SidebarInitialData["dmMembers"]) {
   const dms: DmChannel[] = [];
   const groups: Channel[] = [];
 
   for (const ch of channels) {
     if (ch.type === "dm") {
-      const agentMember = dmMembers.find((member) => member.channel_id === ch.id);
+      const agentMembers = dmMembers.filter((member) => member.channel_id === ch.id);
+      const targetAgentId = agentIdFromDmChannelName(ch.name);
+      const agentMember = targetAgentId ? agentMembers.find((member) => member.member_id === targetAgentId) : agentMembers[0];
       const agent = agentMember
         ? agents.find((a) => a.id === agentMember.member_id)
         : undefined;
+      if (agentMember && (!agent || agent.archived_at)) continue;
+      if (targetAgentId && !agentMember) continue;
       dms.push({ ...ch, agent });
     } else {
       groups.push(ch);
@@ -82,6 +116,38 @@ function splitChannels(channels: Channel[], agents: Agent[], dmMembers: SidebarI
   }
 
   return { dms, groups };
+}
+
+function buildAgentTree(dmChannels: DmChannel[]): AgentTreeNode[] {
+  const byAgentId = new Map<string, DmChannel>();
+  const childrenByParent = new Map<string, DmChannel[]>();
+  const roots: DmChannel[] = [];
+
+  for (const dm of dmChannels) {
+    if (dm.agent?.id) byAgentId.set(dm.agent.id, dm);
+  }
+
+  for (const dm of dmChannels) {
+    const parentId = dm.agent?.parent_agent_id;
+    if (parentId && byAgentId.has(parentId)) {
+      const children = childrenByParent.get(parentId) ?? [];
+      children.push(dm);
+      childrenByParent.set(parentId, children);
+    } else {
+      roots.push(dm);
+    }
+  }
+
+  function toNode(dm: DmChannel, depth: number): AgentTreeNode {
+    const children = (dm.agent?.id ? childrenByParent.get(dm.agent.id) ?? [] : [])
+      .sort((a, b) => (a.agent?.created_at ?? a.name).localeCompare(b.agent?.created_at ?? b.name))
+      .map((child) => toNode(child, depth + 1));
+    return { dm, children, depth };
+  }
+
+  return roots
+    .sort((a, b) => (a.agent?.created_at ?? a.name).localeCompare(b.agent?.created_at ?? b.name))
+    .map((dm) => toNode(dm, 0));
 }
 
 export function Sidebar({
@@ -98,7 +164,7 @@ export function Sidebar({
   const initialChannels = splitChannels(initialData.channels, initialData.agents, initialData.dmMembers);
   const [dmChannels, setDmChannels] = useState<DmChannel[]>(initialChannels.dms);
   const [groupChannels, setGroupChannels] = useState<Channel[]>(initialChannels.groups);
-  const [agents, setAgents] = useState<Agent[]>(initialData.agents);
+  const [, setAgents] = useState<Agent[]>(initialData.agents);
   const [humans, setHumans] = useState<HumanMember[]>(initialData.humans);
   const [userId, setUserId] = useState(initialData.user.id);
   const [userEmail, setUserEmail] = useState(initialData.user.email);
@@ -110,12 +176,7 @@ export function Sidebar({
   const [servers, setServers] = useState<Server[]>(initialData.servers);
   const [machineKeys, setMachineKeys] = useState<MachineKey[]>(initialData.machineKeys);
   // Heartbeat-based online status (bridge updates last_used_at every 30s)
-  const [bridgeOnline, setBridgeOnline] = useState(() => {
-    const now = Date.now();
-    return initialData.machineKeys.some(
-      (k) => k.last_used_at && now - new Date(k.last_used_at).getTime() < 60_000
-    );
-  });
+  const [bridgeOnline, setBridgeOnline] = useState(false);
   const [editingChannel, setEditingChannel] = useState<Channel | null>(null);
   const [selectedMachine, setSelectedMachine] = useState<MachineKey | null>(null);
   const [contextMenu, setContextMenu] = useState<{
@@ -134,6 +195,17 @@ export function Sidebar({
   const activeMemberType = params.memberType as string | undefined;
   const activeMemberId = params.memberId as string | undefined;
   const isDmRoute = pathname.startsWith(`/s/${serverSlug}/dm/`);
+  const isAutonomousRoute = pathname.startsWith(`/s/${serverSlug}/autonomous`);
+
+  useEffect(() => {
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) setBridgeOnline(hasRecentMachineHeartbeat(machineKeys));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [machineKeys]);
 
   const loadData = useCallback(async () => {
     const res = await fetch(`/api/sidebar?server_id=${serverId}`);
@@ -146,11 +218,7 @@ export function Sidebar({
     setServers(data.servers as Server[]);
     setMachineKeys(data.machineKeys as MachineKey[]);
 
-    const now = Date.now();
-    const hasRecentHeartbeat = (data.machineKeys as MachineKey[]).some(
-      (k) => k.last_used_at && now - new Date(k.last_used_at).getTime() < 60_000
-    );
-    setBridgeOnline(hasRecentHeartbeat);
+    setBridgeOnline(hasRecentMachineHeartbeat(data.machineKeys as MachineKey[]));
 
     const agentList = (data.agents || []) as Agent[];
     setAgents(agentList);
@@ -161,6 +229,10 @@ export function Sidebar({
     setGroupChannels(split.groups);
   }, [serverId]);
 
+  usePageRecovery(() => {
+    void loadData();
+  }, { minIntervalMs: 1500 });
+
   // Set up realtime subscriptions (stable across navigations, only recreate on server change)
   useEffect(() => {
     function refreshPresence() {
@@ -169,7 +241,9 @@ export function Sidebar({
         hostname?: string;
         agentIds?: string[];
       }>;
-      setBridgeOnline(entries.length > 0);
+      const online = entries.length > 0;
+      setBridgeOnline(online);
+      return online;
     }
 
     const presenceTopic = `bridge-presence:${serverId}`;
@@ -191,8 +265,14 @@ export function Sidebar({
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "agents" },
-        (payload) => {
+        (payload: RealtimePayload) => {
           const updated = payload.new as Agent;
+          if (updated.archived_at) {
+            setAgents((prev) => prev.filter((agent) => agent.id !== updated.id));
+            setDmChannels((prev) => prev.filter((dm) => dm.agent?.id !== updated.id));
+            return;
+          }
+
           setAgents((prev) => {
             if (prev.some((a) => a.id === updated.id)) {
               return prev.map((a) => (a.id === updated.id ? { ...a, ...updated } : a));
@@ -226,7 +306,7 @@ export function Sidebar({
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "machine_keys" },
-        (payload) => {
+        (payload: RealtimePayload) => {
           const updated = payload.new as MachineKey & { id: string };
           setMachineKeys((prev) =>
             prev.map((mk) =>
@@ -235,31 +315,28 @@ export function Sidebar({
           );
         }
       )
-      .subscribe();
+      .subscribe((status: string) => {
+        if (status === "SUBSCRIBED") {
+          void loadData();
+        }
+      });
 
-    // Heartbeat polling: check last_used_at every 15s via API
+    // Heartbeat polling: presence is low-latency, machine_keys.last_used_at is the durable recovery source.
     async function checkHeartbeat() {
-      if (presenceChannel) {
-        refreshPresence();
-        return;
-      }
+      const presenceOnline = refreshPresence();
       try {
         const res = await fetch(`/api/bridge/keys?server_id=${serverId}`);
         if (res.ok) {
-          const { keys } = await res.json();
-          const now = Date.now();
-          setBridgeOnline(
-            keys.some(
-              (k: { last_used_at: string | null }) =>
-                k.last_used_at && now - new Date(k.last_used_at).getTime() < 60_000
-            )
-          );
+          const { keys } = await res.json() as { keys: MachineKey[] };
+          setMachineKeys(keys);
+          setBridgeOnline(hasRecentMachineHeartbeat(keys));
         }
       } catch {
-        // ignore
+        setBridgeOnline(presenceOnline);
       }
     }
 
+    void checkHeartbeat();
     const heartbeatInterval = setInterval(checkHeartbeat, 15_000);
 
     return () => {
@@ -298,12 +375,61 @@ export function Sidebar({
     // Agent is online when the bridge is online (bridge manages all agents)
     const isOnline = bridgeOnline;
 
-    if (isOnline && (activity === "thinking" || activity === "working")) {
-      return "bg-green-500 animate-status-pulse";
-    }
+    if (isOnline && (activity === "thinking" || activity === "working")) return "bg-yellow-400";
     if (isOnline) return "bg-green-500";
     if (activity === "error") return "bg-red-500";
     return "bg-muted-foreground/40";
+  }
+
+  const agentTree = buildAgentTree(dmChannels);
+
+  function renderAgentNode(node: AgentTreeNode): React.ReactNode {
+    const { dm, depth } = node;
+    const agentId = dm.agent?.id;
+    const isActive =
+      (agentId && activeMemberType === "agent" && activeMemberId === agentId) ||
+      (isDmRoute && activeChannelId === dm.id);
+    const isChild = depth > 0;
+
+    return (
+      <div key={dm.id} className="flex flex-col gap-[2px]">
+        <button
+          onClick={() => agentId && navigateToMember("agent", agentId)}
+          className={`relative flex w-full items-center gap-2 rounded-lg px-2 h-[32px] text-[13px] transition-all ${
+            isActive
+              ? "bg-sanda-3 text-accent-foreground font-medium"
+              : "text-muted-foreground hover:bg-sanda-3 hover:text-accent-foreground"
+          }`}
+          style={{ paddingLeft: `${8 + depth * 18}px` }}
+          title={dm.agent?.creation_reason ? `Created by parent agent: ${dm.agent.creation_reason}` : undefined}
+        >
+          {isChild ? (
+            <span
+              aria-hidden="true"
+              className="absolute left-2 top-0 h-4 w-3 rounded-bl border-b border-l border-border/70"
+              style={{ left: `${8 + (depth - 1) * 18}px` }}
+            />
+          ) : null}
+          <div className="relative flex-shrink-0 size-6">
+            <GeneratedAvatar id={dm.agent?.id || dm.id} name={dm.agent?.display_name || dm.name} size="xs" />
+            <div
+              className={`absolute bottom-0 right-0 h-1.5 w-1.5 translate-x-[1px] translate-y-[1px] rounded-full border-[1.5px] border-background ${getStatusDot(dm.agent?.id || "")}`}
+              title={(() => {
+                const act = agentActivities.get(dm.agent?.id || "");
+                if (act?.label && act.activity !== "idle") {
+                  return act.detail ? `${act.label}: ${act.detail}` : act.label;
+                }
+                return bridgeOnline ? "Online" : "Offline";
+              })()}
+            />
+          </div>
+          <div className="flex-1 min-w-0 text-left">
+            <div className="truncate">{dm.agent?.display_name || dm.name}</div>
+          </div>
+        </button>
+        {node.children.map(renderAgentNode)}
+      </div>
+    );
   }
 
   return (
@@ -382,6 +508,17 @@ export function Sidebar({
             <ClipboardList className="size-4" />
             Tasks
           </Link>
+          <Link
+            href={`/s/${serverSlug}/autonomous`}
+            className={`flex h-[32px] items-center gap-2 rounded-lg px-2 text-[13px] transition-all hover:bg-sanda-3 hover:text-accent-foreground ${
+              isAutonomousRoute
+                ? "bg-sanda-3 text-accent-foreground font-medium"
+                : "text-muted-foreground"
+            }`}
+          >
+            <SparklesIcon className="size-4" />
+            Autonomous
+          </Link>
         </div>
 
         {/* DM Conversations */}
@@ -399,46 +536,7 @@ export function Sidebar({
             </button>
           </div>
           <div className="flex flex-col gap-[2px]">
-            {dmChannels.map((dm) => {
-              const agentId = dm.agent?.id;
-              const isActive =
-                (agentId && activeMemberType === "agent" && activeMemberId === agentId) ||
-                (isDmRoute && activeChannelId === dm.id);
-
-              return (
-                <button
-                  key={dm.id}
-                  onClick={() => agentId && navigateToMember("agent", agentId)}
-                  className={`flex w-full items-center gap-2 rounded-lg px-2 h-[32px] text-[13px] transition-all ${
-                    isActive
-                      ? "bg-sanda-3 text-accent-foreground font-medium"
-                      : "text-muted-foreground hover:bg-sanda-3 hover:text-accent-foreground"
-                  }`}
-                >
-                  {/* Agent avatar */}
-                  <div className="relative flex-shrink-0 size-6">
-                    <GeneratedAvatar id={dm.agent?.id || dm.id} name={dm.agent?.display_name || dm.name} size="xs" />
-                    {/* Status dot */}
-                    <div
-                      className={`absolute bottom-0 right-0 h-1.5 w-1.5 translate-x-[1px] translate-y-[1px] rounded-full border-[1.5px] border-background ${getStatusDot(dm.agent?.id || "")}`}
-                      title={(() => {
-                        const act = agentActivities.get(dm.agent?.id || "");
-                        if (act?.label && act.activity !== "idle") {
-                          return act.detail ? `${act.label}: ${act.detail}` : act.label;
-                        }
-                        return bridgeOnline ? "Online" : "Offline";
-                      })()}
-                    />
-                  </div>
-
-                  <div className="flex-1 min-w-0 text-left">
-                    <div className="truncate">
-                      {dm.agent?.display_name || dm.name}
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
+            {agentTree.map(renderAgentNode)}
           </div>
         </div>
 

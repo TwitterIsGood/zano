@@ -82,7 +82,7 @@ const ACTIONABLE_INTENTS: ReadonlySet<MessageIntent> = new Set([
 const LOW_VALUE_INTENTS: ReadonlySet<MessageIntent> = new Set(["ack", "thanks", "chatter", "status", "result", "decision"]);
 
 const ACTION_PATTERNS: Array<[MessageIntent, RegExp]> = [
-  ["request", /\b(can someone|could someone|can you|could you|please|need someone|needs to|must|do this|take this|handle this|look into|inspect|investigate|fix|implement|verify|document|introduce yourselves?|introduce yourself|everyone introduce)\b|(?:大家|各位).*(?:自我介绍|介绍一下自己|介绍自己|说下自己|说一下自己|讲下自己|讲一下自己|自己负责什么)|(?:大家|各位).*(?:看一下|看下|看看|检查|审核|审查|评审|验证|确认|排查|处理|修复|实现)|(?:请|麻烦)(?:大家|各位).*(?:介绍自己|介绍一下自己|自我介绍)|请(?:验证|检查|审核|审查|确认|评审|补充|介绍)/i],
+  ["request", /\b(can someone|could someone|can you|could you|please|need someone|needs to|must|do this|take this|handle this|look into|inspect|investigate|fix|implement|verify|document|introduce yourselves?|introduce yourself|everyone introduce)\b|(?:大家|各位).*(?:自我介绍|介绍一下自己|介绍自己|说下自己|说一下自己|讲下自己|讲一下自己|自己负责什么)|(?:大家|各位).*(?:看一下|看下|看看|检查|审核|审查|评审|验证|确认|排查|处理|修复|实现)|(?:请|麻烦)(?:大家|各位).*(?:介绍自己|介绍一下自己|自我介绍)|请(?:验证|检查|审核|审查|确认|评审|补充|介绍|同步|提供|更新|汇报)|帮我.{0,24}(?:收一下|收尾|收口|确认|看看)|(?:推进|推动|跟进|同步|更新|汇报).{0,12}(?:进度|状态|计划|方案|结论)|(?:进度|状态).{0,12}(?:推进|推动|跟进|同步|更新|汇报)/i],
   ["question", /\?|？|\b(which|what|why|how|when|where|who|should we|can you|could you)\b/i],
   ["handoff", /\b(handoff|hand off|pass to|over to|take over|continue|next step|follow up|should (?:check|review|verify)|please (?:check|review|verify))\b/i],
   ["blocker", /\b(blocked|blocker|critical issue|serious issue|major issue|bug|error|crash(?:es|ed|ing)?|failure|failed|regression|cannot|can't|unable|waiting on|until .* confirms?|depends on|need .* before)\b/i],
@@ -261,6 +261,68 @@ export interface ProtocolRecentMessage {
   createdAt: string;
 }
 
+export interface A2AMessageSummary {
+  id: string;
+  text: string;
+  createdAt: string;
+}
+
+export interface DeliveryThreadContext {
+  parentMessage: A2AMessageSummary;
+  recentMessages: A2AMessageSummary[];
+  suggestedReadTarget: string;
+  threadTarget: string;
+}
+
+export interface A2ADeliveryPlanRecord<TAgent = ProtocolAgent> {
+  agent: TAgent;
+  threadContext?: DeliveryThreadContext;
+}
+
+export interface A2ADeliveryPlanInput<TDelivery extends { agent: unknown } = A2ADeliveryPlanRecord> {
+  message: ProtocolMessage & { text?: string; threadId?: string };
+  deliveries: TDelivery[];
+  thread?: {
+    id: string;
+    parentMessage: A2AMessageSummary;
+    recentMessages: A2AMessageSummary[];
+  };
+  suggestedReadTarget?: string;
+  threadTarget?: string;
+}
+
+export interface A2ADeliveryPlan<TDelivery extends { agent: unknown } = A2ADeliveryPlanRecord> {
+  deliveries: Array<TDelivery & { threadContext?: DeliveryThreadContext }>;
+}
+
+function buildThreadJoinContext(input: { parentMessage: A2AMessageSummary; recentMessages: A2AMessageSummary[]; suggestedReadTarget: string; threadTarget: string }): DeliveryThreadContext {
+  return {
+    parentMessage: input.parentMessage,
+    recentMessages: input.recentMessages.slice(-10),
+    suggestedReadTarget: input.suggestedReadTarget,
+    threadTarget: input.threadTarget,
+  };
+}
+
+export function planA2ADeliveries<TDelivery extends { agent: unknown }>(input: A2ADeliveryPlanInput<TDelivery>): A2ADeliveryPlan<TDelivery> {
+  const messageThreadId = input.message.threadId ?? input.message.threadParentId ?? null;
+  const hasMatchingThread = Boolean(messageThreadId && input.thread?.id === messageThreadId);
+  const threadContext = hasMatchingThread && input.thread?.parentMessage && Array.isArray(input.thread.recentMessages) && input.suggestedReadTarget && input.threadTarget
+    ? buildThreadJoinContext({
+        parentMessage: input.thread.parentMessage,
+        recentMessages: input.thread.recentMessages,
+        suggestedReadTarget: input.suggestedReadTarget,
+        threadTarget: input.threadTarget,
+      })
+    : undefined;
+
+  const deliveries = threadContext
+    ? input.deliveries.map((delivery) => ({ ...delivery, threadContext }))
+    : input.deliveries;
+
+  return { deliveries: deliveries as Array<TDelivery & { threadContext?: DeliveryThreadContext }> };
+}
+
 export interface ActivationCandidate {
   agentId: string;
   reasons: ActivationReason[];
@@ -281,6 +343,7 @@ export interface ActivationSelectionInput {
   topicKey: string;
   recentMessages: ProtocolRecentMessage[];
   task: ProtocolTaskRef | null;
+  threadParticipantAgentIds?: string[];
 }
 
 export interface ActivationSelection {
@@ -292,6 +355,9 @@ const REVIEW_TERMS = ["review", "reviewer", "approve", "approval", "risk", "crit
 const VERIFY_TERMS = ["verify", "verifier", "validate", "validation", "inspect", "inspection", "test", "evidence", "smoke", "qa", "quality", "检查", "验证", "测试", "确认", "质量"];
 const IMPLEMENT_TERMS = ["implement", "implementation", "build", "code", "fix", "change", "develop", "实现", "修复"];
 const DOCUMENTATION_TERMS = ["document", "documentation", "docs", "writeup", "guide", "readme", "checklist", "runbook", "writer", "technical writer", "说明", "文档"];
+const PRODUCT_TERMS = ["product", "product owner", "prd", "roadmap", "requirements", "产品", "路线图", "用户故事"];
+const FRONTEND_TERMS = ["frontend", "front end", "ui", "ux", "browser", "react", "前端", "前后端", "页面", "组件", "交互"];
+const BACKEND_TERMS = ["backend", "back end", "server", "api", "database", "db", "service", "后端", "前后端", "服务端", "接口", "数据库", "构建号"];
 
 function pushReason(map: Map<string, ActivationCandidate>, agentId: string, reason: ActivationReason, strength: ActivationStrength) {
   const current = map.get(agentId);
@@ -313,6 +379,18 @@ function containsCjk(value: string) {
   return /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(value);
 }
 
+function publicAgentHandle(displayName: string, fallback = "Agent") {
+  const handle = displayName
+    .trim()
+    .replace(/\s+/gu, "")
+    .replace(/[^\p{L}\p{N}_-]+/gu, "");
+  return handle || fallback;
+}
+
+function agentNameVariants(agent: ProtocolAgent) {
+  return Array.from(new Set([agent.name, agent.displayName, publicAgentHandle(agent.displayName, agent.name)].filter(Boolean)));
+}
+
 function tokenAwarePattern(value: string, prefix = "") {
   return new RegExp(`(^|[^\\p{L}\\p{N}_-])${escapeRegex(prefix + value)}(?=$|[^\\p{L}\\p{N}_-])`, "iu");
 }
@@ -326,6 +404,9 @@ const REVIEW_ROLE_TERMS = ["reviewer", "review owner", "approval owner", "评审
 const VERIFY_ROLE_TERMS = ["verifier", "verification owner", "validation owner", "tester", "验证者"];
 const IMPLEMENT_ROLE_TERMS = ["implementer", "implementation owner", "builder", "developer", "修复者", "实现者"];
 const DOCUMENTATION_ROLE_TERMS = ["documenter", "documentation owner", "docs owner", "writer", "technical writer", "文档负责人"];
+const PRODUCT_ROLE_TERMS = ["product", "product owner", "pm", "产品", "产品经理", "产品工程师", "需求负责人"];
+const FRONTEND_ROLE_TERMS = ["frontend", "front end", "ui", "前端", "前端工程师", "前后端"];
+const BACKEND_ROLE_TERMS = ["backend", "back end", "server", "api", "后端", "后端工程师", "服务端", "前后端"];
 
 const SHORT_DOMAIN_TOKENS = new Set(["api", "ui", "ux", "db", "auth", "sso", "i18n"]);
 
@@ -354,21 +435,29 @@ const GENERIC_DOMAIN_STOPWORDS = new Set([
 ]);
 
 function matchesDirectMention(content: string, agent: ProtocolAgent) {
-  return hasTokenAwareTerm(content, agent.name, "@") || hasTokenAwareTerm(content, agent.displayName, "@");
+  return agentNameVariants(agent).some((name) => hasTokenAwareTerm(content, name, "@"));
 }
 
 function matchesNaturalName(content: string, agent: ProtocolAgent) {
-  return hasTokenAwareTerm(content, agent.displayName) || hasTokenAwareTerm(content, agent.name);
+  return agentNameVariants(agent).some((name) => hasTokenAwareTerm(content, name));
 }
 
 function matchesAgent(content: string, agent: ProtocolAgent) {
   if (matchesDirectMention(content, agent) || matchesNaturalName(content, agent)) return true;
-  const agentProfile = `${agent.displayName}\n${agent.name}\n${agent.description || ""}`;
+  const agentProfile = `${agent.displayName}\n${agent.name}\n${publicAgentHandle(agent.displayName, agent.name)}\n${agent.description || ""}`;
   if (hasAnyTerm(content, REVIEW_ROLE_TERMS) && hasAnyTerm(agentProfile, REVIEW_TERMS)) return true;
   if (hasAnyTerm(content, VERIFY_ROLE_TERMS) && hasAnyTerm(agentProfile, VERIFY_TERMS)) return true;
   if (hasAnyTerm(content, IMPLEMENT_ROLE_TERMS) && hasAnyTerm(agentProfile, IMPLEMENT_TERMS)) return true;
   if (hasAnyTerm(content, DOCUMENTATION_ROLE_TERMS) && hasAnyTerm(agentProfile, DOCUMENTATION_TERMS)) return true;
+  if (hasAnyTerm(content, FRONTEND_ROLE_TERMS) && hasAnyTerm(agentProfile, FRONTEND_TERMS)) return true;
+  if (hasAnyTerm(content, BACKEND_ROLE_TERMS) && hasAnyTerm(agentProfile, BACKEND_TERMS)) return true;
+  if (hasTargetedProductRoleReference(content) && hasAnyTerm(agentProfile, PRODUCT_TERMS)) return true;
   return false;
+}
+
+function hasTargetedProductRoleReference(content: string) {
+  if (!hasAnyTerm(content, PRODUCT_ROLE_TERMS)) return false;
+  return /(?:产品(?:工程师|经理)?|需求负责人|product(?: owner)?|pm).{0,16}(?:推进|推动|跟进|同步|更新|汇报|补充|处理|收一下|收尾|收口|收|出|给)|(?:请|麻烦|帮我).{0,12}(?:产品(?:工程师|经理)?|需求负责人|product(?: owner)?|pm)/i.test(content);
 }
 
 function hasAnyTerm(content: string, terms: string[]) {
@@ -385,14 +474,15 @@ function contentForDomainMatching(content: string) {
   return content
     .replace(/\bimplementation(?:\s+work)?\s+(?:(?:is|was|has been)\s+)?(?:complete|completed|done|finished)\b/gi, "")
     .replace(/\b(?:complete|completed|done|finished)\s+implementation(?:\s+work)?\b/gi, "")
-    .replace(/(?:实现|开发)(?:工作)?(?:已经|已|目前)?(?:完成|结束)/g, "");
+    .replace(/(?:实现|开发)(?:工作)?(?:已经|已|目前)?(?:完成|结束)/g, "")
+    .replace(/产品(?:侧)?确认(?:边界|口径|范围)/g, "");
 }
 
 function tokenOverlapCount(content: string, agent: ProtocolAgent) {
   const contentTokens = new Set(meaningfulDomainTokens(content));
   if (contentTokens.size === 0) return 0;
 
-  const agentProfile = `${agent.displayName}\n${agent.name}\n${agent.description || ""}`;
+  const agentProfile = `${agent.displayName}\n${agent.name}\n${publicAgentHandle(agent.displayName, agent.name)}\n${agent.description || ""}`;
   return meaningfulDomainTokens(agentProfile).filter((token) => contentTokens.has(token)).length;
 }
 
@@ -401,10 +491,13 @@ const DOMAIN_TERM_GROUPS = [
   ["verification", VERIFY_TERMS],
   ["implementation", IMPLEMENT_TERMS],
   ["documentation", DOCUMENTATION_TERMS],
+  ["product", PRODUCT_TERMS],
+  ["frontend", FRONTEND_TERMS],
+  ["backend", BACKEND_TERMS],
 ] as const;
 
 function matchedDomainKeys(content: string, agent: ProtocolAgent) {
-  const agentProfile = `${agent.displayName}\n${agent.name}\n${agent.description || ""}`;
+  const agentProfile = `${agent.displayName}\n${agent.name}\n${publicAgentHandle(agent.displayName, agent.name)}\n${agent.description || ""}`;
   const normalizedContent = contentForDomainMatching(content);
   const domainKeys = DOMAIN_TERM_GROUPS.filter(([, terms]) => hasAnyTerm(normalizedContent, terms) && hasAnyTerm(agentProfile, terms)).map(
     ([domain]) => domain,
@@ -433,6 +526,12 @@ function domainCoverageScore(content: string, agent: ProtocolAgent, selected: Ac
 
 function matchesDomain(content: string, agent: ProtocolAgent) {
   return domainScore(content, agent) > 0;
+}
+
+function strengthRank(strength: ActivationStrength) {
+  if (strength === "strong") return 3;
+  if (strength === "medium") return 2;
+  return 1;
 }
 
 function isOpenCall(content: string) {
@@ -482,12 +581,7 @@ function isAgentSelfIntroduction(content: string) {
 }
 
 function isHumanChannelBroadcast(input: ActivationSelectionInput) {
-  return (
-    input.message.senderType === "human" &&
-    input.space === "project_channel" &&
-    !hasNegatedSelfIntroduction(input.message.content) &&
-    (hasSelfIntroductionRequest(input.message.content) || (hasGroupAddressedGreeting(input.message.content) && hasOnlyLowValueIntent(input.intents)) || hasRoomAddressedCheckIn(input.message.content))
-  );
+  return input.message.senderType === "human" && (input.space === "project_channel" || input.space === "general_channel");
 }
 
 function fanoutLimit(space: ConversationSpace, senderType: SenderType) {
@@ -495,6 +589,34 @@ function fanoutLimit(space: ConversationSpace, senderType: SenderType) {
   if (space === "project_channel") return senderType === "agent" ? 2 : 2;
   if (space === "thread" || space === "task_thread") return 3;
   return Number.POSITIVE_INFINITY;
+}
+
+function isThreadParticipant(input: ActivationSelectionInput, agentId: string) {
+  return (input.space === "thread" || input.space === "task_thread") && (input.threadParticipantAgentIds || []).includes(agentId);
+}
+
+function isHandoffIntent(intents: MessageIntent[]) {
+  return intents.includes("handoff") || intents.includes("assignment") || intents.includes("review_needed") || intents.includes("verification_needed");
+}
+
+function hasLowValueBypassReason(reasons: ActivationReason[]) {
+  return reasons.some((reason) =>
+    [
+      "direct_mention",
+      "dm_recipient",
+      "thread_participant",
+      "task_owner",
+      "task_creator",
+      "handoff_target",
+      "blocker_owner",
+      "decision_owner",
+      "review_owner",
+      "verification_owner",
+      "system_assignment",
+      "channel_broadcast",
+      "conversation_continuation",
+    ].includes(reason),
+  );
 }
 
 export function selectActivationCandidates(input: ActivationSelectionInput): ActivationSelection {
@@ -518,7 +640,11 @@ export function selectActivationCandidates(input: ActivationSelectionInput): Act
       if (input.task?.assigneeId === agent.id) senderReasons.push("task_owner");
       if (input.task?.reviewerId === agent.id) senderReasons.push("review_owner");
       if (input.task?.createdById === agent.id) senderReasons.push("task_creator");
-      if (naturalReference && !suppressAgentSelfIntroCascade) senderReasons.push("natural_reference");
+      if (isThreadParticipant(input, agent.id)) senderReasons.push("thread_participant");
+      if (naturalReference && !suppressAgentSelfIntroCascade) {
+        if (isHandoffIntent(input.intents)) senderReasons.push("handoff_target");
+        senderReasons.push("natural_reference");
+      }
       if (!suppressAgentSelfIntroCascade && isOpenCall(input.message.content) && actionable && input.space === "project_channel" && matchesDomain(input.message.content, agent)) senderReasons.push("open_call_candidate");
       if (lastOtherSpeaker?.senderId === agent.id && actionable && (input.space === "thread" || input.space === "task_thread" || input.space === "dm") && /\b(you|your|take another look|continue|please check|can you|could you)\b/i.test(input.message.content)) senderReasons.push("conversation_continuation");
       if (!suppressAgentSelfIntroCascade && !naturalReference && !explicitMention && actionable && matchesDomain(input.message.content, agent)) senderReasons.push(isOpenCall(input.message.content) ? "open_call_candidate" : "domain_fit");
@@ -533,12 +659,15 @@ export function selectActivationCandidates(input: ActivationSelectionInput): Act
     if (input.task?.assigneeId === agent.id) pushReason(candidates, agent.id, "task_owner", "strong");
     if (input.task?.reviewerId === agent.id) pushReason(candidates, agent.id, "review_owner", "strong");
     if (input.task?.createdById === agent.id) pushReason(candidates, agent.id, "task_creator", "medium");
+    if (isThreadParticipant(input, agent.id)) pushReason(candidates, agent.id, "thread_participant", "strong");
 
     if (broadcast) pushReason(candidates, agent.id, "channel_broadcast", "medium");
 
     if (naturalReference && !suppressAgentSelfIntroCascade) {
-      if (actionable) pushReason(candidates, agent.id, "natural_reference", "medium");
-      else suppressed.push({ agentId: agent.id, reason: "low_value_intent", reasons: ["natural_reference"] });
+      if (actionable) {
+        if (isHandoffIntent(input.intents)) pushReason(candidates, agent.id, "handoff_target", "strong");
+        pushReason(candidates, agent.id, "natural_reference", "medium");
+      } else suppressed.push({ agentId: agent.id, reason: "low_value_intent", reasons: ["natural_reference"] });
     }
 
     if (!suppressAgentSelfIntroCascade && isOpenCall(input.message.content) && actionable && input.space === "project_channel" && matchesDomain(input.message.content, agent)) {
@@ -555,7 +684,7 @@ export function selectActivationCandidates(input: ActivationSelectionInput): Act
   }
 
   const activated = Array.from(candidates.values()).filter((candidate) => {
-    if (lowValue && !candidate.reasons.includes("direct_mention") && !candidate.reasons.includes("dm_recipient") && !candidate.reasons.includes("channel_broadcast")) {
+    if (lowValue && !hasLowValueBypassReason(candidate.reasons)) {
       suppressed.push({ agentId: candidate.agentId, reason: "low_value_intent", reasons: candidate.reasons });
       return false;
     }
@@ -567,14 +696,26 @@ export function selectActivationCandidates(input: ActivationSelectionInput): Act
   const channelBroadcast = activated.filter((candidate) => candidate.strength !== "strong" && candidate.reasons.includes("channel_broadcast"));
   const natural = activated
     .filter((candidate) => candidate.strength !== "strong" && !candidate.reasons.includes("channel_broadcast"))
-    .sort((a, b) => domainScore(input.message.content, agentsById.get(b.agentId)!) - domainScore(input.message.content, agentsById.get(a.agentId)!));
+    .sort((a, b) => {
+      const strengthDifference = strengthRank(b.strength) - strengthRank(a.strength);
+      if (strengthDifference !== 0) return strengthDifference;
+      return domainScore(input.message.content, agentsById.get(b.agentId)!) - domainScore(input.message.content, agentsById.get(a.agentId)!);
+    });
+  const hasExplicitNaturalTarget = natural.some((candidate) => candidate.strength === "medium" && candidate.reasons.includes("natural_reference"));
   const limit = fanoutLimit(input.space, input.message.senderType);
   const allowedNatural: ActivationCandidate[] = [];
-  const remainingNatural = [...natural];
+  const remainingNatural = hasExplicitNaturalTarget
+    ? natural.filter((candidate) => candidate.strength !== "weak" || !candidate.reasons.every((reason) => reason === "domain_fit" || reason === "open_call_candidate"))
+    : [...natural];
+  const filteredWeakDomainCandidates = hasExplicitNaturalTarget
+    ? natural.filter((candidate) => candidate.strength === "weak" && candidate.reasons.every((reason) => reason === "domain_fit" || reason === "open_call_candidate"))
+    : [];
   const selectedForCoverage = [...strong];
 
   while (allowedNatural.length < limit && remainingNatural.length > 0) {
     remainingNatural.sort((a, b) => {
+      const strengthDifference = strengthRank(b.strength) - strengthRank(a.strength);
+      if (strengthDifference !== 0) return strengthDifference;
       const coverageDifference =
         domainCoverageScore(input.message.content, agentsById.get(b.agentId)!, selectedForCoverage, agentsById) -
         domainCoverageScore(input.message.content, agentsById.get(a.agentId)!, selectedForCoverage, agentsById);
@@ -586,7 +727,7 @@ export function selectActivationCandidates(input: ActivationSelectionInput): Act
     selectedForCoverage.push(selected);
   }
 
-  const capped = remainingNatural;
+  const capped = [...remainingNatural, ...filteredWeakDomainCandidates];
 
   for (const candidate of capped) suppressed.push({ agentId: candidate.agentId, reason: "fanout_cap", reasons: candidate.reasons });
 

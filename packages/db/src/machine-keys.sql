@@ -38,11 +38,26 @@ CREATE POLICY "Users can delete own keys"
 -- Helper functions for bridge auth
 -- ============================================================
 
+create or replace function public.auth_actor_is_not_archived_agent()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select not exists (
+    select 1
+    from public.agents
+    where id = auth.uid()
+      and archived_at is not null
+  );
+$$;
+
 -- Check if a given agent is owned by the current user
 CREATE OR REPLACE FUNCTION public.user_owns_agent(agent_uuid uuid)
 RETURNS boolean AS $$
   SELECT EXISTS (
-    SELECT 1 FROM public.agents WHERE id = agent_uuid AND owner_id = auth.uid()
+    SELECT 1 FROM public.agents WHERE id = agent_uuid AND owner_id = auth.uid() AND archived_at is null
   );
 $$ LANGUAGE sql SECURITY DEFINER STABLE;
 
@@ -55,6 +70,7 @@ RETURNS boolean AS $$
     WHERE cm.channel_id = chan_uuid
       AND cm.member_type = 'agent'
       AND a.owner_id = auth.uid()
+      AND a.archived_at is null
   );
 $$ LANGUAGE sql SECURITY DEFINER STABLE;
 
@@ -71,8 +87,11 @@ DROP POLICY IF EXISTS "Channel members can view messages" ON public.messages;
 CREATE POLICY "Users can view messages in their channels"
   ON public.messages FOR SELECT
   USING (
-    public.user_is_channel_member(channel_id)
-    OR public.user_has_agent_in_channel(channel_id)
+    public.auth_actor_is_not_archived_agent()
+    AND (
+      public.user_is_channel_member(channel_id)
+      OR public.user_has_agent_in_channel(channel_id)
+    )
   );
 
 -- Messages INSERT: user sends own message OR sends as their agent
@@ -81,16 +100,19 @@ DROP POLICY IF EXISTS "Channel members can send messages" ON public.messages;
 CREATE POLICY "Users can send messages in their channels"
   ON public.messages FOR INSERT
   WITH CHECK (
-    (
-      -- User sends as themselves
-      sender_id = auth.uid()
-      AND public.user_is_channel_member(channel_id)
-    )
-    OR
-    (
-      -- User sends as their own agent
-      public.user_owns_agent(sender_id)
-      AND public.user_has_agent_in_channel(channel_id)
+    public.auth_actor_is_not_archived_agent()
+    AND (
+      (
+        -- User sends as themselves
+        sender_id = auth.uid()
+        AND public.user_is_channel_member(channel_id)
+      )
+      OR
+      (
+        -- User sends as their own agent
+        public.user_owns_agent(sender_id)
+        AND public.user_has_agent_in_channel(channel_id)
+      )
     )
   );
 
@@ -100,8 +122,11 @@ DROP POLICY IF EXISTS "Members can view channel membership" ON public.channel_me
 CREATE POLICY "Users can view channel memberships"
   ON public.channel_members FOR SELECT
   USING (
-    public.user_is_channel_member(channel_id)
-    OR public.user_has_agent_in_channel(channel_id)
+    public.auth_actor_is_not_archived_agent()
+    AND (
+      public.user_is_channel_member(channel_id)
+      OR public.user_has_agent_in_channel(channel_id)
+    )
   );
 
 -- Channels SELECT: also allow if user owns an agent that is a member
@@ -110,10 +135,13 @@ DROP POLICY IF EXISTS "Channel members can view channels" ON public.channels;
 CREATE POLICY "Users can view their channels"
   ON public.channels FOR SELECT
   USING (
-    type = 'public'
-    OR created_by = auth.uid()
-    OR id IN (SELECT channel_id FROM public.channel_members WHERE member_id = auth.uid())
-    OR public.user_has_agent_in_channel(id)
+    public.auth_actor_is_not_archived_agent()
+    AND (
+      type = 'public'
+      OR created_by = auth.uid()
+      OR id IN (SELECT channel_id FROM public.channel_members WHERE member_id = auth.uid())
+      OR public.user_has_agent_in_channel(id)
+    )
   );
 
 -- Tasks: also allow if user owns an agent in the channel
@@ -121,16 +149,22 @@ DROP POLICY IF EXISTS "Channel members can view tasks" ON public.tasks;
 CREATE POLICY "Channel members can view tasks"
   ON public.tasks FOR SELECT
   USING (
-    public.user_is_channel_member(channel_id)
-    OR public.user_has_agent_in_channel(channel_id)
+    public.auth_actor_is_not_archived_agent()
+    AND (
+      public.user_is_channel_member(channel_id)
+      OR public.user_has_agent_in_channel(channel_id)
+    )
   );
 
 DROP POLICY IF EXISTS "Channel members can manage tasks" ON public.tasks;
 CREATE POLICY "Channel members can manage tasks"
   ON public.tasks FOR ALL
   USING (
-    public.user_is_channel_member(channel_id)
-    OR public.user_has_agent_in_channel(channel_id)
+    public.auth_actor_is_not_archived_agent()
+    AND (
+      public.user_is_channel_member(channel_id)
+      OR public.user_has_agent_in_channel(channel_id)
+    )
   );
 
 -- Agents UPDATE: owners can update their agents (already exists, but ensure it works)

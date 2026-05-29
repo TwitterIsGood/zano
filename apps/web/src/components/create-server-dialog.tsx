@@ -31,13 +31,19 @@ export function CreateServerDialog({ open, onClose }: CreateServerDialogProps) {
   const router = useRouter();
 
   useEffect(() => {
-    if (open) {
+    if (!open) return;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
       setName("");
       setSlug("");
       setSlugTouched(false);
       setDescription("");
       setError("");
-    }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [open]);
 
   async function handleSubmit(e: React.FormEvent) {

@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { GeneratedAvatar } from "@/components/generated-avatar";
+import { MessageBody } from "@/components/message-body";
 import type { Task } from "@zano/shared";
 
 interface TaskDetailDrawerProps {
@@ -22,12 +24,21 @@ interface TaskDetailPayload {
   reviews: TaskReviewDetail[];
 }
 
+interface TaskCommentAuthorDetail {
+  id: string;
+  type: string;
+  displayName: string;
+  avatarId: string;
+  avatarUrl: string | null;
+}
+
 interface TaskCommentDetail {
   id: string;
   author_id: string;
   author_type: string;
   content: string;
   created_at: string;
+  author?: TaskCommentAuthorDetail;
 }
 
 interface TaskArtifactDetail {
@@ -100,6 +111,22 @@ function shortId(value: string | null) {
   return value ? value.slice(0, 8) : "none";
 }
 
+function fallbackCommentAuthor(comment: TaskCommentDetail): TaskCommentAuthorDetail {
+  const prefix = comment.author_type === "agent" ? "Agent" : comment.author_type === "human" ? "Human" : "Author";
+  return {
+    id: comment.author_id,
+    type: comment.author_type,
+    displayName: `${prefix} ${shortId(comment.author_id)}`,
+    avatarId: comment.author_id,
+    avatarUrl: null,
+  };
+}
+
+function commentSenderType(comment: TaskCommentDetail): "human" | "agent" | "system" {
+  if (comment.author_type === "human" || comment.author_type === "agent") return comment.author_type;
+  return "system";
+}
+
 function JsonFallback({ value }: { value: Record<string, unknown> | null }) {
   if (!value || Object.keys(value).length === 0) return null;
   return <pre className="mt-2 max-h-32 overflow-auto rounded-md bg-muted p-2 text-xs">{JSON.stringify(value, null, 2)}</pre>;
@@ -111,6 +138,9 @@ function EmptyState({ children }: { children: string }) {
 
 export function TaskDetailDrawer({ task, open, onOpenChange }: TaskDetailDrawerProps) {
   const [detail, setDetail] = useState<TaskDetailPayload | null>(null);
+  const tasksByNumber = new Map<number, Task>();
+  if (detail?.task) tasksByNumber.set(detail.task.task_number, detail.task);
+  else if (task) tasksByNumber.set(task.task_number, task);
 
   useEffect(() => {
     if (!task || !open) return;
@@ -158,16 +188,29 @@ export function TaskDetailDrawer({ task, open, onOpenChange }: TaskDetailDrawerP
               <h3 className="mb-2 text-sm font-semibold">Comments</h3>
               {detail?.comments.length ? (
                 <div className="space-y-3">
-                  {detail.comments.map((comment) => (
-                    <article key={comment.id} className="rounded-md border p-3">
-                      <div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                        <Badge variant="outline">{comment.author_type}</Badge>
-                        <span>{shortId(comment.author_id)}</span>
-                        <span>{formatDate(comment.created_at)}</span>
-                      </div>
-                      <p className="whitespace-pre-wrap text-sm">{comment.content}</p>
-                    </article>
-                  ))}
+                  {detail.comments.map((comment) => {
+                    const author = comment.author ?? fallbackCommentAuthor(comment);
+                    return (
+                      <article key={comment.id} className="rounded-md border p-3">
+                        <div className="mb-2 flex items-start gap-2">
+                          <GeneratedAvatar id={author.avatarId} name={author.displayName} size="sm" />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                              <span className="font-medium text-foreground">{author.displayName}</span>
+                              <Badge variant="outline">{author.type}</Badge>
+                              <span>{formatDate(comment.created_at)}</span>
+                            </div>
+                            <MessageBody
+                              content={comment.content}
+                              senderType={commentSenderType(comment)}
+                              tasksByNumber={tasksByNumber}
+                              renderMarkdown
+                            />
+                          </div>
+                        </div>
+                      </article>
+                    );
+                  })}
                 </div>
               ) : <EmptyState>No comments yet</EmptyState>}
             </section>

@@ -69,30 +69,67 @@ export const MessageActionMenu = forwardRef<MessageActionMenuHandle, MessageActi
       setContextMenu({ x: rect.right - 8, y: rect.bottom + 4 });
     }
 
+    function handleOpenThread(event: React.MouseEvent<HTMLButtonElement>) {
+      event.preventDefault();
+      event.stopPropagation();
+      onOpenThread();
+    }
+
+    function handleToggleResolved(event: React.MouseEvent<HTMLButtonElement>) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (resolved) onReopen();
+      else onResolve();
+    }
+
+    const lastReplyLabel = lastReplyAt
+      ? new Date(lastReplyAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+      : null;
+
     return (
       <>
-        <button
-          type="button"
-          onClick={openFromButton}
-          onContextMenu={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            setContextMenu({ x: event.clientX, y: event.clientY });
-          }}
-          className="absolute right-0 top-0 flex h-7 items-center gap-1 rounded-md border bg-popover px-1.5 text-xs text-muted-foreground shadow-sm opacity-0 translate-y-1 transition-all duration-150 hover:bg-accent hover:text-accent-foreground group-hover:translate-y-0 group-hover:opacity-100 focus-visible:translate-y-0 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          aria-label={replyCount > 0 ? `Thread actions, ${replyCount} replies` : "Message actions"}
-        >
-          {replyCount > 0 ? (
-            <>
-              <MessageSquareText className="h-3.5 w-3.5" />
-              <span>{replyCount}</span>
-              {resolved ? <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60" /> : null}
-              {lastReplyAt ? <span className="sr-only">Last reply {new Date(lastReplyAt).toLocaleTimeString()}</span> : null}
-            </>
-          ) : (
+        {replyCount > 0 ? (
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={handleOpenThread}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setContextMenu({ x: event.clientX, y: event.clientY });
+              }}
+              className="inline-flex h-5 min-w-0 max-w-full items-center gap-1 overflow-hidden whitespace-nowrap rounded border border-border bg-muted/40 px-1.5 text-[10px] font-medium leading-none text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label={`View thread, ${replyCount} ${replyCount === 1 ? "reply" : "replies"}`}
+            >
+              <MessageSquareText className="h-3 w-3" />
+              <span>{replyCount} {replyCount === 1 ? "reply" : "replies"}</span>
+              {lastReplyLabel ? <span className="text-muted-foreground/70">· Last reply {lastReplyLabel}</span> : null}
+            </button>
+            <button
+              type="button"
+              onClick={handleToggleResolved}
+              className="inline-flex h-5 items-center gap-1 rounded border border-border bg-background px-1.5 text-[10px] font-medium leading-none text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label={resolved ? "Reopen thread" : "Resolve thread"}
+            >
+              {resolved ? <RotateCcw className="h-3 w-3" /> : <Check className="h-3 w-3" />}
+              <span>{resolved ? "Resolved" : "Resolve"}</span>
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={openFromButton}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setContextMenu({ x: event.clientX, y: event.clientY });
+            }}
+            className="absolute right-0 top-0 flex h-7 items-center gap-1 rounded-md border bg-popover px-1.5 text-xs text-muted-foreground shadow-sm opacity-0 translate-y-1 transition-all duration-150 hover:bg-accent hover:text-accent-foreground group-hover:translate-y-0 group-hover:opacity-100 focus-visible:translate-y-0 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label="Message actions"
+          >
             <MoreHorizontal className="h-4 w-4" />
-          )}
-        </button>
+          </button>
+        )}
 
         {contextMenu && (
           <ContextMenu

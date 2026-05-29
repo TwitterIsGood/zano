@@ -51,7 +51,12 @@ export async function GET(request: NextRequest) {
       .eq("user_id", user.id)
       .order("created_at"),
     admin.from("channel_members").select("channel_id").eq("member_id", user.id),
-    admin.from("agents").select("*").eq("server_id", serverId).order("created_at"),
+    admin
+      .from("agents")
+      .select("id,name,display_name,status,description,server_id,owner_id,created_by_id,created_by_type,parent_agent_id,root_agent_id,creation_source,creation_reason,creation_context,provenance,generation,archived_at,created_at")
+      .eq("server_id", serverId)
+      .is("archived_at", null)
+      .order("created_at"),
     admin
       .from("server_members")
       .select("member_id, role, joined_at")

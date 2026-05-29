@@ -7,6 +7,7 @@ import {
   deriveTopicKey,
   hasActionableIntent,
   hasOnlyLowValueIntent,
+  planA2ADeliveries,
   selectActivationCandidates,
   shouldSuppressForCooldown,
   type ActivationCooldownEntry,
@@ -29,6 +30,32 @@ function msg(overrides: Partial<ProtocolMessage> = {}): ProtocolMessage {
   };
 }
 
+function createMessage(overrides: Partial<ProtocolMessage> & { text?: string; threadId?: string; senderDisplayName?: string } = {}): ProtocolMessage & { text: string; threadId?: string; senderDisplayName?: string } {
+  const { text, threadId, senderDisplayName, ...protocolOverrides } = overrides;
+  const message = msg({
+    id: "msg-1",
+    channelId: "channel-1",
+    content: text ?? "Can someone inspect the import timeout?",
+    threadParentId: threadId ?? protocolOverrides.threadParentId ?? null,
+    ...protocolOverrides,
+  });
+  return { ...message, text: message.content, threadId: message.threadParentId ?? undefined, senderDisplayName };
+}
+
+function createAgent(overrides: Partial<ProtocolAgent> = {}): ProtocolAgent {
+  return {
+    id: "agent-1",
+    name: "agent-1",
+    displayName: "agent-1",
+    description: null,
+    ...overrides,
+  };
+}
+
+function agentMsg(overrides: Partial<ProtocolMessage> = {}): ProtocolMessage {
+  return msg({ senderId: "source-agent", senderType: "agent", ...overrides });
+}
+
 describe("system prompt A2A contract", () => {
   it("teaches agents all A2A decision modes", () => {
     const prompt = buildSystemPrompt(
@@ -41,6 +68,35 @@ describe("system prompt A2A contract", () => {
     expect(prompt).toContain("REPLY_ONLY");
     expect(prompt).toContain("OBSERVE");
     expect(prompt).toContain("SKIP");
+    expect(prompt).toContain("delivery=");
+    expect(prompt).toContain("traceparent=");
+  });
+
+  it("teaches exact CLI send syntax and canonical delivery targets", () => {
+    const prompt = buildSystemPrompt(
+      { display_name: "Beta", name: "beta", description: null, system_prompt: null },
+      "",
+    );
+
+    expect(prompt).toContain("zano message send --target");
+    expect(prompt).toContain("content must come from stdin");
+    expect(prompt).toContain("real line breaks in stdin instead of escaped `\\n`");
+    expect(prompt).toContain("target=` is the canonical CLI address for replies");
+    expect(prompt).toContain("Do not use `--body` or `--channel` for send");
+  });
+
+  it("forbids task reference slash and range shorthand", () => {
+    const prompt = buildSystemPrompt(
+      { display_name: "Beta", name: "beta", description: null, system_prompt: null },
+      "",
+    );
+
+    expect(prompt).toContain("When referring to multiple tasks, write each task number separately");
+    expect(prompt).toContain("task #66, task #67, task #69");
+    expect(prompt).toContain("task #66、task #67、task #69");
+    expect(prompt).toContain("Never combine task numbers with slash or range shorthand");
+    expect(prompt).toContain("#66/#67");
+    expect(prompt).toContain("task #60-#65");
   });
 
   it("forbids sending literal SKIP into chat", () => {
@@ -50,6 +106,23 @@ describe("system prompt A2A contract", () => {
     );
 
     expect(prompt).toContain("Never send the literal word `SKIP` into chat");
+  });
+
+  it("teaches child agent creation with supervision guardrails", () => {
+    const prompt = buildSystemPrompt(
+      { display_name: "Reviewer", name: "reviewer", description: null, system_prompt: null },
+      "",
+    );
+
+    expect(prompt).toContain("zano agent create");
+    expect(prompt).toContain("Create a child agent only when the work is separable and can run independently");
+    expect(prompt).toContain("You remain responsible for supervising child agents");
+    expect(prompt).toContain("Do not create child agents for simple replies");
+    expect(prompt).toContain("Always provide `--reason`");
+    expect(prompt).toContain("Always provide at least one source");
+    expect(prompt).toContain("Use the `DM channel:` value returned by `zano agent create` as the `zano message send --target` value");
+    expect(prompt).toContain("Do not put secrets in child display names, descriptions, system prompts, reasons, source refs, or delegated first-task messages");
+    expect(prompt).not.toContain("or task thread");
   });
 
   it("does not override WORK_SILENTLY with unconditional task acknowledgement guidance", () => {
@@ -72,9 +145,25 @@ describe("system prompt A2A contract", () => {
 
     expect(prompt).toContain("When introducing yourself");
     expect(prompt).toContain("SA 工程师");
+    expect(prompt).toContain("@SA工程师");
+    expect(prompt).not.toContain("sa-17b1a80d-nlo1");
     expect(prompt).toMatch(/do not include your stable @mention handle/i);
     expect(prompt).toMatch(/UUID-like suffixes/i);
     expect(prompt).toMatch(/unless a human explicitly asks for your mention handle/i);
+  });
+
+  it("keeps thread and task progress out of the main channel by default", () => {
+    const prompt = buildSystemPrompt(
+      { display_name: "Beta", name: "beta", description: null, system_prompt: null },
+      "",
+    );
+
+    expect(prompt).toContain("always reply using that exact same target");
+    expect(prompt).toContain("Put task progress, evidence, review requests, blockers, and completion notes in the task thread.");
+    expect(prompt).toContain("When a delivery includes thread join context, read the parent message and recent thread messages before replying.");
+    expect(prompt).toContain("Default replies for thread deliveries stay in the exact thread target shown in the delivery header or suggested read target.");
+    expect(prompt).toContain("Only move thread/task context back to the top-level channel when doing so is useful and explicit.");
+    expect(prompt).not.toContain("Reply in the main channel for short status updates and final delivery summaries");
   });
 });
 
@@ -463,6 +552,104 @@ describe("intent helper semantics", () => {
   });
 });
 
+describe("planA2ADeliveries", () => {
+  it("attaches bounded thread join context only to already selected deliveries", () => {
+    const selectedAgent = createAgent({ id: "agent-1", displayName: "agent-1" });
+    const unselectedAgent = createAgent({ id: "agent-2", displayName: "agent-2" });
+    const plan = planA2ADeliveries({
+      message: createMessage({
+        id: "msg-thread-latest",
+        channelId: "channel-1",
+        threadId: "thread-1",
+        senderType: "human",
+        senderDisplayName: "Biang",
+        text: "@agent-2 can you review this?",
+        createdAt: "2026-05-23T12:00:00.000Z",
+      }),
+      thread: {
+        id: "thread-1",
+        parentMessage: createMessage({ id: "msg-parent", text: "Initial design question", createdAt: "2026-05-23T11:00:00.000Z" }),
+        recentMessages: [
+          createMessage({ id: "msg-previous", text: "Relevant previous reply", createdAt: "2026-05-23T11:59:00.000Z" }),
+        ],
+      },
+      deliveries: [{ agent: selectedAgent }],
+      threadTarget: "#general:thread-1",
+      suggestedReadTarget: "#general:thread-1",
+    });
+
+    expect(plan.deliveries).toHaveLength(1);
+    expect(plan.deliveries[0].agent).toBe(selectedAgent);
+    expect(plan.deliveries.some((delivery) => delivery.agent === unselectedAgent)).toBe(false);
+    expect(plan.deliveries[0].threadContext).toEqual({
+      parentMessage: expect.objectContaining({ id: "msg-parent", text: "Initial design question" }),
+      recentMessages: [expect.objectContaining({ id: "msg-previous", text: "Relevant previous reply" })],
+      suggestedReadTarget: "#general:thread-1",
+      threadTarget: "#general:thread-1",
+    });
+  });
+
+  it("omits thread context when thread facts are missing or mismatched", () => {
+    const selected = [{ agent: createAgent({ id: "agent-1", displayName: "agent-1" }) }];
+
+    expect(planA2ADeliveries({
+      message: createMessage({ threadId: "thread-1" }),
+      deliveries: selected,
+      threadTarget: "#general:thread-1",
+      suggestedReadTarget: "#general:thread-1",
+    }).deliveries[0].threadContext).toBeUndefined();
+
+    expect(planA2ADeliveries({
+      message: createMessage({ threadId: "thread-1" }),
+      deliveries: selected,
+      thread: {
+        id: "other-thread",
+        parentMessage: createMessage({ id: "msg-parent", text: "Initial design question" }),
+        recentMessages: [],
+      },
+      threadTarget: "#general:thread-1",
+      suggestedReadTarget: "#general:thread-1",
+    }).deliveries[0].threadContext).toBeUndefined();
+  });
+
+  it("keeps empty and overlong recent thread messages safe", () => {
+    const recentMessages = Array.from({ length: 12 }, (_, index) => createMessage({
+      id: `recent-${index}`,
+      text: `Recent ${index}`,
+      createdAt: `2026-05-23T11:${String(index).padStart(2, "0")}:00.000Z`,
+    }));
+
+    const plan = planA2ADeliveries({
+      message: createMessage({ threadId: "thread-1" }),
+      deliveries: [{ agent: createAgent({ id: "agent-1", displayName: "agent-1" }) }],
+      thread: {
+        id: "thread-1",
+        parentMessage: createMessage({ id: "msg-parent", text: "Initial design question" }),
+        recentMessages,
+      },
+      threadTarget: "#general:thread-1",
+      suggestedReadTarget: "#general:thread-1",
+    });
+
+    expect(plan.deliveries[0].threadContext?.recentMessages).toHaveLength(10);
+    expect(plan.deliveries[0].threadContext?.recentMessages[0].id).toBe("recent-2");
+
+    const emptyRecent = planA2ADeliveries({
+      message: createMessage({ threadId: "thread-1" }),
+      deliveries: [{ agent: createAgent({ id: "agent-1", displayName: "agent-1" }) }],
+      thread: {
+        id: "thread-1",
+        parentMessage: createMessage({ id: "msg-parent", text: "Initial design question" }),
+        recentMessages: [],
+      },
+      threadTarget: "#general:thread-1",
+      suggestedReadTarget: "#general:thread-1",
+    });
+
+    expect(emptyRecent.deliveries[0].threadContext?.recentMessages).toEqual([]);
+  });
+});
+
 describe("deriveTopicKey", () => {
   it("prefers task id", () => {
     expect(deriveTopicKey(msg(), { id: "task-1", taskNumber: 1, messageId: "message-1", sourceMessageId: "message-1", assigneeId: null, reviewerId: null, createdById: null })).toBe("task:task-1");
@@ -688,6 +875,25 @@ describe("selectActivationCandidates", () => {
     ]);
   });
 
+  it("strongly activates compact public handles for display names with spaces", () => {
+    const result = selectActivationCandidates({
+      message: msg({ senderType: "agent", senderId: "agent-a", content: "@QATestEngineer please verify this." }),
+      agents: [
+        createAgent({ id: "agent-a", name: "Architect", displayName: "Architect" }),
+        createAgent({ id: "agent-b", name: "qa-7eca2e66-yj0r", displayName: "QA Test Engineer" }),
+      ],
+      space: "project_channel",
+      intents: ["request", "verification_needed"],
+      topicKey: "message:msg-1",
+      recentMessages: [],
+      task: null,
+    });
+
+    expect(result.activated).toEqual([
+      expect.objectContaining({ agentId: "agent-b", strength: "strong", reasons: expect.arrayContaining(["direct_mention"]) }),
+    ]);
+  });
+
   it("activates a naturally referenced role only when the message is actionable", () => {
     const result = selectActivationCandidates({
       message: msg({ senderType: "agent", senderId: "agent-a", content: "The reviewer should check the risk section." }),
@@ -700,7 +906,7 @@ describe("selectActivationCandidates", () => {
     });
 
     expect(result.activated).toEqual([
-      expect.objectContaining({ agentId: "agent-b", strength: "medium", reasons: expect.arrayContaining(["natural_reference"]) }),
+      expect.objectContaining({ agentId: "agent-b", strength: "strong", reasons: expect.arrayContaining(["handoff_target", "natural_reference"]) }),
     ]);
   });
 
@@ -760,7 +966,7 @@ describe("selectActivationCandidates", () => {
 
   it("activates a non-open-call domain fit as a weak candidate", () => {
     const result = selectActivationCandidates({
-      message: msg({ content: "Please validate the import timeout before release." }),
+      message: agentMsg({ content: "Please validate the import timeout before release." }),
       agents,
       space: "project_channel",
       intents: ["request", "verification_needed"],
@@ -776,7 +982,7 @@ describe("selectActivationCandidates", () => {
 
   it("activates open-call domain matches as weak open-call candidates", () => {
     const result = selectActivationCandidates({
-      message: msg({ content: "Can someone validate the import timeout?" }),
+      message: agentMsg({ content: "Can someone validate the import timeout?" }),
       agents,
       space: "project_channel",
       intents: ["request", "question", "verification_needed"],
@@ -794,7 +1000,7 @@ describe("selectActivationCandidates", () => {
 
   it("does not activate agents from generic work overlap in open calls", () => {
     const result = selectActivationCandidates({
-      message: msg({ content: "Can someone check this work?" }),
+      message: agentMsg({ content: "Can someone check this work?" }),
       agents,
       space: "project_channel",
       intents: ["request", "question"],
@@ -808,7 +1014,7 @@ describe("selectActivationCandidates", () => {
 
   it("activates agents for allowlisted short domain tokens", () => {
     const result = selectActivationCandidates({
-      message: msg({ content: "Can someone review the API and UI risks?" }),
+      message: agentMsg({ content: "Can someone review the API and UI risks?" }),
       agents: [
         { id: "api-agent", name: "endpoint", displayName: "Endpoint Team", description: "Owns API auth and SSO work" },
         { id: "ui-agent", name: "frontend", displayName: "Frontend Team", description: "Owns UI and UX work" },
@@ -832,7 +1038,7 @@ describe("selectActivationCandidates", () => {
 
   it("still activates implementation agents for specific implementation requests", () => {
     const result = selectActivationCandidates({
-      message: msg({ content: "Can someone implement the checkout fallback?" }),
+      message: agentMsg({ content: "Can someone implement the checkout fallback?" }),
       agents,
       space: "project_channel",
       intents: ["request", "question"],
@@ -846,46 +1052,18 @@ describe("selectActivationCandidates", () => {
     ]);
   });
 
-  it("activates all agents for explicit human introduction broadcasts", () => {
+  it("activates every channel agent for any human top-level project message", () => {
     for (const content of [
-      "hello 各位 大家介绍一下自己吧？",
-      "各位请自我介绍一下。",
-      "大家说下自己负责什么？",
-      "everyone, please introduce yourself.",
-      "all of you, introduce yourselves please.",
-    ]) {
-      const result = selectActivationCandidates({
-        message: msg({ content }),
-        agents,
-        space: "project_channel",
-        intents: classifyMessageIntent(content),
-        topicKey: "message:msg-1",
-        recentMessages: [],
-        task: null,
-      });
-
-      expect(classifyMessageIntent(content)).toEqual(expect.arrayContaining(["request"]));
-      expect(result.activated).toHaveLength(agents.length);
-      expect(result.activated).toEqual(
-        expect.arrayContaining(agents.map((agent) => expect.objectContaining({ agentId: agent.id, strength: "medium", reasons: expect.arrayContaining(["channel_broadcast"]) }))),
-      );
-    }
-  });
-
-  it("activates all agents for human group-addressed greetings", () => {
-    for (const content of [
-      "hello every one",
+      "那大家就继续呗",
+      "继续",
+      "hello",
       "hello everyone",
-      "Hello everyone!",
-      "hi all",
-      "hi, all",
-      "hey team",
-      "hey folks",
-      "hello 各位",
-      "大家好",
-      "大家好！",
-      "各位好",
-      "各位好。",
+      "team status is green",
+      "大家状态已更新",
+      "No need to introduce yourselves.",
+      "team, please review the progress risk",
+      "大家看一下登录接口进度风险",
+      "各位请自我介绍一下。",
     ]) {
       const result = selectActivationCandidates({
         message: msg({ content }),
@@ -897,7 +1075,6 @@ describe("selectActivationCandidates", () => {
         task: null,
       });
 
-      expect(hasOnlyLowValueIntent(classifyMessageIntent(content))).toBe(true);
       expect(result.activated).toHaveLength(agents.length);
       expect(result.activated).toEqual(
         expect.arrayContaining(agents.map((agent) => expect.objectContaining({ agentId: agent.id, strength: "medium", reasons: expect.arrayContaining(["channel_broadcast"]) }))),
@@ -906,62 +1083,31 @@ describe("selectActivationCandidates", () => {
     }
   });
 
-  it("does not broadcast generic greetings, topic-introduction requests, group-addressed work, or negated intro text", () => {
-    for (const content of [
-      "hello",
-      "hi",
-      "hey",
-      "hello world",
-      "hello Redis team",
-      "hello backend team",
-      "hi frontend team",
-      "all tests passed",
-      "team status is green",
-      "大家介绍一下 Redis 方案",
-      "各位讲一下架构风险",
-      "everyone explain your domain",
-      "大家介绍一下这个项目",
-      "hi all, can someone validate the import timeout?",
-      "hey team, please review the API risk.",
-      "大家帮忙看一下 Supabase 验证问题",
-      "各位请审核登录风险",
-      "frontend team, introduce yourselves",
-      "backend team, please introduce yourselves",
-      "QA folks, introduce yourselves",
-      "No need to introduce yourselves.",
-      "No need for everyone to introduce yourselves.",
-      "I'm not asking everyone to introduce yourselves.",
-      "hello everyone, don't introduce yourselves.",
-      "大家不要自我介绍了。",
-      "大家没必要介绍一下自己。",
-      "大家不需要介绍自己。",
-      "大家避免介绍自己。",
-      "不是让大家介绍自己。",
-      "大家介绍一下 Redis 方案，不要介绍自己。",
-      "各位先别说自己负责什么。",
-    ]) {
-      const result = selectActivationCandidates({
-        message: msg({ content }),
-        agents,
-        space: "project_channel",
-        intents: classifyMessageIntent(content),
-        topicKey: "message:msg-1",
-        recentMessages: [],
-        task: null,
-      });
+  it("activates every channel agent for human top-level general-channel messages", () => {
+    const result = selectActivationCandidates({
+      message: msg({ content: "那大家就继续呗" }),
+      agents,
+      space: "general_channel",
+      intents: classifyMessageIntent("那大家就继续呗"),
+      topicKey: "message:msg-1",
+      recentMessages: [],
+      task: null,
+    });
 
-      expect(result.activated.every((candidate) => !candidate.reasons.includes("channel_broadcast"))).toBe(true);
-    }
+    expect(result.activated).toHaveLength(agents.length);
+    expect(result.activated).toEqual(
+      expect.arrayContaining(agents.map((agent) => expect.objectContaining({ agentId: agent.id, strength: "medium", reasons: expect.arrayContaining(["channel_broadcast"]) }))),
+    );
   });
 
-  it("only broadcasts group-addressed greetings in project channels", () => {
-    for (const space of ["thread", "task_thread", "general_channel", "dm"] as const) {
+  it("does not all-agent broadcast human messages inside threads, task threads, or DMs", () => {
+    for (const space of ["thread", "task_thread", "dm"] as const) {
       const result = selectActivationCandidates({
-        message: msg({ content: "hello everyone" }),
+        message: msg({ content: "那大家就继续呗", threadParentId: space === "dm" ? null : "thread-1" }),
         agents,
         space,
-        intents: classifyMessageIntent("hello everyone"),
-        topicKey: "message:msg-1",
+        intents: classifyMessageIntent("那大家就继续呗"),
+        topicKey: space === "dm" ? "message:msg-1" : "thread:thread-1",
         recentMessages: [],
         task: null,
       });
@@ -970,78 +1116,7 @@ describe("selectActivationCandidates", () => {
     }
   });
 
-  it("activates all agents for human room-addressed check-in questions", () => {
-    for (const content of [
-      "那大家任务进度是怎么样的？",
-      "大家任务完成怎么样啦",
-      "大家怎么看？",
-      "各位觉得呢？",
-      "大家有什么更新吗？",
-      "大家有什么想法？",
-      "各位有什么意见吗？",
-      "大家有什么进展吗？",
-      "各位有更新吗？",
-      "what does everyone think?",
-      "how is everyone doing on their tasks?",
-      "team, any updates?",
-      "team, any status?",
-      "all, status update?",
-      "everyone, any blockers?",
-      "folks, thoughts?",
-      "what do you all think?",
-      "everyone, how are we looking?",
-      "team, blockers or updates?",
-    ]) {
-      const result = selectActivationCandidates({
-        message: msg({ content }),
-        agents,
-        space: "project_channel",
-        intents: classifyMessageIntent(content),
-        topicKey: "message:msg-1",
-        recentMessages: [],
-        task: null,
-      });
-
-      expect(result.activated).toHaveLength(agents.length);
-      expect(result.activated).toEqual(
-        expect.arrayContaining(agents.map((agent) => expect.objectContaining({ agentId: agent.id, strength: "medium", reasons: expect.arrayContaining(["channel_broadcast"]) }))),
-      );
-    }
-  });
-
-  it("does not all-agent broadcast unaddressed, scoped, or concrete work questions", () => {
-    for (const content of [
-      "进度如何？",
-      "任务进度怎么样？",
-      "backend team, what's the current progress?",
-      "frontend team, thoughts?",
-      "QA folks, any updates?",
-      "前端进度如何？",
-      "大家看一下登录接口进度风险",
-      "team, please review the progress risk",
-      "everyone inspect the import timeout?",
-      "大家状态已更新",
-      "大家觉得这个方案不错",
-      "各位觉得这个方案不错",
-      "team status is green",
-      "all status updates are posted",
-      "大家的进展已经同步了",
-    ]) {
-      const result = selectActivationCandidates({
-        message: msg({ content }),
-        agents,
-        space: "project_channel",
-        intents: classifyMessageIntent(content),
-        topicKey: "message:msg-1",
-        recentMessages: [],
-        task: null,
-      });
-
-      expect(result.activated.every((candidate) => !candidate.reasons.includes("channel_broadcast"))).toBe(true);
-    }
-  });
-
-  it("routes concrete room-addressed work normally instead of dropping it", () => {
+  it("keeps concrete human top-level work broadcasts while preserving scoped reasons", () => {
     const reviewerAgents: ProtocolAgent[] = [
       { id: "reviewer-agent", name: "reviewer", displayName: "Reviewer", description: "Owns review, approval, risk, and quality checks" },
       { id: "builder-agent", name: "builder", displayName: "Builder", description: "Owns implementation and build work" },
@@ -1059,31 +1134,23 @@ describe("selectActivationCandidates", () => {
         task: null,
       });
 
-      expect(result.activated).toEqual([
-        expect.objectContaining({ agentId: "reviewer-agent", reasons: expect.arrayContaining(["domain_fit"]) }),
-      ]);
-      expect(result.activated.every((candidate) => !candidate.reasons.includes("channel_broadcast"))).toBe(true);
+      expect(result.activated).toHaveLength(reviewerAgents.length);
+      expect(result.activated).toEqual(
+        expect.arrayContaining(reviewerAgents.map((agent) => expect.objectContaining({ agentId: agent.id, reasons: expect.arrayContaining(["channel_broadcast"]) }))),
+      );
+      expect(result.activated).toEqual(
+        expect.arrayContaining([expect.objectContaining({ agentId: "reviewer-agent", reasons: expect.arrayContaining(["domain_fit"]) })]),
+      );
     }
   });
 
-  it("does not broadcast room-addressed check-ins from agents or non-project spaces", () => {
-    const agentResult = selectActivationCandidates({
-      message: msg({ senderId: "agent-a", senderType: "agent", content: "team, any updates?" }),
-      agents,
-      space: "project_channel",
-      intents: classifyMessageIntent("team, any updates?"),
-      topicKey: "message:msg-1",
-      recentMessages: [],
-      task: null,
-    });
-    expect(agentResult.activated.every((candidate) => !candidate.reasons.includes("channel_broadcast"))).toBe(true);
-
-    for (const space of ["thread", "task_thread", "general_channel", "dm"] as const) {
+  it("does not channel-broadcast agent-authored top-level group messages", () => {
+    for (const content of ["team, any updates?", "那大家就继续呗"]) {
       const result = selectActivationCandidates({
-        message: msg({ content: "team, any updates?" }),
+        message: agentMsg({ content }),
         agents,
-        space,
-        intents: classifyMessageIntent("team, any updates?"),
+        space: "project_channel",
+        intents: classifyMessageIntent(content),
         topicKey: "message:msg-1",
         recentMessages: [],
         task: null,
@@ -1091,6 +1158,28 @@ describe("selectActivationCandidates", () => {
 
       expect(result.activated.every((candidate) => !candidate.reasons.includes("channel_broadcast"))).toBe(true);
     }
+  });
+
+  it("activates only recorded thread participants for low-value human thread messages", () => {
+    const result = selectActivationCandidates({
+      message: msg({ content: "那大家就继续呗", threadParentId: "thread-1" }),
+      agents,
+      space: "thread",
+      intents: classifyMessageIntent("那大家就继续呗"),
+      topicKey: "thread:thread-1",
+      recentMessages: [],
+      task: null,
+      threadParticipantAgentIds: ["agent-b", "agent-c"],
+    });
+
+    expect(result.activated).toHaveLength(2);
+    expect(result.activated).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ agentId: "agent-b", strength: "strong", reasons: expect.arrayContaining(["thread_participant"]) }),
+        expect.objectContaining({ agentId: "agent-c", strength: "strong", reasons: expect.arrayContaining(["thread_participant"]) }),
+      ]),
+    );
+    expect(result.activated).not.toEqual(expect.arrayContaining([expect.objectContaining({ agentId: "agent-a" })]));
   });
 
   it("does not treat agent-authored group intro text as a channel broadcast", () => {
@@ -1146,7 +1235,7 @@ describe("selectActivationCandidates", () => {
       "Completed implementation work now needs risk review before close.",
       "实现已完成，风险部分需要评审后才能关闭。",
     ]) {
-      const message = msg({ content });
+      const message = agentMsg({ content });
       const result = selectActivationCandidates({
         message,
         agents: [
@@ -1169,7 +1258,7 @@ describe("selectActivationCandidates", () => {
 
   it("activates verification agents for English inspection open calls with localized role descriptions", () => {
     const result = selectActivationCandidates({
-      message: msg({ content: "Can someone inspect why the import flow is timing out?" }),
+      message: agentMsg({ content: "Can someone inspect why the import flow is timing out?" }),
       agents: [
         { id: "product-agent", name: "product", displayName: "Product", description: "负责产品迭代" },
         { id: "quality-agent", name: "quality", displayName: "Quality", description: "负责测试与质量保障" },
@@ -1194,7 +1283,7 @@ describe("selectActivationCandidates", () => {
       { id: "docs-agent", name: "documenter", displayName: "Documenter", description: "负责文档和说明" },
     ];
 
-    const verificationMessage = msg({ content: "请验证结账流程。" });
+    const verificationMessage = agentMsg({ content: "请验证结账流程。" });
     const verification = selectActivationCandidates({
       message: verificationMessage,
       agents: chineseAgents,
@@ -1208,7 +1297,7 @@ describe("selectActivationCandidates", () => {
       expect.objectContaining({ agentId: "verify-agent", strength: "weak", reasons: expect.arrayContaining(["domain_fit"]) }),
     ]);
 
-    const reviewMessage = msg({ content: "请评审登录风险。" });
+    const reviewMessage = agentMsg({ content: "请评审登录风险。" });
     const review = selectActivationCandidates({
       message: reviewMessage,
       agents: chineseAgents,
@@ -1222,7 +1311,7 @@ describe("selectActivationCandidates", () => {
       expect.objectContaining({ agentId: "review-agent", strength: "weak", reasons: expect.arrayContaining(["domain_fit"]) }),
     ]);
 
-    const documentationMessage = msg({ content: "请补充结账文档。" });
+    const documentationMessage = agentMsg({ content: "请补充结账文档。" });
     const documentation = selectActivationCandidates({
       message: documentationMessage,
       agents: chineseAgents,
@@ -1237,9 +1326,103 @@ describe("selectActivationCandidates", () => {
     ]);
   });
 
+  it("activates product agents for Chinese progress nudges by role shorthand", () => {
+    const message = agentMsg({ content: "产品推进一下进度哈" });
+    const productAgents: ProtocolAgent[] = [
+      { id: "sa-agent", name: "sa", displayName: "SA", description: "负责需求分析、业务建模、技术可行性评估与文档体系构建" },
+      { id: "product-agent", name: "product", displayName: "产品工程师", description: "负责需求分析、PRD 撰写、用户故事定义、产品路线图规划" },
+      { id: "backend-agent", name: "backend", displayName: "后端工程师", description: "负责 API 开发、数据库设计、业务逻辑实现与系统稳定性保障" },
+    ];
+
+    const result = selectActivationCandidates({
+      message,
+      agents: productAgents,
+      space: "project_channel",
+      intents: classifyMessageIntent(message.content),
+      topicKey: "message:msg-1",
+      recentMessages: [],
+      task: null,
+    });
+
+    expect(classifyMessageIntent(message.content)).toContain("request");
+    expect(result.activated).toEqual([
+      expect.objectContaining({ agentId: "product-agent", strength: "medium", reasons: expect.arrayContaining(["natural_reference"]) }),
+    ]);
+    expect(result.activated).not.toEqual(expect.arrayContaining([expect.objectContaining({ agentId: "sa-agent" })]));
+  });
+
+  it("activates frontend and backend for QA requests to sync test entrypoints", () => {
+    const message = msg({
+      senderId: "qa-agent",
+      senderType: "agent",
+      content:
+        "QA 侧收到，task #46 继续保持 in_review；提测环境可用后我会按产品确认边界补齐实测证据。\n\n当前 QA 阻塞仅为提测环境/可测包未就绪；若前后端有测试入口、构建号或埋点查询面板，请同步到 task #46 线程。",
+    });
+    const deliveryAgents: ProtocolAgent[] = [
+      { id: "qa-agent", name: "qa", displayName: "QA", description: "负责功能测试、回归测试、边界场景覆盖与缺陷追踪管理" },
+      { id: "product-agent", name: "product", displayName: "产品工程师", description: "负责需求分析、PRD 撰写、用户故事定义、产品路线图规划" },
+      { id: "reviewer-agent", name: "reviewer", displayName: "Reviewer", description: "负责代码审查、质量把控、最佳实践建议与技术债务识别" },
+      { id: "frontend-agent", name: "frontend", displayName: "前端工程师", description: "负责 UI 组件开发、页面交互实现、响应式布局与前端性能优化" },
+      { id: "backend-agent", name: "backend", displayName: "后端工程师", description: "负责 API 开发、数据库设计、业务逻辑实现与系统稳定性保障" },
+    ];
+
+    const result = selectActivationCandidates({
+      message,
+      agents: deliveryAgents,
+      space: "project_channel",
+      intents: classifyMessageIntent(message.content),
+      topicKey: "message:msg-1",
+      recentMessages: [],
+      task: null,
+    });
+
+    expect(classifyMessageIntent(message.content)).toContain("request");
+    expect(result.activated).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ agentId: "frontend-agent", strength: "medium", reasons: expect.arrayContaining(["natural_reference"]) }),
+        expect.objectContaining({ agentId: "backend-agent", strength: "medium", reasons: expect.arrayContaining(["natural_reference"]) }),
+      ]),
+    );
+    expect(result.activated).toHaveLength(2);
+    expect(result.activated).not.toEqual(expect.arrayContaining([expect.objectContaining({ agentId: "product-agent" })]));
+    expect(result.activated).not.toEqual(expect.arrayContaining([expect.objectContaining({ agentId: "reviewer-agent" })]));
+    expect(result.activated).not.toEqual(expect.arrayContaining([expect.objectContaining({ agentId: "qa-agent" })]));
+  });
+
+  it("activates product agents for natural Chinese coordination wrap-up requests", () => {
+    const message = agentMsg({
+      content: "产品这边帮我收一下这个首屏优化的尾巴吧：我想确认实现、风险审查和测试证据是不是都齐了，还有没有谁卡在测试入口或构建号上。",
+    });
+    const coordinationAgents: ProtocolAgent[] = [
+      { id: "product-agent", name: "product", displayName: "产品工程师", description: "负责需求分析、PRD 撰写、用户故事定义、产品路线图规划" },
+      { id: "frontend-agent", name: "frontend", displayName: "前端工程师", description: "负责 UI 组件开发、页面交互实现、响应式布局与前端性能优化" },
+      { id: "backend-agent", name: "backend", displayName: "后端工程师", description: "负责 API 开发、数据库设计、业务逻辑实现与系统稳定性保障" },
+      { id: "reviewer-agent", name: "reviewer", displayName: "Reviewer", description: "负责代码审查、质量把控、最佳实践建议与技术债务识别" },
+      { id: "qa-agent", name: "qa", displayName: "QA", description: "负责功能测试、回归测试、边界场景覆盖与缺陷追踪管理" },
+    ];
+
+    const result = selectActivationCandidates({
+      message,
+      agents: coordinationAgents,
+      space: "project_channel",
+      intents: classifyMessageIntent(message.content),
+      topicKey: "message:msg-1",
+      recentMessages: [],
+      task: null,
+    });
+
+    expect(classifyMessageIntent(message.content)).toContain("request");
+    expect(result.activated).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ agentId: "product-agent", strength: "medium", reasons: expect.arrayContaining(["natural_reference"]) }),
+      ]),
+    );
+    expect(result.activated).toHaveLength(1);
+  });
+
   it("prioritizes relevant open-call agents over irrelevant earlier roster entries", () => {
     const result = selectActivationCandidates({
-      message: msg({ content: "Can someone validate the import timeout?" }),
+      message: agentMsg({ content: "Can someone validate the import timeout?" }),
       agents: [
         { id: "agent-a", name: "alpha", displayName: "Alpha", description: "Owns implementation work" },
         { id: "agent-d", name: "delta", displayName: "Delta", description: "Coordinates planning and logistics" },
@@ -1261,7 +1444,7 @@ describe("selectActivationCandidates", () => {
 
   it("does not treat longer hyphenated mentions as direct mentions of shorter agent names", () => {
     const result = selectActivationCandidates({
-      message: msg({ content: "@beta-team please review the rollout plan." }),
+      message: agentMsg({ content: "@beta-team please review the rollout plan." }),
       agents,
       space: "project_channel",
       intents: ["request", "review_needed"],
@@ -1275,7 +1458,7 @@ describe("selectActivationCandidates", () => {
 
   it("does not treat agent names inside unrelated words as natural references", () => {
     const result = selectActivationCandidates({
-      message: msg({ content: "Please review the alphabetized checklist." }),
+      message: agentMsg({ content: "Please review the alphabetized checklist." }),
       agents,
       space: "project_channel",
       intents: ["request", "review_needed"],
@@ -1303,7 +1486,7 @@ describe("selectActivationCandidates", () => {
 
   it("selects documentation agents for documentation open calls", () => {
     const result = selectActivationCandidates({
-      message: msg({ content: "Can someone document the deployment checklist?" }),
+      message: agentMsg({ content: "Can someone document the deployment checklist?" }),
       agents,
       space: "project_channel",
       intents: ["request", "question"],
@@ -1318,7 +1501,7 @@ describe("selectActivationCandidates", () => {
   });
 
   it("uses classifier-driven selection for Chinese review risk requests", () => {
-    const message = msg({ content: "请审核登录风险。" });
+    const message = agentMsg({ content: "请审核登录风险。" });
     const result = selectActivationCandidates({
       message,
       agents: [
@@ -1338,7 +1521,7 @@ describe("selectActivationCandidates", () => {
   });
 
   it("uses classifier-driven selection for Chinese confirmation risk requests", () => {
-    const message = msg({ content: "请确认发布风险。" });
+    const message = agentMsg({ content: "请确认发布风险。" });
     const result = selectActivationCandidates({
       message,
       agents: [
@@ -1358,7 +1541,7 @@ describe("selectActivationCandidates", () => {
   });
 
   it("uses classifier-driven selection for imperative documentation requests", () => {
-    const message = msg({ content: "Document the deployment checklist." });
+    const message = agentMsg({ content: "Document the deployment checklist." });
     const result = selectActivationCandidates({
       message,
       agents,
@@ -1375,7 +1558,7 @@ describe("selectActivationCandidates", () => {
   });
 
   it("selects technical writers for classifier-driven documentation requests", () => {
-    const message = msg({ content: "Document the deployment checklist." });
+    const message = agentMsg({ content: "Document the deployment checklist." });
     const result = selectActivationCandidates({
       message,
       agents: [
@@ -1398,7 +1581,7 @@ describe("selectActivationCandidates", () => {
 
   it("prioritizes uncovered weak domains over duplicate domains already covered by strong candidates", () => {
     const result = selectActivationCandidates({
-      message: msg({ content: "@alpha please implement, verify validation testing, and review checkout." }),
+      message: agentMsg({ content: "@alpha please implement, verify validation testing, and review checkout." }),
       agents: [
         { id: "agent-a", name: "alpha", displayName: "Alpha", description: "Owns implementation work" },
         { id: "agent-b", name: "beta", displayName: "Beta", description: "Owns implementation work" },
@@ -1427,7 +1610,7 @@ describe("selectActivationCandidates", () => {
 
   it("covers allowlisted short-token domains under open-call fanout caps", () => {
     const result = selectActivationCandidates({
-      message: msg({ content: "Can someone review API and UI risk?" }),
+      message: agentMsg({ content: "Can someone review API and UI risk?" }),
       agents: [
         { id: "api-agent-1", name: "api-one", displayName: "API agent 1", description: "Owns API review" },
         { id: "api-agent-2", name: "api-two", displayName: "API agent 2", description: "Owns API review" },
@@ -1454,7 +1637,7 @@ describe("selectActivationCandidates", () => {
 
   it("preserves all strong candidates and caps only non-strong fanout", () => {
     const result = selectActivationCandidates({
-      message: msg({ content: "@alpha please validate, implement, and review the import timeout." }),
+      message: agentMsg({ content: "@alpha please validate, implement, and review the import timeout." }),
       agents: [
         { id: "agent-a", name: "alpha", displayName: "Alpha", description: "Owns implementation work" },
         { id: "agent-b", name: "beta", displayName: "Beta", description: "Owns validation work" },
@@ -1483,7 +1666,7 @@ describe("selectActivationCandidates", () => {
 
   it("caps project channel natural fanout while covering requested domains", () => {
     const result = selectActivationCandidates({
-      message: msg({ content: "Can someone cover validation and review?" }),
+      message: agentMsg({ content: "Can someone cover validation and review?" }),
       agents: [
         { id: "agent-a", name: "alpha", displayName: "Alpha", description: "Owns validation work" },
         { id: "agent-b", name: "beta", displayName: "Beta", description: "Owns validation work" },
@@ -1604,7 +1787,7 @@ describe("A2A target-state scenarios", () => {
       { id: "agent-d", name: "delta", displayName: "Delta", description: "Can inspect and validate service failures" },
       { id: "agent-e", name: "epsilon", displayName: "Epsilon", description: "Can document validation failure details" },
     ];
-    const message = msg({ senderType: "human", senderId: "human-1", content: "Can someone inspect, validate, and document the failure?" });
+    const message = agentMsg({ content: "Can someone inspect, validate, and document the failure?" });
     const intents = classifyMessageIntent(message.content);
     const selection = selectActivationCandidates({
       message,

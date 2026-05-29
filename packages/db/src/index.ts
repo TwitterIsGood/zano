@@ -1,2 +1,2 @@
 export { createClient, createServerClient } from "./client";
-export { supabaseSchema } from "./schema";
+export { autonomousSchema, daemonSchema, supabaseSchema } from "./schema";

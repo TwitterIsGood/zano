@@ -3,6 +3,7 @@
 // ============================================================
 
 export * from "./collaboration";
+export * from "./autonomous";
 
 import type {
   ActorType,
@@ -10,6 +11,7 @@ import type {
   DependencyType,
   DocumentStatus,
   ParticipantType,
+  ReminderStatus,
   ReviewStatus,
   ReviewVerdict,
   StepStatus,
@@ -32,7 +34,38 @@ export interface User {
 
 export type AgentModel = "opus" | "sonnet" | "haiku";
 export type AgentStatus = "online" | "sleeping" | "offline";
+export type AgentCreatorType = "human" | "agent" | "system";
+export type AgentCreationSource = "human" | "agent" | "blueprint" | "system" | "migration";
 export type AgentActivity = "idle" | "thinking" | "working" | "working_silently" | "observing" | "blocked" | "error";
+
+export const DAEMON_DELIVERY_STATE_LABELS = {
+  accepted: "ACKed: daemon accepted custody",
+  queued_starting: "Queued: runtime is starting",
+  queued_busy: "Queued: runtime is busy",
+  queued_gated: "Queued: waiting for safe runtime boundary",
+  queued_compaction: "Queued: waiting for compaction-safe boundary",
+  restarting_idle: "Restarting from idle",
+  delivering: "Delivering to runtime",
+  delivered: "Delivered to runtime input",
+  completed: "Derived work evidence observed",
+  failed: "Daemon/runtime diagnostic error",
+  cancelled: "Cancelled",
+} as const;
+
+export const DAEMON_RUNTIME_OUTCOME_LABELS = {
+  queued_busy: "Runtime busy",
+  queued_during_start: "Queued during runtime start",
+  deferred_wake_message: "Wake message deferred",
+  auto_restart_from_idle: "Auto restart from idle",
+  rejected_no_process: "Daemon did not accept custody",
+  stdin_idle_delivery: "Full delivery at idle/turn-end",
+  queued_stalled_recovery: "Queued during stalled recovery",
+  queued_busy_non_stdin: "Queued for non-stdin runtime",
+  queued_before_session: "Queued before session id",
+  queued_compaction_boundary: "Queued at compaction boundary",
+  queued_busy_gated: "Queued behind Claude gated steering",
+  queued_busy_notification: "Pending-message notification sent",
+} as const;
 
 export interface AgentActivityEvent {
   agentId: string;
@@ -41,6 +74,7 @@ export interface AgentActivityEvent {
   label?: string;
   /** Specific detail: file path, command, message target, or agent text output */
   detail?: string;
+  occurredAt?: string;
 }
 
 export interface Agent {
@@ -53,6 +87,16 @@ export interface Agent {
   status: AgentStatus;
   owner_id: string;
   server_id: string;
+  created_by_id: string | null;
+  created_by_type: AgentCreatorType;
+  parent_agent_id: string | null;
+  root_agent_id: string | null;
+  creation_source: AgentCreationSource;
+  creation_reason: string | null;
+  creation_context: Record<string, unknown>;
+  provenance: Record<string, unknown>;
+  generation: number;
+  archived_at: string | null;
   created_at: string;
 }
 
@@ -316,6 +360,32 @@ export interface Notification {
   task_id: string | null;
   read_at: string | null;
   created_at: string;
+}
+
+export interface Reminder {
+  id: string;
+  server_id: string;
+  created_by_id: string;
+  created_by_type: ActorType;
+  recipient_id: string;
+  recipient_type: ParticipantType;
+  channel_id: string;
+  source_message_id: string | null;
+  thread_parent_id: string | null;
+  task_id: string | null;
+  target: string;
+  body: string;
+  due_at: string;
+  snoozed_until: string | null;
+  state: ReminderStatus;
+  fired_at: string | null;
+  fired_delivery_id: string | null;
+  cancelled_at: string | null;
+  completed_at: string | null;
+  last_error: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
 }
 
 // --- Bridge Protocol (WebSocket messages between Server <-> Bridge) ---

@@ -32,6 +32,14 @@ interface MemberDetailPageProps {
   humanMembership?: { role: string; joined_at: string } | null;
 }
 
+interface AgentProvenanceInfo {
+  created_by_type: "human" | "agent" | "system";
+  created_by_id: string | null;
+  parent_agent_id: string | null;
+  creation_reason: string | null;
+  generation: number;
+}
+
 function asString(value: unknown) {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
@@ -42,14 +50,69 @@ function avatarName(memberType: "agent" | "human", member: Record<string, unknow
     : asString(member.display_name) || asString(member.email) || "Human";
 }
 
+function publicAgentHandle(displayName: string | null, fallback: string | null) {
+  const handle = displayName
+    ?.trim()
+    .replace(/\s+/gu, "")
+    .replace(/[^\p{L}\p{N}_-]+/gu, "");
+  return handle || fallback;
+}
+
 function memberHandle(memberType: "agent" | "human", member: Record<string, unknown>) {
-  if (memberType === "agent") return asString(member.name);
+  if (memberType === "agent") return publicAgentHandle(asString(member.display_name), asString(member.name));
   return asString(member.email);
 }
 
 function memberStatus(memberType: "agent" | "human", member: Record<string, unknown>) {
   if (memberType === "agent") return asString(member.status);
   return null;
+}
+
+function creatorLabel(createdByType: AgentProvenanceInfo["created_by_type"]) {
+  if (createdByType === "agent") return "Agent";
+  if (createdByType === "human") return "Human";
+  return "System";
+}
+
+function agentProvenance(member: Record<string, unknown>): AgentProvenanceInfo {
+  const createdByType = member.created_by_type === "agent" || member.created_by_type === "system" ? member.created_by_type : "human";
+  return {
+    created_by_type: createdByType,
+    created_by_id: asString(member.created_by_id),
+    parent_agent_id: asString(member.parent_agent_id),
+    creation_reason: asString(member.creation_reason),
+    generation: typeof member.generation === "number" ? member.generation : 0,
+  };
+}
+
+function AgentProvenanceBlock({ provenance }: { provenance: AgentProvenanceInfo }) {
+  return (
+    <div className="rounded-lg border border-border bg-card p-3">
+      <div className="text-xs font-semibold text-muted-foreground">Provenance</div>
+      <div className="mt-2 space-y-1 text-sm">
+        <div>
+          <span className="text-muted-foreground">Created by: </span>
+          <span>{creatorLabel(provenance.created_by_type)}</span>
+        </div>
+        {provenance.parent_agent_id ? (
+          <div>
+            <span className="text-muted-foreground">Parent agent: </span>
+            <span>{provenance.parent_agent_id}</span>
+          </div>
+        ) : null}
+        {provenance.creation_reason ? (
+          <div>
+            <span className="text-muted-foreground">Reason: </span>
+            <span>{provenance.creation_reason}</span>
+          </div>
+        ) : null}
+        <div>
+          <span className="text-muted-foreground">Generation: </span>
+          <span>{provenance.generation}</span>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export function MemberDetailPage({
@@ -73,6 +136,7 @@ export function MemberDetailPage({
   const status = memberStatus(memberType, member);
   const isSelf = memberType === "human" && memberId === currentUserId;
   const headerBadge = memberType === "agent" ? "Agent" : "Human";
+  const provenanceInfo = memberType === "agent" ? agentProvenance(member) : null;
 
   async function openMessage() {
     setDmError(null);
@@ -187,14 +251,17 @@ export function MemberDetailPage({
               {memberType === "agent" ? <TabsTrigger value="workspace">Workspace</TabsTrigger> : null}
             </TabsList>
             <TabsContent value="profile" className="mt-4 min-h-0 overflow-y-auto pr-1">
-              <MemberProfileTab
-                memberType={memberType}
-                member={member}
-                memberId={memberId}
-                currentUserId={currentUserId}
-                creatorProfile={creatorProfile}
-                humanMembership={humanMembership}
-              />
+              <div className="space-y-4">
+                {provenanceInfo ? <AgentProvenanceBlock provenance={provenanceInfo} /> : null}
+                <MemberProfileTab
+                  memberType={memberType}
+                  member={member}
+                  memberId={memberId}
+                  currentUserId={currentUserId}
+                  creatorProfile={creatorProfile}
+                  humanMembership={humanMembership}
+                />
+              </div>
             </TabsContent>
             <TabsContent value="activity" className="mt-4 min-h-0 overflow-y-auto pr-1">
               <MemberActivityTab
