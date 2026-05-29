@@ -578,11 +578,12 @@ after update of status on public.agents
 for each row execute function public.record_agent_status_changed();
 
 -- -----------------------------------------------------------
--- Step 9: Bridge activity insert policy
+-- Step 9: Omni activity insert policy
 -- -----------------------------------------------------------
 
 drop policy if exists "Bridge can insert agent runtime activity" on public.member_activity_events;
-create policy "Bridge can insert agent runtime activity"
+drop policy if exists "Omni can insert agent runtime activity" on public.member_activity_events;
+create policy "Omni can insert agent runtime activity"
   on public.member_activity_events for insert
   to authenticated
   with check (

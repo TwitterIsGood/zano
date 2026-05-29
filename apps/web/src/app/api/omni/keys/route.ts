@@ -4,7 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 /**
- * GET /api/bridge/keys?server_id=...
+ * GET /api/omni/keys?server_id=...
  * List the user's machine API keys (metadata only, not the actual key).
  */
 export async function GET(request: NextRequest) {
@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
 }
 
 /**
- * POST /api/bridge/keys
+ * POST /api/omni/keys
  * Generate a new machine API key. Returns the full key ONCE.
  */
 export async function POST(request: NextRequest) {
@@ -112,7 +112,7 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * PATCH /api/bridge/keys
+ * PATCH /api/omni/keys
  * Update a machine API key's name.
  */
 export async function PATCH(request: NextRequest) {
@@ -153,7 +153,7 @@ export async function PATCH(request: NextRequest) {
 }
 
 /**
- * DELETE /api/bridge/keys?id=...
+ * DELETE /api/omni/keys?id=...
  * Revoke a machine API key.
  */
 export async function DELETE(request: NextRequest) {

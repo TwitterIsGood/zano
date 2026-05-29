@@ -2,7 +2,7 @@
 
 **Goal:** Define a complete, general-purpose Agent-to-Agent conversation protocol that makes AI agents behave more like human teammates in group chat while preventing duplicate work, noisy acknowledgements, and infinite response loops.
 
-**Architecture:** Zano should treat A2A as a conversation obligation protocol, not a mention router. The bridge computes candidate activations from channel context, task ownership, conversational addressability, and loop safety; the awakened agent makes the final decision to reply, work silently, observe, or skip.
+**Architecture:** Zano should treat A2A as a conversation obligation protocol, not a mention router. Omni computes candidate activations from channel context, task ownership, conversational addressability, and loop safety; the awakened agent makes the final decision to reply, work silently, observe, or skip.
 
 **Scope:** This design covers group channels, project channels, task threads, regular threads, and DMs. It defines target-state protocol semantics; implementation may be sliced safely, but the product behavior should be designed as one coherent system rather than as temporary versions.
 
@@ -29,7 +29,7 @@ The protocol should not hard-code a specific industry, role set, project type, o
    - Agents should not reply merely because their name appeared.
 
 2. **Wake eligibility is not response obligation**
-   - The bridge decides who may need to inspect a message.
+   - Omni decides who may need to inspect a message.
    - The agent decides whether to reply, work silently, observe, or skip.
 
 3. **Action beats narration**
@@ -76,7 +76,7 @@ Thread replies should stay in the thread. A thread should not wake unrelated cha
 
 ### Task Thread
 
-A task thread has the strongest ownership semantics. The bridge should consider:
+A task thread has the strongest ownership semantics. Omni should consider:
 
 - task owner
 - task creator
@@ -88,7 +88,7 @@ Task thread activity should prefer `WORK_SILENTLY` over repeated progress chatte
 
 ### Project Channel
 
-A project channel is an active collaboration space. The bridge may activate agents from:
+A project channel is an active collaboration space. Omni may activate agents from:
 
 - explicit mentions
 - natural references with action semantics
@@ -208,7 +208,7 @@ An agent does not gain obligation merely because:
 
 ## Activation Reasons
 
-The bridge should send an activation envelope to each candidate agent. The envelope explains why the agent was awakened.
+Omni should send an activation envelope to each candidate agent. The envelope explains why the agent was awakened.
 
 Activation reasons:
 
@@ -248,7 +248,7 @@ expected_decision=<agent must choose a decision mode>
 loop_constraints=<cooldown / fanout / reply-value notes>
 ```
 
-This gives the agent enough context to decide what to do without making the bridge a full conversation actor.
+This gives the agent enough context to decide what to do without making Omni a full conversation actor.
 
 ---
 
@@ -431,7 +431,7 @@ Default budget:
 
 ### Topic Cooldown
 
-The bridge tracks recent activations by:
+Omni tracks recent activations by:
 
 ```text
 topic_key + channel/thread + source_agent + target_agent + activation_reason
@@ -509,7 +509,7 @@ Topic identity is used for cooldowns, ownership locks, and loop budgets. It shou
 
 ## Bridge Responsibilities
 
-The bridge should:
+Omni should:
 
 1. Maintain channel membership and agent identity.
 2. Maintain recent conversation context per channel/thread.
@@ -521,7 +521,7 @@ The bridge should:
 8. Never require agents to visibly reply.
 9. Log routing decisions for debugging: activated, suppressed, reason, strength, topic, and loop guard outcome.
 
-The bridge should not:
+Omni should not:
 
 - hard-code project-specific role names
 - force every awakened agent to speak
@@ -699,7 +699,7 @@ Protocol outcome:
 
 ## Debugging and Observability
 
-Routing decisions must be inspectable. For each message, the bridge should be able to log:
+Routing decisions must be inspectable. For each message, Omni should be able to log:
 
 - message id
 - channel/thread id

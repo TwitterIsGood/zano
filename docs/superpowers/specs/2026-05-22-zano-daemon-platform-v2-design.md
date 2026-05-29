@@ -2,9 +2,9 @@
 
 **Goal:** Rebuild Zano's bridge runtime into a daemon-grade delivery platform with Slock-parity semantics: delivery ids, per-agent sequence numbers, trace context, durable delivery ledger, start queue, idle cache, safe busy-message gating, two-level local state, materialized prompts, runtime session records, and local trace files.
 
-**Architecture:** Keep the existing Supabase-backed product model and A2A routing planner, but move process lifecycle and message delivery behind a new daemon runtime layer. The bridge plans who should wake; the runtime records, queues, starts, gates, delivers, traces, and acknowledges each delivery.
+**Architecture:** Keep the existing Supabase-backed product model and A2A routing planner, but move process lifecycle and message delivery behind a new daemon runtime layer. Omni plans who should wake; the runtime records, queues, starts, gates, delivers, traces, and acknowledges each delivery.
 
-**Scope:** This design covers the bridge runtime, database schema, local `~/.zano` state, prompt/wrapper materialization, CLI/runtime surface, delivery observability, and verification gates. It is intentionally not an MVP: the target behavior is a full runtime foundation comparable to `@slock-ai/daemon@0.52.2`, adapted to Zano's current architecture.
+**Scope:** This design covers Omni runtime, database schema, local `~/.zano` state, prompt/wrapper materialization, CLI/runtime surface, delivery observability, and verification gates. It is intentionally not an MVP: the target behavior is a full runtime foundation comparable to `@slock-ai/daemon@0.52.2`, adapted to Zano's current architecture.
 
 ---
 
@@ -114,7 +114,7 @@ Delivery states are durable and append-only in trace history, with the latest st
 - `restarting_idle` — delivery triggered restart from idle cache.
 - `delivering` — runtime is actively writing the message to the agent transport.
 - `delivered` — message reached the runtime transport boundary, usually stdin.
-- `accepted` — agent runtime acknowledged the delivery boundary or the bridge deems stdin injection accepted.
+- `accepted` — agent runtime acknowledged the delivery boundary or Omni deems stdin injection accepted.
 - `completed` — runtime observed the turn finish after this delivery.
 - `failed` — delivery cannot proceed without manual or automatic retry.
 - `cancelled` — delivery was intentionally abandoned because the source context was reset or superseded.
@@ -141,7 +141,7 @@ Owns the delivery state machine.
 
 Responsibilities:
 
-- Accept `RoutingDelivery` objects from the bridge executor.
+- Accept `RoutingDelivery` objects from Omni executor.
 - Allocate delivery id, idempotency key, per-agent seq, and trace context.
 - Write `daemon_deliveries` records.
 - Route deliveries based on current agent process state.
@@ -152,7 +152,7 @@ Responsibilities:
 Proposed file:
 
 ```text
-apps/bridge/src/runtime/delivery-runtime.ts
+apps/omni/src/runtime/delivery-runtime.ts
 ```
 
 ### `AgentSupervisor`
@@ -173,7 +173,7 @@ Responsibilities:
 Proposed file:
 
 ```text
-apps/bridge/src/runtime/agent-supervisor.ts
+apps/omni/src/runtime/agent-supervisor.ts
 ```
 
 ### `StartCoordinator`
@@ -190,7 +190,7 @@ Responsibilities:
 Proposed file:
 
 ```text
-apps/bridge/src/runtime/start-coordinator.ts
+apps/omni/src/runtime/start-coordinator.ts
 ```
 
 ### `DeliveryLedger`
@@ -208,7 +208,7 @@ Responsibilities:
 Proposed file:
 
 ```text
-apps/bridge/src/runtime/delivery-ledger.ts
+apps/omni/src/runtime/delivery-ledger.ts
 ```
 
 ### `AgentLocalStateStore`
@@ -225,7 +225,7 @@ Responsibilities:
 Proposed file:
 
 ```text
-apps/bridge/src/runtime/local-state.ts
+apps/omni/src/runtime/local-state.ts
 ```
 
 ### `PromptMaterializer`
@@ -242,7 +242,7 @@ Responsibilities:
 Proposed file:
 
 ```text
-apps/bridge/src/runtime/prompt-materializer.ts
+apps/omni/src/runtime/prompt-materializer.ts
 ```
 
 ### `CliTransportMaterializer`
@@ -259,7 +259,7 @@ Responsibilities:
 Proposed file:
 
 ```text
-apps/bridge/src/runtime/cli-transport.ts
+apps/omni/src/runtime/cli-transport.ts
 ```
 
 ### `TraceContext` and `LocalTraceSink`
@@ -276,13 +276,13 @@ Responsibilities:
 Proposed files:
 
 ```text
-apps/bridge/src/runtime/trace-context.ts
-apps/bridge/src/runtime/local-trace-sink.ts
+apps/omni/src/runtime/trace-context.ts
+apps/omni/src/runtime/local-trace-sink.ts
 ```
 
 ### `AgentManager` compatibility façade
 
-`AgentManager` should remain the bridge-facing interface during migration, but its internals should delegate to `DeliveryRuntime` when v2 is enabled.
+`AgentManager` should remain Omni-facing interface during migration, but its internals should delegate to `DeliveryRuntime` when v2 is enabled.
 
 Responsibilities:
 
@@ -695,9 +695,9 @@ If materialized prompt or wrapper hash changes:
 Create:
 
 ```text
-apps/bridge/src/runtime/types.ts
-apps/bridge/src/runtime/trace-context.ts
-apps/bridge/src/runtime/local-trace-sink.ts
+apps/omni/src/runtime/types.ts
+apps/omni/src/runtime/trace-context.ts
+apps/omni/src/runtime/local-trace-sink.ts
 ```
 
 Add tests for:
@@ -729,7 +729,7 @@ Add tests or SQL checks for:
 Create:
 
 ```text
-apps/bridge/src/runtime/local-state.ts
+apps/omni/src/runtime/local-state.ts
 ```
 
 Add tests for:
@@ -745,8 +745,8 @@ Add tests for:
 Create:
 
 ```text
-apps/bridge/src/runtime/prompt-materializer.ts
-apps/bridge/src/runtime/cli-transport.ts
+apps/omni/src/runtime/prompt-materializer.ts
+apps/omni/src/runtime/cli-transport.ts
 ```
 
 Update prompt tests to assert:
@@ -763,7 +763,7 @@ Update prompt tests to assert:
 Create:
 
 ```text
-apps/bridge/src/runtime/delivery-ledger.ts
+apps/omni/src/runtime/delivery-ledger.ts
 ```
 
 Add tests for:
@@ -780,7 +780,7 @@ Add tests for:
 Create:
 
 ```text
-apps/bridge/src/runtime/start-coordinator.ts
+apps/omni/src/runtime/start-coordinator.ts
 ```
 
 Add tests for:
@@ -796,7 +796,7 @@ Add tests for:
 Create:
 
 ```text
-apps/bridge/src/runtime/agent-supervisor.ts
+apps/omni/src/runtime/agent-supervisor.ts
 ```
 
 Refactor current process spawning from `AgentManager` into the supervisor.
@@ -815,7 +815,7 @@ Add tests for:
 Create:
 
 ```text
-apps/bridge/src/runtime/delivery-runtime.ts
+apps/omni/src/runtime/delivery-runtime.ts
 ```
 
 Add tests for:
@@ -830,7 +830,7 @@ Add tests for:
 
 ### Phase 9 — Bridge routing integration
 
-Change `apps/bridge/src/bridge.ts` so `executeRoutingPlan(...)` submits deliveries to `DeliveryRuntime` instead of directly calling `AgentManager.sendToAgent(...)` when `ZANO_DAEMON_V2=1`.
+Change `apps/omni/src/bridge.ts` so `executeRoutingPlan(...)` submits deliveries to `DeliveryRuntime` instead of directly calling `AgentManager.sendToAgent(...)` when `ZANO_DAEMON_V2=1`.
 
 Add tests for:
 
@@ -870,7 +870,7 @@ Candidate UI:
 
 ### Phase 12 — End-to-end smoke
 
-Run local bridge with v2 enabled:
+Run Omni with v2 enabled:
 
 ```text
 ZANO_DAEMON_V2=1
@@ -943,6 +943,6 @@ When complete, Zano should be able to answer these questions durably:
 - Which prompt and wrapper version were active?
 - What trace links routing, process lifecycle, stdin injection, and CLI replies?
 - What local files represent this daemon and this agent?
-- Can the bridge restart without losing or duplicating deliveries?
+- Can Omni restart without losing or duplicating deliveries?
 
 That is the Slock-parity line: not just better routing, but a protocolized local daemon runtime that makes agent collaboration observable, recoverable, and safe under real multi-agent load.

@@ -128,7 +128,7 @@ describe("AgentManager Claude spawn", () => {
       createSupabaseStub() as never,
       "https://supabase.example.test",
       "fake-anon-key",
-      "fake-bridge-token",
+      "fake-omni-token",
       { "agent-1": "fake-agent-token" },
     );
     manager.configureDaemonRuntime({
@@ -138,7 +138,7 @@ describe("AgentManager Claude spawn", () => {
       hostname: "host",
       platform: "darwin",
       arch: "arm64",
-      bridgeVersion: "0.1.5",
+      omniVersion: "0.1.5",
       runtimeControlMcpUrl: "http://127.0.0.1:8732/runtime-control/mcp",
     }, null);
 
@@ -158,7 +158,7 @@ describe("AgentManager Claude spawn", () => {
       createSupabaseStub() as never,
       "https://supabase.example.test",
       "fake-anon-key",
-      "fake-bridge-token",
+      "fake-omni-token",
       { "agent-1": "fake-agent-token" },
     );
     manager.configureDaemonRuntime({
@@ -168,7 +168,7 @@ describe("AgentManager Claude spawn", () => {
       hostname: "host",
       platform: "darwin",
       arch: "arm64",
-      bridgeVersion: "0.1.5",
+      omniVersion: "0.1.5",
       runtimeControlMcpUrl: "http://127.0.0.1:8732/runtime-control/mcp",
     }, null);
 
@@ -179,7 +179,7 @@ describe("AgentManager Claude spawn", () => {
     expect(mcpConfigIndex).toBeGreaterThan(-1);
     expect(args[mcpConfigIndex + 1]).toBe(join(workDir, ".zano", "claude-mcp-config.json"));
     expect(JSON.stringify(args)).not.toContain("fake-agent-token");
-    expect(JSON.stringify(args)).not.toContain("fake-bridge-token");
+    expect(JSON.stringify(args)).not.toContain("fake-omni-token");
     expect(options.env.ZANO_HOME).toBe(join(agentsDir, "agent-1", ".zano"));
     expect(options.env.ZANO_AGENT_TOKEN_FILE).toBe(join(agentsDir, "agent-1", ".zano", "agent-token"));
     expect(options.env.ZANO_SUPABASE_KEY_FILE).toBe(join(agentsDir, "agent-1", ".zano", "supabase-key"));
@@ -194,7 +194,7 @@ describe("AgentManager Claude spawn", () => {
     expect(JSON.stringify(options.env)).not.toContain("stale");
   });
 
-  it("does not fall back to the bridge token when an agent token is missing", async () => {
+  it("does not fall back to Omni token when an agent token is missing", async () => {
     const rootDir = mkdtempSync(join(tmpdir(), "zano-agent-manager-spawn-"));
     const agentsDir = join(rootDir, "agents");
     const workDir = join(rootDir, "work", "agent-1");
@@ -203,7 +203,7 @@ describe("AgentManager Claude spawn", () => {
       createSupabaseStub() as never,
       "https://supabase.example.test",
       "fake-anon-key",
-      "fake-bridge-token",
+      "fake-omni-token",
       {},
     );
     manager.configureDaemonRuntime({
@@ -213,7 +213,7 @@ describe("AgentManager Claude spawn", () => {
       hostname: "host",
       platform: "darwin",
       arch: "arm64",
-      bridgeVersion: "0.1.5",
+      omniVersion: "0.1.5",
       runtimeControlMcpUrl: "http://127.0.0.1:8732/runtime-control/mcp",
     }, null);
 
@@ -221,7 +221,7 @@ describe("AgentManager Claude spawn", () => {
 
     const [, , options] = mocks.spawn.mock.calls[0] as [string, string[], { env: NodeJS.ProcessEnv }];
     expect(options.env.ZANO_AGENT_TOKEN_FILE).toBeUndefined();
-    expect(JSON.stringify(options.env)).not.toContain("fake-bridge-token");
+    expect(JSON.stringify(options.env)).not.toContain("fake-omni-token");
   });
 
   it("rewrites active agent token files when agent tokens refresh", async () => {
@@ -232,7 +232,7 @@ describe("AgentManager Claude spawn", () => {
       createSupabaseStub() as never,
       "https://supabase.example.test",
       "fake-anon-key",
-      "fake-bridge-token",
+      "fake-omni-token",
       { "agent-1": "initial-agent-token" },
     );
 
@@ -250,7 +250,7 @@ describe("AgentManager Claude spawn", () => {
       createSupabaseStub() as never,
       "https://supabase.example.test",
       "fake-anon-key",
-      "fake-bridge-token",
+      "fake-omni-token",
       { "agent-1": "initial-agent-token" },
     );
 
@@ -271,7 +271,7 @@ describe("AgentManager Claude spawn", () => {
       createSupabaseStub() as never,
       "https://supabase.example.test",
       "fake-anon-key",
-      "fake-bridge-token",
+      "fake-omni-token",
       { "agent-1": "initial-agent-token" },
     );
 
@@ -295,7 +295,7 @@ describe("AgentManager Claude spawn", () => {
       createSupabaseStub() as never,
       "https://supabase.example.test",
       "fake-anon-key",
-      "fake-bridge-token",
+      "fake-omni-token",
       { "agent-1": "fake-agent-token" },
     );
     manager.configureDaemonRuntime({
@@ -305,7 +305,7 @@ describe("AgentManager Claude spawn", () => {
       hostname: "host",
       platform: "darwin",
       arch: "arm64",
-      bridgeVersion: "0.1.5",
+      omniVersion: "0.1.5",
       runtimeControlMcpUrl: "http://127.0.0.1:8732/runtime-control/mcp",
       credentialProxy: {
         proxyUrl: "https://proxy.example.test/credential",
@@ -333,7 +333,7 @@ describe("AgentManager Claude spawn", () => {
       createSupabaseStub() as never,
       "https://supabase.example.test",
       "fake-anon-key",
-      "fake-bridge-token",
+      "fake-omni-token",
       { "agent-active": "active-agent-token" },
     );
     const activeTokenPath = join(agentsDir, "agent-active", ".zano", "agent-token");
@@ -367,7 +367,7 @@ describe("AgentManager Claude spawn", () => {
       createSupabaseStub() as never,
       "https://supabase.example.test",
       "fake-anon-key",
-      "fake-bridge-token",
+      "fake-omni-token",
       { "agent-1": "fake-agent-token" },
     );
     manager.configureDaemonRuntime({
@@ -377,7 +377,7 @@ describe("AgentManager Claude spawn", () => {
       hostname: "host",
       platform: "darwin",
       arch: "arm64",
-      bridgeVersion: "0.1.5",
+      omniVersion: "0.1.5",
       runtimeControlMcpUrl: "http://127.0.0.1:8732/runtime-control/mcp",
       credentialProxy: {
         proxyUrl: "https://proxy.example.test/credential",

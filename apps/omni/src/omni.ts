@@ -36,17 +36,17 @@ import {
   type SuppressedCandidate,
 } from "./a2a-protocol.js";
 
-interface BridgeCredentialRefresh {
+interface OmniCredentialRefresh {
   token: string;
   agentAuthTokens: Record<string, string>;
 }
 
-interface BridgeConfig {
+interface OmniConfig {
   supabaseUrl: string;
   supabaseKey: string;    // anon key
   authToken: string;       // JWT for authenticated Supabase operations
   agentAuthTokens?: Record<string, string>; // per-agent actor JWTs for spawned agent processes
-  refreshCredentials?: () => Promise<BridgeCredentialRefresh>;
+  refreshCredentials?: () => Promise<OmniCredentialRefresh>;
   userId: string;
   serverId: string;
   serverName?: string;
@@ -54,7 +54,7 @@ interface BridgeConfig {
   hostname?: string;
   platform?: string;
   arch?: string;
-  bridgeVersion?: string;
+  omniVersion?: string;
 }
 
 export interface DbMessage {
@@ -193,10 +193,10 @@ interface RoutingExecutionResult {
   failedAgentIds: string[];
 }
 
-export class Bridge {
+export class Omni {
   private supabase: SupabaseClient;
   private agentManager: AgentManager;
-  private config: BridgeConfig;
+  private config: OmniConfig;
   // Maps channel_id -> Set of agent_ids in that channel
   private channelAgents = new Map<string, Set<string>>();
   private channelsWithMissingAgentCredentials = new Set<string>();
@@ -206,7 +206,7 @@ export class Bridge {
   private channelNames = new Map<string, string>();
   // Maps agent_id -> agent DB record
   private agentRecords = new Map<string, DbAgent>();
-  // Realtime channel for workspace file RPC (web UI ↔ bridge)
+  // Realtime channel for workspace file RPC (web UI ↔ Omni)
   private workspaceRpcChannel: RealtimeChannel | null = null;
   // Presence channel for online status (auto-offline on disconnect)
   private presenceChannel: RealtimeChannel | null = null;
@@ -228,7 +228,7 @@ export class Bridge {
   private runtimeSupervisor: AgentSupervisor | null = null;
   private daemonV2Enabled = process.env.ZANO_DAEMON_V2 === "1";
 
-  constructor(config: BridgeConfig) {
+  constructor(config: OmniConfig) {
     this.config = config;
     this.supabase = createClient(config.supabaseUrl, config.supabaseKey, {
       auth: { autoRefreshToken: false, persistSession: false },
@@ -268,7 +268,7 @@ export class Bridge {
       hostname: this.config.hostname ?? machineId,
       platform: this.config.platform ?? process.platform,
       arch: this.config.arch ?? process.arch,
-      bridgeVersion: this.config.bridgeVersion ?? process.env.npm_package_version ?? "0.1.5",
+      omniVersion: this.config.omniVersion ?? process.env.npm_package_version ?? "0.1.5",
     }, runtimeSessionLedger);
     this.runtimeSupervisor = supervisor;
     const deliveryRuntime = new DeliveryRuntime({
@@ -359,7 +359,7 @@ export class Bridge {
     if (!changed) return;
 
     this.updatePresence();
-    console.log(`  [Bridge] Archived agent pruned: ${agent?.display_name ?? agentId}`);
+    console.log(`  [Omni] Archived agent pruned: ${agent?.display_name ?? agentId}`);
   }
 
   private cancelArchivedAgentDeliveries(agentId: string, deliveryIds: string[]): void {
@@ -381,7 +381,7 @@ export class Bridge {
           runtimeOutcome,
         });
       } catch (error) {
-        console.warn(`  [Bridge] Failed to cancel pruned-agent delivery ${deliveryId}:`, serializeRuntimeError(error));
+        console.warn(`  [Omni] Failed to cancel pruned-agent delivery ${deliveryId}:`, serializeRuntimeError(error));
       }
     }));
   }
@@ -447,7 +447,7 @@ export class Bridge {
     this.startReminderScheduler();
 
     console.log(
-      `  Bridge ready. Listening for messages across ${this.channelAgents.size} channel(s).`
+      `  Omni ready. Listening for messages across ${this.channelAgents.size} channel(s).`
     );
     console.log(
       `  Managing ${this.agentRecords.size} agent(s): ${Array.from(this.agentRecords.values()).map((a) => a.display_name).join(", ")}`
@@ -682,7 +682,7 @@ export class Bridge {
 
   private subscribeToMessages() {
     const subscription = this.supabase
-      .channel("bridge-messages")
+      .channel("omni-messages")
       .on(
         "postgres_changes",
         {
@@ -1581,7 +1581,7 @@ export class Bridge {
   private subscribeToNewAgents() {
     // Watch for new agents belonging to this user
     this.supabase
-      .channel("bridge-new-agents")
+      .channel("omni-new-agents")
       .on(
         "postgres_changes",
         {
@@ -1597,7 +1597,7 @@ export class Bridge {
           if (this.agentRecords.has(agent.id)) return;
 
           console.log(
-            `  [Bridge] New agent detected: ${agent.display_name}`
+            `  [Omni] New agent detected: ${agent.display_name}`
           );
           if (!(await this.initializeNewAgentRecord(agent))) return;
 
@@ -1641,7 +1641,7 @@ export class Bridge {
             return;
 
           console.log(
-            `  [Bridge] Agent ${this.agentRecords.get(member.member_id)?.display_name} joined channel ${member.channel_id}`
+            `  [Omni] Agent ${this.agentRecords.get(member.member_id)?.display_name} joined channel ${member.channel_id}`
           );
           if (!this.channelAgents.has(member.channel_id)) {
             this.channelAgents.set(member.channel_id, new Set());
@@ -1673,7 +1673,7 @@ export class Bridge {
     }
 
     this.spawnGovernorChannel = this.supabase
-      .channel("bridge-agent-spawn-governor")
+      .channel("omni-agent-spawn-governor")
       .on(
         "postgres_changes",
         {
@@ -1690,7 +1690,7 @@ export class Bridge {
       )
       .subscribe((status) => {
         if (status === "SUBSCRIBED") {
-          console.log("  [Bridge] Autonomous spawn governor subscribed.");
+          console.log("  [Omni] Autonomous spawn governor subscribed.");
         }
       });
   }
@@ -1739,7 +1739,7 @@ export class Bridge {
     });
 
     if (error && !/duplicate/i.test(error.message)) {
-      console.warn("  [Bridge] Failed to record spawn outcome:", serializeRuntimeError(error));
+      console.warn("  [Omni] Failed to record spawn outcome:", serializeRuntimeError(error));
     }
   }
 
@@ -1851,26 +1851,26 @@ export class Bridge {
         createdAgent.id,
         `Created agent ${displayName} from blueprint ${typedBlueprint.slug}`
       );
-      console.log(`  [Bridge] Autonomous spawn created agent: ${displayName}`);
+      console.log(`  [Omni] Autonomous spawn created agent: ${displayName}`);
     } catch (error) {
       const message = serializeRuntimeError(error);
-      console.warn("  [Bridge] Autonomous spawn failed:", message);
+      console.warn("  [Omni] Autonomous spawn failed:", message);
       await this.recordSpawnOutcome(request, "spawn_failed", null, message);
     }
   }
 
   /**
-   * Track this bridge's presence. Supabase automatically removes presence
+   * Track Omni presence. Supabase automatically removes presence
    * when the WebSocket disconnects (crash, network loss, terminal close).
    */
   private trackPresence() {
-    const channelName = `bridge-presence:${this.config.serverId}`;
+    const channelName = `omni-presence:${this.config.serverId}`;
     this.presenceChannel = this.supabase
       .channel(channelName)
       .subscribe(async (status) => {
         if (status === "SUBSCRIBED") {
           await this.updatePresence();
-          console.log("  Bridge presence tracked.");
+          console.log("  Omni presence tracked.");
         }
       });
   }
@@ -1909,11 +1909,11 @@ export class Bridge {
 
   /**
    * Subscribe to workspace file RPC requests from the web UI.
-   * The web UI sends broadcast events; the bridge reads local files and responds.
+   * The web UI sends broadcast events; Omni reads local files and responds.
    */
   private subscribeToWorkspaceRpc() {
     this.workspaceRpcChannel = this.supabase
-      .channel("bridge-rpc")
+      .channel("omni-rpc")
       .on(
         "broadcast",
         { event: "rpc:request" },
@@ -1962,7 +1962,7 @@ export class Bridge {
       )
       .subscribe((status) => {
         if (status === "SUBSCRIBED") {
-          console.log("  Bridge RPC channel ready.");
+          console.log("  Omni RPC channel ready.");
         }
       });
   }
@@ -2101,6 +2101,6 @@ export class Bridge {
     this.presenceChannel = null;
     await this.supabase.removeAllChannels();
 
-    console.log("  Bridge stopped.");
+    console.log("  Omni stopped.");
   }
 }

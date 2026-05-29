@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 const supabaseMockState = vi.hoisted(() => {
-  class BridgeFakeSupabaseTable {
+  class OmniFakeSupabaseTable {
     private operation: "select" | "insert" | "update" = "select";
     private filters: Array<{ column: string; value: unknown; operator: "eq" | "in" | "is" | "gte" }> = [];
     private orderBy: { column: string; ascending: boolean } | null = null;
@@ -93,7 +93,7 @@ const supabaseMockState = vi.hoisted(() => {
     }
   }
 
-  class BridgeFakeSupabaseClient {
+  class OmniFakeSupabaseClient {
     readonly deliveries: Record<string, unknown>[] = [];
     readonly traceEvents: Record<string, unknown>[] = [];
     readonly messages: Record<string, unknown>[] = [];
@@ -122,29 +122,29 @@ const supabaseMockState = vi.hoisted(() => {
     }
     from(table: string) {
       const error = this.tableErrors.get(table) ?? null;
-      if (table === "daemon_deliveries") return new BridgeFakeSupabaseTable(this.deliveries, error);
-      if (table === "daemon_trace_events") return new BridgeFakeSupabaseTable(this.traceEvents, error);
-      if (table === "messages") return new BridgeFakeSupabaseTable(this.messages, error);
-      if (table === "channel_members") return new BridgeFakeSupabaseTable(this.channelMembers, error);
-      if (table === "channels") return new BridgeFakeSupabaseTable(this.channels, error);
-      if (table === "agents") return new BridgeFakeSupabaseTable(this.agents, error);
-      return new BridgeFakeSupabaseTable([], error);
+      if (table === "daemon_deliveries") return new OmniFakeSupabaseTable(this.deliveries, error);
+      if (table === "daemon_trace_events") return new OmniFakeSupabaseTable(this.traceEvents, error);
+      if (table === "messages") return new OmniFakeSupabaseTable(this.messages, error);
+      if (table === "channel_members") return new OmniFakeSupabaseTable(this.channelMembers, error);
+      if (table === "channels") return new OmniFakeSupabaseTable(this.channels, error);
+      if (table === "agents") return new OmniFakeSupabaseTable(this.agents, error);
+      return new OmniFakeSupabaseTable([], error);
     }
   }
 
-  return { clients: [] as BridgeFakeSupabaseClient[], BridgeFakeSupabaseClient };
+  return { clients: [] as OmniFakeSupabaseClient[], OmniFakeSupabaseClient };
 });
 
 vi.mock("@supabase/supabase-js", () => ({
   createClient: vi.fn(() => {
-    const client = new supabaseMockState.BridgeFakeSupabaseClient();
+    const client = new supabaseMockState.OmniFakeSupabaseClient();
     supabaseMockState.clients.push(client);
     return client;
   }),
 }));
 
 import { AgentSupervisor, DeliveryLedger, DeliveryRuntime, InMemoryDeliveryLedgerStore, StartCoordinator } from "./runtime/index.js";
-import { Bridge, buildRuntimeDeliveryInput, type DbMessage, type RoutingDelivery } from "./bridge.js";
+import { Omni, buildRuntimeDeliveryInput, type DbMessage, type RoutingDelivery } from "./omni.js";
 
 const msg: DbMessage = {
   id: "msg-1",
@@ -178,9 +178,9 @@ function makeBridge(overrides: Record<string, unknown> = {}) {
     ...((overrides.agentManager as Record<string, unknown> | undefined) ?? {}),
   };
 
-  return Object.assign(Object.create(Bridge.prototype), {
+  return Object.assign(Object.create(Omni.prototype), {
     config: { serverId: "server-1" },
-    supabase: new supabaseMockState.BridgeFakeSupabaseClient(),
+    supabase: new supabaseMockState.OmniFakeSupabaseClient(),
     agentManager,
     channelAgents: new Map(),
     channelTypes: new Map(),
@@ -198,7 +198,7 @@ function makeBridge(overrides: Record<string, unknown> = {}) {
     runtimeSupervisor: null,
     ...overrides,
     agentManager,
-  }) as Bridge & Record<string, any>;
+  }) as Omni & Record<string, any>;
 }
 
 describe("buildRuntimeDeliveryInput", () => {
@@ -246,7 +246,7 @@ describe("buildRuntimeDeliveryInput", () => {
   });
 });
 
-describe("Bridge runtime routing", () => {
+describe("Omni runtime routing", () => {
   it("uses raw channel ids for DM delivery targets", () => {
     const bridge = makeBridge({
       channelTypes: new Map([["dm-channel-1", "dm"]]),
@@ -258,7 +258,7 @@ describe("Bridge runtime routing", () => {
   });
 
   it("builds selected delivery prompts with canonical bounded thread join context", async () => {
-    const supabase = new supabaseMockState.BridgeFakeSupabaseClient();
+    const supabase = new supabaseMockState.OmniFakeSupabaseClient();
     supabase.messages.push(
       { id: "thread-parent-1234567890", channel_id: "channel-1", sender_id: "human-1", sender_type: "human", content: "Parent problem statement", thread_parent_id: null, created_at: "2026-05-23T10:00:00.000Z" },
       { id: "thread-recent-1", channel_id: "channel-1", sender_id: "agent-2", sender_type: "agent", content: "Prior analysis", thread_parent_id: "thread-parent-1234567890", created_at: "2026-05-23T10:05:00.000Z" },
@@ -303,7 +303,7 @@ describe("Bridge runtime routing", () => {
   });
 
   it("omits thread join context when parent facts do not match the message thread", async () => {
-    const supabase = new supabaseMockState.BridgeFakeSupabaseClient();
+    const supabase = new supabaseMockState.OmniFakeSupabaseClient();
     supabase.messages.push(
       { id: "thread-parent-1234567890", channel_id: "other-channel", sender_id: "human-1", sender_type: "human", content: "Wrong channel parent", thread_parent_id: null, created_at: "2026-05-23T10:00:00.000Z" },
       { id: "msg-thread-latest", channel_id: "channel-1", sender_id: "human-1", sender_type: "human", content: "@Alpha please continue", thread_parent_id: "thread-parent-1234567890", created_at: "2026-05-23T10:10:00.000Z" },
@@ -337,8 +337,8 @@ describe("Bridge runtime routing", () => {
     expect(plan?.deliveries[0].prompt).not.toContain("Wrong channel parent");
   });
 
-  it("does not load agents from other servers at bridge startup", async () => {
-    const supabase = new supabaseMockState.BridgeFakeSupabaseClient();
+  it("does not load agents from other servers at Omni startup", async () => {
+    const supabase = new supabaseMockState.OmniFakeSupabaseClient();
     supabase.agents.push(
       { id: "agent-active", name: "active", display_name: "Active", description: null, system_prompt: null, model: "opus", status: "offline", owner_id: "user-1", server_id: "server-1", archived_at: null },
       { id: "agent-other-server", name: "other", display_name: "Other", description: null, system_prompt: null, model: "opus", status: "offline", owner_id: "user-1", server_id: "other-server", archived_at: null },
@@ -355,8 +355,8 @@ describe("Bridge runtime routing", () => {
     expect(bridge.agentRecords.has("agent-other-server")).toBe(false);
   });
 
-  it("does not load tokenless agents at bridge startup", async () => {
-    const supabase = new supabaseMockState.BridgeFakeSupabaseClient();
+  it("does not load tokenless agents at Omni startup", async () => {
+    const supabase = new supabaseMockState.OmniFakeSupabaseClient();
     supabase.agents.push(
       { id: "agent-tokened", name: "tokened", display_name: "Tokened", description: null, system_prompt: null, model: "opus", status: "offline", owner_id: "user-1", server_id: "server-1", archived_at: null },
       { id: "agent-tokenless", name: "tokenless", display_name: "Tokenless", description: null, system_prompt: null, model: "opus", status: "offline", owner_id: "user-1", server_id: "server-1", archived_at: null },
@@ -373,8 +373,8 @@ describe("Bridge runtime routing", () => {
     expect(bridge.agentRecords.has("agent-tokenless")).toBe(false);
   });
 
-  it("does not load archived agents at bridge startup", async () => {
-    const supabase = new supabaseMockState.BridgeFakeSupabaseClient();
+  it("does not load archived agents at Omni startup", async () => {
+    const supabase = new supabaseMockState.OmniFakeSupabaseClient();
     supabase.agents.push(
       { id: "agent-active", name: "active", display_name: "Active", description: null, system_prompt: null, model: "opus", status: "offline", owner_id: "user-1", server_id: "server-1", archived_at: null },
       { id: "agent-archived", name: "archived", display_name: "Archived", description: null, system_prompt: null, model: "opus", status: "offline", owner_id: "user-1", server_id: "server-1", archived_at: "2026-05-26T12:00:00.000Z" },
@@ -391,9 +391,9 @@ describe("Bridge runtime routing", () => {
     expect(bridge.agentRecords.has("agent-archived")).toBe(false);
   });
 
-  it("purges credentials for agents not loaded at bridge startup", async () => {
+  it("purges credentials for agents not loaded at Omni startup", async () => {
     const purgeCredentialsForInactiveAgents = vi.fn();
-    const supabase = new supabaseMockState.BridgeFakeSupabaseClient();
+    const supabase = new supabaseMockState.OmniFakeSupabaseClient();
     supabase.agents.push(
       { id: "agent-active", name: "active", display_name: "Active", description: null, system_prompt: null, model: "opus", status: "offline", owner_id: "user-1", server_id: "server-1", archived_at: null },
       { id: "agent-archived", name: "archived", display_name: "Archived", description: null, system_prompt: null, model: "opus", status: "offline", owner_id: "user-1", server_id: "server-1", archived_at: "2026-05-26T12:00:00.000Z" },
@@ -492,7 +492,7 @@ describe("Bridge runtime routing", () => {
   });
 
   it("keeps active child DMs retryable at startup when the child token is missing", async () => {
-    const supabase = new supabaseMockState.BridgeFakeSupabaseClient();
+    const supabase = new supabaseMockState.OmniFakeSupabaseClient();
     supabase.channelMembers.push(
       { channel_id: "child-dm", member_id: "parent-agent", member_type: "agent" },
       { channel_id: "child-dm", member_id: "child-agent", member_type: "agent" },
@@ -525,7 +525,7 @@ describe("Bridge runtime routing", () => {
       config: {
         supabaseUrl: "https://supabase.example.test",
         supabaseKey: "fake-anon-key",
-        authToken: "old-bridge-token",
+        authToken: "old-omni-token",
         serverId: "server-1",
         agentAuthTokens: { "agent-current": "old-current-token", "agent-stale": "old-stale-token" },
       },
@@ -549,7 +549,7 @@ describe("Bridge runtime routing", () => {
       startReminderScheduler: vi.fn(),
     });
 
-    await bridge.updateAuthToken("fresh-bridge-token", { "agent-current": "fresh-current-token" });
+    await bridge.updateAuthToken("fresh-omni-token", { "agent-current": "fresh-current-token" });
 
     expect(bridge.config.agentAuthTokens).toEqual({ "agent-current": "fresh-current-token" });
     expect(bridge.agentRecords.has("agent-current")).toBe(true);
@@ -560,11 +560,11 @@ describe("Bridge runtime routing", () => {
     expect(bridge.runtimeSupervisor.drainInbox).toHaveBeenCalledWith("agent-stale");
     await vi.waitFor(() => expect(transition).toHaveBeenCalledWith("stale-delivery", "cancelled", expect.objectContaining({ runtimeOutcome: "agent_token_removed" })));
     expect(bridge.runtimeSupervisor.markStale).toHaveBeenCalledWith("agent-stale");
-    expect(updateSupabaseClient).toHaveBeenCalledWith(expect.anything(), "fresh-bridge-token", { "agent-current": "fresh-current-token" });
+    expect(updateSupabaseClient).toHaveBeenCalledWith(expect.anything(), "fresh-omni-token", { "agent-current": "fresh-current-token" });
   });
 
-  it("does not route to agents that were archived while bridge missed realtime", async () => {
-    const supabase = new supabaseMockState.BridgeFakeSupabaseClient();
+  it("does not route to agents that were archived while Omni missed realtime", async () => {
+    const supabase = new supabaseMockState.OmniFakeSupabaseClient();
     supabase.channelMembers.push({ channel_id: "channel-1", member_id: "agent-archived", member_type: "agent" });
     supabase.channels.push({ id: "channel-1", name: "general", type: "public" });
     supabase.agents.push({ id: "agent-archived", name: "archived", display_name: "Archived", description: null, system_prompt: null, model: "opus", status: "online", owner_id: "user-1", server_id: "server-1", archived_at: "2026-05-26T12:00:00.000Z" });
@@ -591,7 +591,7 @@ describe("Bridge runtime routing", () => {
   });
 
   it("does not keep existing tokenless agents after channel membership refresh", async () => {
-    const supabase = new supabaseMockState.BridgeFakeSupabaseClient();
+    const supabase = new supabaseMockState.OmniFakeSupabaseClient();
     supabase.channelMembers.push(
       { channel_id: "channel-1", member_id: "agent-current", member_type: "agent" },
       { channel_id: "channel-1", member_id: "agent-stale", member_type: "agent" },
@@ -621,7 +621,7 @@ describe("Bridge runtime routing", () => {
   });
 
   it("replaces stale agent tokens during dynamic credential refresh", async () => {
-    const refreshCredentials = vi.fn().mockResolvedValue({ token: "fresh-bridge-token", agentAuthTokens: { "child-agent": "child-agent-token" } });
+    const refreshCredentials = vi.fn().mockResolvedValue({ token: "fresh-omni-token", agentAuthTokens: { "child-agent": "child-agent-token" } });
     const setAuth = vi.fn();
     const updateAgentAuthTokens = vi.fn();
     const bridge = makeBridge({
@@ -637,12 +637,12 @@ describe("Bridge runtime routing", () => {
     await bridge.refreshCredentialsForAgents(["child-agent"]);
 
     expect(bridge.config.agentAuthTokens).toEqual({ "child-agent": "child-agent-token" });
-    expect(setAuth).toHaveBeenCalledWith("fresh-bridge-token");
+    expect(setAuth).toHaveBeenCalledWith("fresh-omni-token");
     expect(updateAgentAuthTokens).toHaveBeenCalledWith({ "child-agent": "child-agent-token" });
   });
 
   it("hydrates newly created child agents before routing their first DM task", async () => {
-    const supabase = new supabaseMockState.BridgeFakeSupabaseClient();
+    const supabase = new supabaseMockState.OmniFakeSupabaseClient();
     supabase.channelMembers.push(
       { channel_id: "child-dm", member_id: "parent-agent", member_type: "agent" },
       { channel_id: "child-dm", member_id: "child-agent", member_type: "agent" },
@@ -650,7 +650,7 @@ describe("Bridge runtime routing", () => {
     supabase.channels.push({ id: "child-dm", name: "dm-child-agent", type: "dm" });
     supabase.agents.push({ id: "child-agent", name: "child", display_name: "Child", description: null, system_prompt: null, model: "opus", status: "offline", owner_id: "user-1", server_id: "server-1", archived_at: null });
     const agentManager = { sendToAgent: vi.fn(), initAgent: vi.fn(), updateAgentAuthTokens: vi.fn(), getRuntimeAgentState: vi.fn() };
-    const refreshCredentials = vi.fn().mockResolvedValue({ token: "fresh-bridge-token", agentAuthTokens: { "child-agent": "child-agent-token" } });
+    const refreshCredentials = vi.fn().mockResolvedValue({ token: "fresh-omni-token", agentAuthTokens: { "child-agent": "child-agent-token" } });
     const bridge = makeBridge({
       supabase,
       config: { serverId: "server-1", userId: "user-1", agentAuthTokens: { "parent-agent": "parent-agent-token" }, refreshCredentials },
@@ -687,9 +687,9 @@ describe("Bridge runtime routing", () => {
   });
 
   it("refreshes credentials before initializing newly inserted child agents", async () => {
-    const supabase = new supabaseMockState.BridgeFakeSupabaseClient();
+    const supabase = new supabaseMockState.OmniFakeSupabaseClient();
     const agentManager = { initAgent: vi.fn(), updateAgentAuthTokens: vi.fn(), getRuntimeAgentState: vi.fn() };
-    const refreshCredentials = vi.fn().mockResolvedValue({ token: "fresh-bridge-token", agentAuthTokens: { "child-agent": "child-agent-token" } });
+    const refreshCredentials = vi.fn().mockResolvedValue({ token: "fresh-omni-token", agentAuthTokens: { "child-agent": "child-agent-token" } });
     const bridge = makeBridge({
       supabase,
       config: { serverId: "server-1", userId: "user-1", agentAuthTokens: {}, refreshCredentials },
@@ -715,7 +715,7 @@ describe("Bridge runtime routing", () => {
   });
 
   it("does not route stale archived child DMs to the parent co-member", async () => {
-    const supabase = new supabaseMockState.BridgeFakeSupabaseClient();
+    const supabase = new supabaseMockState.OmniFakeSupabaseClient();
     supabase.channelMembers.push(
       { channel_id: "child-dm", member_id: "parent-agent", member_type: "agent" },
       { channel_id: "child-dm", member_id: "child-agent", member_type: "agent" },
@@ -754,7 +754,7 @@ describe("Bridge runtime routing", () => {
   });
 
   it("does not mark first child DM messages processed when child credentials are missing", async () => {
-    const supabase = new supabaseMockState.BridgeFakeSupabaseClient();
+    const supabase = new supabaseMockState.OmniFakeSupabaseClient();
     supabase.channelMembers.push(
       { channel_id: "child-dm", member_id: "parent-agent", member_type: "agent" },
       { channel_id: "child-dm", member_id: "child-agent", member_type: "agent" },
@@ -792,7 +792,7 @@ describe("Bridge runtime routing", () => {
   });
 
   it("does not mark child DM messages processed when membership refresh fails", async () => {
-    const supabase = new supabaseMockState.BridgeFakeSupabaseClient();
+    const supabase = new supabaseMockState.OmniFakeSupabaseClient();
     supabase.tableErrors.set("channel_members", { message: "membership refresh failed" });
     const bridge = makeBridge({
       supabase,
@@ -828,7 +828,7 @@ describe("Bridge runtime routing", () => {
   it("retries child DM routing asynchronously when credentials arrive after synchronous refreshes", async () => {
     vi.useFakeTimers();
     try {
-      const supabase = new supabaseMockState.BridgeFakeSupabaseClient();
+      const supabase = new supabaseMockState.OmniFakeSupabaseClient();
       supabase.channelMembers.push(
         { channel_id: "child-dm", member_id: "parent-agent", member_type: "agent" },
         { channel_id: "child-dm", member_id: "child-agent", member_type: "agent" },
@@ -837,9 +837,9 @@ describe("Bridge runtime routing", () => {
       supabase.channels.push({ id: "child-dm", name: "dm-child-agent", type: "dm" });
       const agentManager = { sendToAgent: vi.fn(), initAgent: vi.fn(), updateAgentAuthTokens: vi.fn(), getRuntimeAgentState: vi.fn() };
       const refreshCredentials = vi.fn()
-        .mockResolvedValueOnce({ token: "fresh-bridge-token", agentAuthTokens: {} })
-        .mockResolvedValueOnce({ token: "fresh-bridge-token", agentAuthTokens: {} })
-        .mockResolvedValueOnce({ token: "fresh-bridge-token", agentAuthTokens: { "child-agent": "child-agent-token" } });
+        .mockResolvedValueOnce({ token: "fresh-omni-token", agentAuthTokens: {} })
+        .mockResolvedValueOnce({ token: "fresh-omni-token", agentAuthTokens: {} })
+        .mockResolvedValueOnce({ token: "fresh-omni-token", agentAuthTokens: { "child-agent": "child-agent-token" } });
       const bridge = makeBridge({
         supabase,
         config: { serverId: "server-1", userId: "user-1", agentAuthTokens: { "parent-agent": "parent-agent-token" }, refreshCredentials },
@@ -882,7 +882,7 @@ describe("Bridge runtime routing", () => {
   });
 
   it("retries child DM routing after a second credential refresh succeeds", async () => {
-    const supabase = new supabaseMockState.BridgeFakeSupabaseClient();
+    const supabase = new supabaseMockState.OmniFakeSupabaseClient();
     supabase.channelMembers.push(
       { channel_id: "child-dm", member_id: "parent-agent", member_type: "agent" },
       { channel_id: "child-dm", member_id: "child-agent", member_type: "agent" },
@@ -891,8 +891,8 @@ describe("Bridge runtime routing", () => {
     supabase.channels.push({ id: "child-dm", name: "dm-child-agent", type: "dm" });
     const agentManager = { sendToAgent: vi.fn(), initAgent: vi.fn(), updateAgentAuthTokens: vi.fn(), getRuntimeAgentState: vi.fn() };
     const refreshCredentials = vi.fn()
-      .mockResolvedValueOnce({ token: "fresh-bridge-token", agentAuthTokens: {} })
-      .mockResolvedValueOnce({ token: "fresh-bridge-token", agentAuthTokens: { "child-agent": "child-agent-token" } });
+      .mockResolvedValueOnce({ token: "fresh-omni-token", agentAuthTokens: {} })
+      .mockResolvedValueOnce({ token: "fresh-omni-token", agentAuthTokens: { "child-agent": "child-agent-token" } });
     const bridge = makeBridge({
       supabase,
       config: { serverId: "server-1", userId: "user-1", agentAuthTokens: { "parent-agent": "parent-agent-token" }, refreshCredentials },
@@ -927,7 +927,7 @@ describe("Bridge runtime routing", () => {
   });
 
   it("refreshes channel membership before routing human channel broadcasts", async () => {
-    const supabase = new supabaseMockState.BridgeFakeSupabaseClient();
+    const supabase = new supabaseMockState.OmniFakeSupabaseClient();
     supabase.channelMembers.push(
       { channel_id: "channel-1", member_id: "agent-1", member_type: "agent" },
       { channel_id: "channel-1", member_id: "agent-2", member_type: "agent" },
@@ -960,7 +960,7 @@ describe("Bridge runtime routing", () => {
   });
 
   it("catches up missed human channel messages when realtime misses an insert", async () => {
-    const supabase = new supabaseMockState.BridgeFakeSupabaseClient();
+    const supabase = new supabaseMockState.OmniFakeSupabaseClient();
     supabase.messages.push(
       { ...msg, id: "msg-before-catchup", content: "old ping", created_at: "2026-05-28T02:59:00.000Z" },
       { ...msg, id: "msg-missed-human", content: "roundtable please", created_at: "2026-05-28T03:01:00.000Z" },
@@ -997,7 +997,7 @@ describe("Bridge runtime routing", () => {
   });
 
   it("catches up missed agent direct mentions when realtime misses an insert", async () => {
-    const supabase = new supabaseMockState.BridgeFakeSupabaseClient();
+    const supabase = new supabaseMockState.OmniFakeSupabaseClient();
     supabase.messages.push({
       ...msg,
       id: "msg-missed-agent-mention",
@@ -1037,7 +1037,7 @@ describe("Bridge runtime routing", () => {
   });
 
   it("routes active agents when stale memberships reference archived owned agents", async () => {
-    const supabase = new supabaseMockState.BridgeFakeSupabaseClient();
+    const supabase = new supabaseMockState.OmniFakeSupabaseClient();
     supabase.channelMembers.push(
       { channel_id: "channel-1", member_id: "agent-1", member_type: "agent" },
       { channel_id: "channel-1", member_id: "archived-agent", member_type: "agent" },
@@ -1069,7 +1069,7 @@ describe("Bridge runtime routing", () => {
   });
 
   it("routes active agents when stale memberships reference agents from another server", async () => {
-    const supabase = new supabaseMockState.BridgeFakeSupabaseClient();
+    const supabase = new supabaseMockState.OmniFakeSupabaseClient();
     supabase.channelMembers.push(
       { channel_id: "channel-1", member_id: "agent-1", member_type: "agent" },
       { channel_id: "channel-1", member_id: "other-server-agent", member_type: "agent" },
@@ -1101,7 +1101,7 @@ describe("Bridge runtime routing", () => {
   });
 
   it("routes to owned agents when shared channels include foreign agents", async () => {
-    const supabase = new supabaseMockState.BridgeFakeSupabaseClient();
+    const supabase = new supabaseMockState.OmniFakeSupabaseClient();
     supabase.channelMembers.push(
       { channel_id: "channel-1", member_id: "agent-1", member_type: "agent" },
       { channel_id: "channel-1", member_id: "foreign-agent", member_type: "agent" },
@@ -1140,7 +1140,7 @@ describe("Bridge runtime routing", () => {
     });
     const executeRoutingPlan = vi.fn().mockResolvedValue({ deliveredAgentIds: ["agent-1"], failedAgentIds: [] });
     let refreshCount = 0;
-    let bridge: Bridge & Record<string, any>;
+    let bridge: Omni & Record<string, any>;
     const refreshChannelAgents = vi.fn(async () => {
       refreshCount += 1;
       if (refreshCount === 1) await firstRefreshGate;
@@ -1235,7 +1235,7 @@ describe("Bridge runtime routing", () => {
     });
     let refreshCount = 0;
     let buildCount = 0;
-    let bridge: Bridge & Record<string, any>;
+    let bridge: Omni & Record<string, any>;
     const executeRoutingPlan = vi.fn().mockResolvedValue({ deliveredAgentIds: ["agent-2"], failedAgentIds: [] });
     const buildRoutingPlan = vi.fn(async () => {
       buildCount += 1;
@@ -1289,7 +1289,7 @@ describe("Bridge runtime routing", () => {
       releaseFirstRefresh = resolve;
     });
     let refreshCount = 0;
-    let bridge: Bridge & Record<string, any>;
+    let bridge: Omni & Record<string, any>;
     const executeRoutingPlan = vi.fn()
       .mockResolvedValueOnce({ deliveredAgentIds: [], failedAgentIds: ["agent-2"] })
       .mockResolvedValueOnce({ deliveredAgentIds: ["agent-2"], failedAgentIds: [] });
@@ -1474,7 +1474,7 @@ describe("Bridge runtime routing", () => {
 
   it("sends delivery ack only after runtime accepts custody", async () => {
     const delivery = makeDelivery();
-    const supabase = new supabaseMockState.BridgeFakeSupabaseClient();
+    const supabase = new supabaseMockState.OmniFakeSupabaseClient();
     const accept = vi.fn().mockResolvedValue({
       id: "delivery-1",
       agentId: "agent-1",
@@ -1519,7 +1519,7 @@ describe("Bridge runtime routing", () => {
 
   it("does not send delivery ack or completion when runtime rejects custody", async () => {
     const delivery = makeDelivery();
-    const supabase = new supabaseMockState.BridgeFakeSupabaseClient();
+    const supabase = new supabaseMockState.OmniFakeSupabaseClient();
     const accept = vi.fn().mockResolvedValue({
       id: "delivery-1",
       agentId: "agent-1",
@@ -1556,7 +1556,7 @@ describe("Bridge runtime routing", () => {
 
   it("queues busy agent manager deliveries as gated custody without immediate delivery", async () => {
     const delivery = makeDelivery();
-    const supabase = new supabaseMockState.BridgeFakeSupabaseClient();
+    const supabase = new supabaseMockState.OmniFakeSupabaseClient();
     const supervisor = new AgentSupervisor();
     const store = new InMemoryDeliveryLedgerStore();
     const driver = { deliver: vi.fn(), setCurrentDelivery: vi.fn() };
@@ -1624,7 +1624,7 @@ describe("Bridge runtime routing", () => {
 
   it("cold-starts stopped daemon v2 agents through queued_starting custody", async () => {
     const delivery = makeDelivery();
-    const supabase = new supabaseMockState.BridgeFakeSupabaseClient();
+    const supabase = new supabaseMockState.OmniFakeSupabaseClient();
     const supervisor = new AgentSupervisor();
     const store = new InMemoryDeliveryLedgerStore();
     const driver = { deliver: vi.fn(), setCurrentDelivery: vi.fn() };
@@ -1697,7 +1697,7 @@ describe("Bridge runtime routing", () => {
       makeDeliveryForAgent("agent-5", "Epsilon"),
       makeDeliveryForAgent("agent-6", "Zeta"),
     ];
-    const supabase = new supabaseMockState.BridgeFakeSupabaseClient();
+    const supabase = new supabaseMockState.OmniFakeSupabaseClient();
     const supervisor = new AgentSupervisor();
     const store = new InMemoryDeliveryLedgerStore();
     const driver = { deliver: vi.fn(), setCurrentDelivery: vi.fn() };
@@ -1747,7 +1747,7 @@ describe("Bridge runtime routing", () => {
   });
 
   it("keeps accepted reminder custody fired when ack broadcast fails", async () => {
-    const supabase = new supabaseMockState.BridgeFakeSupabaseClient();
+    const supabase = new supabaseMockState.OmniFakeSupabaseClient();
     const accept = vi.fn().mockResolvedValue({
       id: "reminder-delivery-1",
       agentId: "agent-1",
@@ -1801,13 +1801,13 @@ describe("Bridge runtime routing", () => {
     process.env.ZANO_DAEMON_V2 = "1";
     supabaseMockState.clients.length = 0;
     try {
-      const bridge = new Bridge({
+      const bridge = new Omni({
         supabaseUrl: "http://local.supabase",
         supabaseKey: "anon-key",
         authToken: "initial-token",
         userId: "user-1",
         serverId: "server-1",
-        agentsDir: "/tmp/zano-bridge-runtime-test-agents",
+        agentsDir: "/tmp/omni-runtime-test-agents",
         hostname: "machine-1",
       });
       (bridge as any).agentManager.deliverRuntimeMessage = vi.fn().mockResolvedValue(undefined);

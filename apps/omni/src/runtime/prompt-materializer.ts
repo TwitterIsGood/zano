@@ -23,7 +23,7 @@ export interface PromptMaterializeInput {
   hostname: string;
   platform: string;
   workDir: string;
-  bridgeVersion: string;
+  omniVersion: string;
   model: string;
   runtimeControlMcpUrl: string;
 }
@@ -85,7 +85,7 @@ export class PromptMaterializer {
       `- Hostname: ${input.hostname}`,
       `- Platform: ${input.platform}`,
       `- Workdir: ${input.workDir}`,
-      `- Bridge version: ${input.bridgeVersion}`,
+      `- Omni version: ${input.omniVersion}`,
       `- Runtime model: ${input.model}`,
       "",
       "## Communication — zano CLI ONLY",

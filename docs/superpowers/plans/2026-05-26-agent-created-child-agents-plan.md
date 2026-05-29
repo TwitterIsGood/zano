@@ -4,7 +4,7 @@
 
 **Goal:** Let a parent Agent directly create a full child Agent for large separable work, without human confirmation, while preserving ordinary Agent behavior, provenance, hierarchy, auditability, and guardrails.
 
-**Architecture:** Child Agents are first-class rows in `agents`, not hidden workers. A DB RPC is the atomic source of truth for Agent-originated child creation; the CLI calls that RPC, the bridge launches the resulting Agent like any other Agent, and the web UI renders parent/child hierarchy and provenance.
+**Architecture:** Child Agents are first-class rows in `agents`, not hidden workers. A DB RPC is the atomic source of truth for Agent-originated child creation; the CLI calls that RPC, Omni launches the resulting Agent like any other Agent, and the web UI renders parent/child hierarchy and provenance.
 
 **Tech Stack:** Supabase Postgres SQL/RLS/RPC, TypeScript, Next.js 16, Supabase Realtime, pnpm workspaces, Vitest for CLI/bridge tests, browser verification for UI.
 
@@ -42,10 +42,10 @@
 
 ### Bridge
 
-- `apps/bridge/src/bridge.ts` — verify new child Agents are discovered, token-refreshed, and initialized without daemon restart.
-- `apps/bridge/src/agent-manager.ts` — verify archived Agents do not start and child runtime prompt includes provenance context.
-- `apps/bridge/src/system-prompt.ts` — teach parent Agents when/how to create/supervise child Agents.
-- `apps/bridge/src/a2a-protocol.test.ts` and `apps/bridge/src/runtime/prompt-materializer.test.ts` — prompt regression coverage.
+- `apps/omni/src/bridge.ts` — verify new child Agents are discovered, token-refreshed, and initialized without daemon restart.
+- `apps/omni/src/agent-manager.ts` — verify archived Agents do not start and child runtime prompt includes provenance context.
+- `apps/omni/src/system-prompt.ts` — teach parent Agents when/how to create/supervise child Agents.
+- `apps/omni/src/a2a-protocol.test.ts` and `apps/omni/src/runtime/prompt-materializer.test.ts` — prompt regression coverage.
 
 ### Web
 
@@ -840,13 +840,13 @@ git commit -m "feat: add agent child creation cli"
 ## Task 4: Teach Agents When and How to Create Children
 
 **Files:**
-- Modify: `apps/bridge/src/system-prompt.ts`
-- Modify: `apps/bridge/src/a2a-protocol.test.ts`
-- Modify: `apps/bridge/src/runtime/prompt-materializer.test.ts`
+- Modify: `apps/omni/src/system-prompt.ts`
+- Modify: `apps/omni/src/a2a-protocol.test.ts`
+- Modify: `apps/omni/src/runtime/prompt-materializer.test.ts`
 
 - [ ] **Step 1: Add prompt regression test**
 
-In `apps/bridge/src/a2a-protocol.test.ts`, add:
+In `apps/omni/src/a2a-protocol.test.ts`, add:
 
 ```ts
 it("teaches child agent creation with supervision guardrails", () => {
@@ -863,12 +863,12 @@ it("teaches child agent creation with supervision guardrails", () => {
 });
 ```
 
-Run: `pnpm --filter @fehey/zano-bridge test -- a2a-protocol.test.ts`
+Run: `pnpm --filter @biang/omni test -- a2a-protocol.test.ts`
 Expected: fails until prompt is updated.
 
 - [ ] **Step 2: Add prompt section**
 
-In `apps/bridge/src/system-prompt.ts`, add after task/reminder commands:
+In `apps/omni/src/system-prompt.ts`, add after task/reminder commands:
 
 ```md
 # Child Agents
@@ -899,7 +899,7 @@ Rules:
 
 - [ ] **Step 3: Add materializer regression assertion**
 
-In `apps/bridge/src/runtime/prompt-materializer.test.ts`, add:
+In `apps/omni/src/runtime/prompt-materializer.test.ts`, add:
 
 ```ts
 expect(content).toContain("Child Agents");
@@ -909,13 +909,13 @@ expect(content).toContain("You remain responsible for supervising child agents")
 
 - [ ] **Step 4: Run bridge tests**
 
-Run: `pnpm --filter @fehey/zano-bridge test`
+Run: `pnpm --filter @biang/omni test`
 Expected: all bridge tests pass.
 
 - [ ] **Step 5: Commit checkpoint if explicitly requested**
 
 ```bash
-git add apps/bridge/src/system-prompt.ts apps/bridge/src/a2a-protocol.test.ts apps/bridge/src/runtime/prompt-materializer.test.ts
+git add apps/omni/src/system-prompt.ts apps/omni/src/a2a-protocol.test.ts apps/omni/src/runtime/prompt-materializer.test.ts
 git commit -m "feat: teach agents child creation guardrails"
 ```
 
@@ -924,14 +924,14 @@ git commit -m "feat: teach agents child creation guardrails"
 ## Task 5: Ensure Bridge Can Launch Post-Connect Child Agents
 
 **Files:**
-- Modify: `apps/bridge/src/bridge.ts`
-- Modify: `apps/bridge/src/agent-manager.ts`
-- Modify: `apps/web/src/app/api/bridge/connect/route.ts`
-- Test: `apps/bridge/src/bridge-runtime.test.ts` or new `apps/bridge/src/bridge-child-agent.test.ts`
+- Modify: `apps/omni/src/bridge.ts`
+- Modify: `apps/omni/src/agent-manager.ts`
+- Modify: `apps/web/src/app/api/omni/connect/route.ts`
+- Test: `apps/omni/src/bridge-runtime.test.ts` or new `apps/omni/src/bridge-child-agent.test.ts`
 
 - [ ] **Step 1: Write bridge test for new child Agent token availability**
 
-Create `apps/bridge/src/bridge-child-agent.test.ts` with a test scaffold that simulates receiving a new Agent after startup and asserts the bridge does not start it without an agent-scoped token:
+Create `apps/omni/src/bridge-child-agent.test.ts` with a test scaffold that simulates receiving a new Agent after startup and asserts Omni does not start it without an agent-scoped token:
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -951,19 +951,19 @@ describe("child agent runtime bootstrap", () => {
 });
 ```
 
-This first test is intentionally structural. Extend it once bridge token-refresh seams are identified.
+This first test is intentionally structural. Extend it once Omni token-refresh seams are identified.
 
-Run: `pnpm --filter @fehey/zano-bridge test -- bridge-child-agent.test.ts`
+Run: `pnpm --filter @biang/omni test -- bridge-child-agent.test.ts`
 Expected: passes as scaffold; subsequent steps add real assertions.
 
 - [ ] **Step 2: Add bridge-owned token refresh route**
 
-In `apps/web/src/app/api/bridge/connect/route.ts`, add a response field or endpoint that lets a bridge refresh tokens for owned Agents without exposing service-role keys to runtime processes. Recommended endpoint shape:
+In `apps/web/src/app/api/omni/connect/route.ts`, add a response field or endpoint that lets Omni refresh tokens for owned Agents without exposing service-role keys to runtime processes. Recommended endpoint shape:
 
 ```ts
-// POST /api/bridge/agents/token
+// POST /api/omni/agents/token
 // body: { server_id: string; agent_id: string }
-// auth: bridge machine key / bridge auth token only
+// auth: bridge machine key / Omni auth token only
 // response: { agent_id: string; token_file_payload: string } or { token: string }
 ```
 
@@ -971,7 +971,7 @@ Do not send service-role keys to the Agent process. Token must be agent-scoped.
 
 - [ ] **Step 3: Update bridge new-agent handler**
 
-In `apps/bridge/src/bridge.ts`, when `subscribeToNewAgents()` sees a new Agent:
+In `apps/omni/src/bridge.ts`, when `subscribeToNewAgents()` sees a new Agent:
 
 ```ts
 await this.refreshAgentAuthToken(agent.id);
@@ -984,7 +984,7 @@ The exact function names must follow existing bridge patterns. The key requireme
 
 - [ ] **Step 4: Ensure archived Agents do not start**
 
-In `apps/bridge/src/bridge.ts` `loadAgents()` query or post-filter, exclude archived Agents:
+In `apps/omni/src/bridge.ts` `loadAgents()` query or post-filter, exclude archived Agents:
 
 ```ts
 .eq("owner_id", this.config.userId)
@@ -995,13 +995,13 @@ If generated types do not yet include `archived_at`, update local interfaces in 
 
 - [ ] **Step 5: Run bridge runtime tests**
 
-Run: `pnpm --filter @fehey/zano-bridge test`
+Run: `pnpm --filter @biang/omni test`
 Expected: all bridge tests pass.
 
 - [ ] **Step 6: Commit checkpoint if explicitly requested**
 
 ```bash
-git add apps/bridge/src/bridge.ts apps/bridge/src/agent-manager.ts apps/bridge/src/bridge-child-agent.test.ts apps/web/src/app/api/bridge/connect/route.ts
+git add apps/omni/src/bridge.ts apps/omni/src/agent-manager.ts apps/omni/src/bridge-child-agent.test.ts apps/web/src/app/api/omni/connect/route.ts
 git commit -m "feat: bootstrap child agents after daemon connect"
 ```
 
@@ -1197,7 +1197,7 @@ function renderAgentNode(node: AgentTreeNode): React.ReactNode {
               if (act?.label && act.activity !== "idle") {
                 return act.detail ? `${act.label}: ${act.detail}` : act.label;
               }
-              return bridgeOnline ? "Online" : "Offline";
+              return omniOnline ? "Online" : "Offline";
             })()}
           />
         </div>
@@ -1337,7 +1337,7 @@ git commit -m "feat: show child agent provenance"
 **Files:**
 - Modify: `apps/web/src/app/api/agents/[id]/route.ts`
 - Modify: `apps/web/src/components/agent-settings-panel.tsx`
-- Modify: `apps/bridge/src/bridge.ts`
+- Modify: `apps/omni/src/bridge.ts`
 
 - [ ] **Step 1: Add archive API behavior**
 
@@ -1386,7 +1386,7 @@ Run:
 
 ```bash
 pnpm --filter @zano/web exec tsc --noEmit
-pnpm --filter @fehey/zano-bridge test
+pnpm --filter @biang/omni test
 ```
 
 Expected: both pass.
@@ -1401,7 +1401,7 @@ Archive a child Agent in a test workspace. Expected:
 - [ ] **Step 6: Commit checkpoint if explicitly requested**
 
 ```bash
-git add apps/web/src/app/api/agents/[id]/route.ts apps/web/src/components/agent-settings-panel.tsx apps/bridge/src/bridge.ts
+git add apps/web/src/app/api/agents/[id]/route.ts apps/web/src/components/agent-settings-panel.tsx apps/omni/src/bridge.ts
 git commit -m "feat: archive child agents safely"
 ```
 
@@ -1492,7 +1492,7 @@ Run:
 
 ```bash
 pnpm --filter @fehey/zano-cli test
-pnpm --filter @fehey/zano-bridge test
+pnpm --filter @biang/omni test
 pnpm --filter @zano/web exec tsc --noEmit
 git diff --check
 ```

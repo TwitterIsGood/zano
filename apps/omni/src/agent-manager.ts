@@ -97,7 +97,7 @@ export interface AgentManagerRuntimeOptions {
   hostname: string;
   platform: string;
   arch: string;
-  bridgeVersion: string;
+  omniVersion: string;
   runtimeControlMcpUrl?: string;
   credentialProxy?: AgentManagerCredentialProxyOptions;
 }
@@ -399,7 +399,7 @@ export class AgentManager {
           agent_id: agentId,
           session_id: agentProc.sessionId,
           activation_reason: {
-            source: "bridge_message",
+            source: "omni_message",
             input_preview: redactRuntimeText(userMessage).slice(0, 500),
           },
           status: "running",
@@ -671,7 +671,7 @@ export class AgentManager {
     agentProc.pendingText = "";
   }
 
-  /** Save session ID to Supabase so it survives bridge restarts */
+  /** Save session ID to Supabase so it survives Omni restarts */
   private async saveSessionId(agentId: string, sessionId: string) {
     await this.supabase
       .from("agents")
@@ -713,7 +713,7 @@ export class AgentManager {
       hostname: this.runtimeOptions.hostname,
       platform: this.runtimeOptions.platform,
       workDir: session.workDir,
-      bridgeVersion: this.runtimeOptions.bridgeVersion,
+      omniVersion: this.runtimeOptions.omniVersion,
       model,
       runtimeControlMcpUrl: this.runtimeOptions.runtimeControlMcpUrl ?? DEFAULT_RUNTIME_CONTROL_MCP_URL,
     });
@@ -1224,8 +1224,8 @@ ${agent.description || agent.display_name}
   private prepareCliTransport(agentId: string, session: AgentSession, launchId: string): PreparedCliTransport {
     let cliPath: string;
     let mode: "node" | "tsx";
-    const bridgeRoot = resolve(__dirname, "..");
-    const localCliPath = resolve(bridgeRoot, "..", "..", "packages", "cli", "src", "index.ts");
+    const omniRoot = resolve(__dirname, "..");
+    const localCliPath = resolve(omniRoot, "..", "..", "packages", "cli", "src", "index.ts");
 
     if (existsSync(localCliPath)) {
       cliPath = localCliPath;

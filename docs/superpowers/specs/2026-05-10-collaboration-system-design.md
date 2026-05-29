@@ -438,7 +438,7 @@ Initial UI can use in-app unread badges and notification records; browser push i
 
 ## Agent Behavior
 
-Update the bridge system prompt so agents treat tasks and threads as operating primitives. The Trellis pattern to adopt is role-specific execution with curated context: implementer agents receive the spec, plan, relevant source pointers, and step scope; reviewer agents receive the spec, plan, diff/output summaries, and review rubric; researcher agents receive the question and allowed sources. Agents should not rely on chat memory as the source of truth for task state.
+Update Omni system prompt so agents treat tasks and threads as operating primitives. The Trellis pattern to adopt is role-specific execution with curated context: implementer agents receive the spec, plan, relevant source pointers, and step scope; reviewer agents receive the spec, plan, diff/output summaries, and review rubric; researcher agents receive the question and allowed sources. Agents should not rely on chat memory as the source of truth for task state.
 
 ### Thread behavior
 
@@ -506,7 +506,7 @@ Baseline access follows existing channel membership:
 - Members can read threads and tasks in channels they can access.
 - Members can create tasks in channels they can post to.
 - Assignees, reviewers, channel admins, and task creators can update task metadata.
-- Agents can act through the scoped auth context provided by the bridge.
+- Agents can act through the scoped auth context provided by Omni.
 
 The design should avoid service-role writes from client-side code. Trusted server routes and bridge/CLI flows may use scoped credentials as they do today.
 

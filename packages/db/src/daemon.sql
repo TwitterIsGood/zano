@@ -166,7 +166,8 @@ alter table public.daemon_start_queue enable row level security;
 alter table public.daemon_trace_events enable row level security;
 
 drop policy if exists "Bridge can manage daemon deliveries" on public.daemon_deliveries;
-create policy "Bridge can manage daemon deliveries"
+drop policy if exists "Omni can manage daemon deliveries" on public.daemon_deliveries;
+create policy "Omni can manage daemon deliveries"
   on public.daemon_deliveries
   for all
   using (workspace_id = zano_private.current_actor_server_id() and zano_private.current_actor_scope() = 'bridge')
@@ -179,7 +180,8 @@ create policy "Server members can read daemon deliveries"
   using (zano_private.actor_is_server_member(workspace_id));
 
 drop policy if exists "Bridge can manage daemon runtime sessions" on public.daemon_runtime_sessions;
-create policy "Bridge can manage daemon runtime sessions"
+drop policy if exists "Omni can manage daemon runtime sessions" on public.daemon_runtime_sessions;
+create policy "Omni can manage daemon runtime sessions"
   on public.daemon_runtime_sessions
   for all
   using (workspace_id = zano_private.current_actor_server_id() and zano_private.current_actor_scope() = 'bridge')
@@ -192,7 +194,8 @@ create policy "Server members can read daemon runtime sessions"
   using (zano_private.actor_is_server_member(workspace_id));
 
 drop policy if exists "Bridge can manage daemon start queue" on public.daemon_start_queue;
-create policy "Bridge can manage daemon start queue"
+drop policy if exists "Omni can manage daemon start queue" on public.daemon_start_queue;
+create policy "Omni can manage daemon start queue"
   on public.daemon_start_queue
   for all
   using (workspace_id = zano_private.current_actor_server_id() and zano_private.current_actor_scope() = 'bridge')
@@ -205,7 +208,8 @@ create policy "Server members can read daemon start queue"
   using (zano_private.actor_is_server_member(workspace_id));
 
 drop policy if exists "Bridge can manage daemon trace events" on public.daemon_trace_events;
-create policy "Bridge can manage daemon trace events"
+drop policy if exists "Omni can manage daemon trace events" on public.daemon_trace_events;
+create policy "Omni can manage daemon trace events"
   on public.daemon_trace_events
   for all
   using (workspace_id = zano_private.current_actor_server_id() and zano_private.current_actor_scope() = 'bridge')

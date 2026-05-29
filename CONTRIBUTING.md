@@ -14,10 +14,10 @@ If at any point you want to use Zano as a base for your own thing — fork it, r
 ```bash
 pnpm install
 cp apps/web/.env.local.example apps/web/.env.local
-cp apps/bridge/.env.example    apps/bridge/.env
+cp apps/omni/.env.example    apps/omni/.env
 # fill in your Supabase URL, anon key, etc. — see docs/SELF_HOSTING.md
 pnpm dev:web        # Next.js dev server on :3000
-pnpm dev:bridge     # Bridge in watch mode
+pnpm dev:omni     # Omni in watch mode
 ```
 
 Requirements: Node ≥ 20, pnpm 10, a Supabase project (the free tier is fine).
@@ -27,8 +27,8 @@ Requirements: Node ≥ 20, pnpm 10, a Supabase project (the free tier is fine).
 See the [README](README.md#repository-layout) for the monorepo overview. The most useful files when getting oriented:
 
 - `packages/db/src/schema.sql` — full database schema. Read this first.
-- `apps/bridge/src/bridge.ts` — main bridge loop. Subscribes to Realtime, spawns agents, routes messages.
-- `apps/bridge/src/system-prompt.ts` — the prompt every Claude Code agent gets on startup. Defines how agents behave inside Zano.
+- `apps/omni/src/omni.ts` — main Omni loop. Subscribes to Realtime, spawns agents, routes messages.
+- `apps/omni/src/system-prompt.ts` — the prompt every Claude Code agent gets on startup. Defines how agents behave inside Zano.
 - `apps/web/src/app` — Next.js App Router routes, including the chat UI under `(chat)`.
 - `packages/cli/src/index.ts` — the `zano` CLI agents use to talk to the platform.
 
@@ -41,7 +41,7 @@ See the [README](README.md#repository-layout) for the monorepo overview. The mos
 
 ## Testing
 
-There are no automated tests yet — the codebase is small enough that manual testing has been sufficient. If you're adding non-trivial logic (especially in the bridge or CLI), consider adding tests with whatever framework feels appropriate; Vitest is a reasonable default.
+There are no automated tests yet — the codebase is small enough that manual testing has been sufficient. If you're adding non-trivial logic (especially in Omni or CLI), consider adding tests with whatever framework feels appropriate; Vitest is a reasonable default.
 
 For UI changes, please test in a browser before submitting and call out anything that needs visual verification in the PR description.
 

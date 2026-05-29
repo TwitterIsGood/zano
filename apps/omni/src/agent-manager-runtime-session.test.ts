@@ -455,7 +455,7 @@ describe("AgentManager runtime stream boundary handling", () => {
         hostname: "host-1",
         platform: "darwin",
         arch: "arm64",
-        bridgeVersion: "test",
+        omniVersion: "test",
       },
       {
         updateState: async (_id: string, _state: RuntimeSessionState, patch: Record<string, unknown>) => {
@@ -505,7 +505,7 @@ describe("AgentManager runtime stream boundary handling", () => {
         hostname: "host-1",
         platform: "darwin",
         arch: "arm64",
-        bridgeVersion: "test",
+        omniVersion: "test",
       },
       {
         updateState: async (_id: string, _state: RuntimeSessionState, patch: Record<string, unknown>) => {
@@ -687,13 +687,13 @@ describe("AgentManager runtime stream boundary handling", () => {
       await (manager as never as {
         beginAutonomousTurn: (agentId: string, agentProc: typeof agentProc, session: typeof session, userMessage: string) => Promise<void>;
         recordAutonomousToolEvent: (agentId: string, agentProc: typeof agentProc, toolName: string, inputSummary: string) => Promise<void>;
-      }).beginAutonomousTurn("agent-1", agentProc, session, "please use access_token=fake-bridge-secret");
+      }).beginAutonomousTurn("agent-1", agentProc, session, "please use access_token=fake-omni-secret");
       await (manager as never as {
         recordAutonomousToolEvent: (agentId: string, agentProc: typeof agentProc, toolName: string, inputSummary: string) => Promise<void>;
       }).recordAutonomousToolEvent("agent-1", agentProc, "Bash", "Authorization: Bearer fake-tool-secret");
 
       expect(agentTurns[0].activation_reason.input_preview).toContain("access_token=[REDACTED]");
-      expect(agentTurns[0].activation_reason.input_preview).not.toContain("fake-bridge-secret");
+      expect(agentTurns[0].activation_reason.input_preview).not.toContain("fake-omni-secret");
       expect(toolEvents[0].input_summary).toContain("Authorization: Bearer [REDACTED]");
       expect(toolEvents[0].input_summary).not.toContain("fake-tool-secret");
     } finally {

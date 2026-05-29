@@ -38,7 +38,7 @@
 
 - `apps/web/**`
 - `packages/cli/**`
-- `apps/bridge/**`
+- `apps/omni/**`
 
 Those are handled by later plans.
 
@@ -73,7 +73,7 @@ Modify root `package.json` scripts to include `test`:
     "lint": "turbo lint",
     "test": "turbo test",
     "dev:web": "pnpm --filter @zano/web dev",
-    "dev:bridge": "pnpm --filter @zano/bridge dev",
+    "dev:omni": "pnpm --filter @zano/bridge dev",
     "db:generate": "pnpm --filter @zano/db generate",
     "db:push": "pnpm --filter @zano/db push"
   }

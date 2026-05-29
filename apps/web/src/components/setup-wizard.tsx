@@ -71,7 +71,7 @@ export function SetupWizard({ serverId, serverSlug, onComplete }: SetupWizardPro
     };
   }, []);
 
-  // Poll for bridge connection (check if the key's last_used_at becomes non-null)
+  // Poll for Omni connection (check if the key's last_used_at becomes non-null)
   useEffect(() => {
     if (step !== "connect" || !apiKey) return;
 
@@ -79,7 +79,7 @@ export function SetupWizard({ serverId, serverSlug, onComplete }: SetupWizardPro
 
     async function checkConnection() {
       try {
-        const res = await fetch(`/api/bridge/keys?server_id=${serverId}`);
+        const res = await fetch(`/api/omni/keys?server_id=${serverId}`);
         if (!res.ok) return;
         const { keys } = await res.json();
         const matchedKey = keys.find(
@@ -104,7 +104,7 @@ export function SetupWizard({ serverId, serverSlug, onComplete }: SetupWizardPro
   }, [step, apiKey, serverId]);
 
   const npxCommand = apiKey
-    ? `npx @fehey/zano-bridge --api-key ${apiKey}`
+    ? `npx @biang/omni --api-key ${apiKey}`
     : "";
 
   async function handleCopy() {
@@ -166,9 +166,9 @@ export function SetupWizard({ serverId, serverSlug, onComplete }: SetupWizardPro
               <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary mb-2">
                 <MonitorIcon className="size-6" />
               </div>
-              <DialogTitle className="text-center">Connect Your Machine</DialogTitle>
+              <DialogTitle className="text-center">Start Omni</DialogTitle>
               <DialogDescription className="text-center">
-                Run this command on your computer to connect it to Zano.
+                Run Omni on your computer to connect this workspace.
                 Make sure <a href="https://docs.anthropic.com/en/docs/claude-code/overview" target="_blank" rel="noopener" className="underline underline-offset-2">Claude Code</a> is installed first.
               </DialogDescription>
             </DialogHeader>
@@ -194,7 +194,7 @@ export function SetupWizard({ serverId, serverSlug, onComplete }: SetupWizardPro
                     </div>
                     <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground py-2">
                       <LoaderIcon className="size-3.5 animate-spin" />
-                      <span>Waiting for connection...</span>
+                      <span>Waiting for Omni...</span>
                     </div>
                   </>
                 ) : (
@@ -218,9 +218,9 @@ export function SetupWizard({ serverId, serverSlug, onComplete }: SetupWizardPro
               <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-green-500/10 text-green-500 mb-2">
                 <CheckIcon className="size-6" />
               </div>
-              <DialogTitle className="text-center">Machine Connected</DialogTitle>
+              <DialogTitle className="text-center">Omni Connected</DialogTitle>
               <DialogDescription className="text-center">
-                Your computer is now connected to Zano.
+                Omni is connected to this workspace.
               </DialogDescription>
             </DialogHeader>
             <DialogPanel>

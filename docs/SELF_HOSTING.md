@@ -1,12 +1,12 @@
 # Self-hosting Zano
 
-This guide walks you through running your own Zano server end-to-end: Supabase project, schema, web app deployment, and pointing the bridge at your own server.
+This guide walks you through running your own Zano server end-to-end: Supabase project, schema, web app deployment, and pointing Omni at your own server.
 
 ## What you'll end up with
 
 - A Supabase project (Postgres + Auth + Realtime) holding all your data.
 - The Zano web app running on a host of your choice (Vercel works out of the box; anything that runs Next.js 16 will do).
-- The bridge running on each machine where you want agents to live, talking to your own server instead of `zano.fehey.com`.
+- Omni running on each machine where you want agents to live, talking to your own server instead of `zano.fehey.com`.
 
 Total time: about 30–45 minutes for a first run.
 
@@ -37,7 +37,7 @@ Open the **SQL Editor** in your Supabase dashboard. Run the following files **in
 1. `schema.sql` — first run will fail at the `agents` table because it references `servers`. That's expected. Run it once to create `profiles` + the `handle_new_user` trigger, then continue.
 2. `servers.sql` — creates `servers` and `server_members`.
 3. `schema.sql` — run it again now that `servers` exists. The `profiles` block will skip (it's idempotent enough — or wrap your re-run with `DROP TABLE IF EXISTS` for the failed tables first). The remaining tables (`agents`, `channels`, `messages`, `tasks`) will create successfully.
-4. `machine-keys.sql` — adds the `machine_keys` table for bridge auth.
+4. `machine-keys.sql` — adds the `machine_keys` table for Omni auth.
 5. `onboarding-trigger.sql` — installs the trigger that auto-creates an Onboarding Agent for every new user.
 6. `fix-rls.sql` — adjusts a few RLS policies to avoid circular dependencies.
 
@@ -86,21 +86,21 @@ Open `http://localhost:3000`, sign up with an email, and confirm the onboarding 
 5. **Environment variables**:
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - `SUPABASE_SERVICE_ROLE_KEY` (used by `/api/bridge/connect` to mint session JWTs — keep it secret)
+   - `SUPABASE_SERVICE_ROLE_KEY` (used by `/api/omni/connect` to mint session JWTs — keep it secret)
 6. Deploy. Update Supabase **Site URL** + **Redirect URLs** to match your Vercel deployment URL once it's live.
 
 ### Option B — anywhere else
 
 The web app is a standard Next.js 16 app. Anything that runs Node 20+ and supports App Router will work: Render, Fly, Railway, your own VPS with `pnpm build && pnpm start`. Set the same env vars listed above.
 
-## 6. Connect the bridge to your server
+## 6. Connect Omni to your server
 
-The bridge runs on each machine where you want agents to live (typically your own laptop).
+Omni runs on each machine where you want agents to live (typically your own laptop).
 
 ### From npm (recommended)
 
 ```bash
-npx @fehey/zano-bridge \
+npx @biang/omni \
   --api-key zk_your_machine_key_here \
   --server-url https://zano.example.com
 ```
@@ -109,36 +109,36 @@ To get a machine API key, log into your web app, go to **Settings → Machines**
 
 ### From source
 
-If you're hacking on the bridge:
+If you're hacking on Omni:
 
 ```bash
-cp apps/bridge/.env.example apps/bridge/.env
+cp apps/omni/.env.example apps/omni/.env
 # fill in SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, ZANO_USER_ID
-pnpm dev:bridge
+pnpm dev:omni
 ```
 
 This bypasses the `--api-key` flow and connects directly with the service role key (only do this for local development — never in production).
 
-## Bridge trust model — pick your level
+## Omni trust model — pick your level
 
-The bridge is the most security-sensitive piece because it runs Claude Code on your machine with full local access. There are three ways to run it; pick based on how much you trust the published npm package.
+Omni is the most security-sensitive piece because it runs Claude Code on your machine with full local access. There are three ways to run it; pick based on how much you trust the published npm package.
 
-### Option 1 — Use the published `@fehey/zano-bridge` (recommended)
+### Option 1 — Use the published `@biang/omni` (recommended)
 
 This is what most self-hosters should do. Zero setup overhead, automatic bug fixes, works out of the box.
 
 ```bash
 export ZANO_SERVER_URL=https://zano.example.com
-npx @fehey/zano-bridge --api-key zk_your_key_here
+npx @biang/omni --api-key zk_your_key_here
 ```
 
 **Important**: pin a specific version in production rather than tracking `latest`. This protects you against supply-chain attacks if the maintainer's npm credentials are ever compromised:
 
 ```bash
-npx @fehey/zano-bridge@0.1.5 --api-key zk_your_key_here
+npx @biang/omni@0.1.5 --api-key zk_your_key_here
 ```
 
-You can find the latest version on [npm](https://www.npmjs.com/package/@fehey/zano-bridge).
+You can find the latest version on [npm](https://www.npmjs.com/package/@biang/omni).
 
 ### Option 2 — Build from source
 
@@ -147,38 +147,38 @@ For high-trust environments (regulated workloads, security audits, air-gapped ne
 ```bash
 git clone https://github.com/EryouHao/zano.git
 cd zano && pnpm install
-pnpm --filter @fehey/zano-bridge build
-node apps/bridge/dist/index.js \
+pnpm --filter @biang/omni build
+node apps/omni/dist/index.js \
   --api-key zk_your_key_here \
   --server-url https://zano.example.com
 ```
 
-You can wrap the last command in a shell alias or a systemd unit. This is also the path to take if you want to **fork the bridge** — change `apps/bridge/package.json`'s `name` to your own scope (e.g. `@yourorg/zano-bridge`), then `npm publish` from your fork. Nothing in the server requires the bridge to be the upstream package; it's a generic client.
+You can wrap the last command in a shell alias or a systemd unit. This is also the path to take if you want to **fork Omni** — change `apps/omni/package.json`'s `name` to your own scope (e.g. `@yourorg/omni`), then `npm publish` from your fork. Nothing in the server requires Omni to be the upstream package; it's a generic client.
 
 ### Option 3 — Vendor it into your infra
 
 For larger deployments, mirror the npm tarball into your own private registry (Verdaccio, JFrog, GitHub Packages, etc.) and install from there. Same `--server-url` flag, just a different install source. This also gives you reproducible installs even if the upstream package goes away.
 
-### Why the bridge isn't bundled with the server
+### Why Omni isn't bundled with the server
 
-A natural question: why not just have each Zano server host its own bridge installer (`curl my-zano.com/install.sh`)? Two reasons:
+A natural question: why not just have each Zano server host its own Omni installer (`curl my-zano.com/install.sh`)? Two reasons:
 
-1. The bridge is a **client tool** — it runs on the user's machine, not the server. Distributing it via npm means it gets the standard Node.js install/update story instead of a custom one.
-2. Self-hosters don't need to maintain a build pipeline just to give their users a bridge. The same `@fehey/zano-bridge` works against any compatible Zano server.
+1. Omni is a **client tool** — it runs on the user's machine, not the server. Distributing it via npm means it gets the standard Node.js install/update story instead of a custom one.
+2. Self-hosters don't need to maintain a build pipeline just to give their users Omni. The same `@biang/omni` works against any compatible Zano server.
 
-If you'd rather not depend on the upstream package long-term, Option 2 (fork & republish) is the migration path. The server has no opinion about which bridge connects to it as long as it speaks the `/api/bridge/connect` protocol.
+If you'd rather not depend on the upstream package long-term, Option 2 (fork & republish) is the migration path. The server has no opinion about which Omni connects to it as long as it speaks the `/api/omni/connect` protocol.
 
 ## 7. Verify end-to-end
 
-1. In the web UI, your machine should appear with a green "online" dot within a few seconds of starting the bridge.
+1. In the web UI, your machine should appear with a green "online" dot within a few seconds of starting Omni.
 2. Your default Onboarding Agent should also show as online.
 3. Send the agent a DM. It should reply within a few seconds.
 4. Try creating a task in a channel and have the agent claim it (`zano task claim` runs inside the agent's Claude Code process).
 
 If any of those steps don't work, check:
 
-- Bridge logs (the `npx` command stays in the foreground and prints connection status)
-- Supabase **Logs → Realtime** to confirm the bridge is subscribed
+- Omni logs (the `npx` command stays in the foreground and prints connection status)
+- Supabase **Logs → Realtime** to confirm Omni is subscribed
 - Browser console for the web app
 
 ## Updating
@@ -188,7 +188,7 @@ When you pull new commits from upstream:
 1. `pnpm install` to pick up dependency changes.
 2. Check `packages/db/src/` for new SQL files — if any were added or changed, apply them in your Supabase project. There's no migration tooling yet; check the diff manually.
 3. Redeploy the web app.
-4. The published `@fehey/zano-bridge` is updated separately on npm. If you've forked the bridge, build and deploy your fork.
+4. The published `@biang/omni` is updated separately on npm. If you've forked Omni, build and deploy your fork.
 
 ## Cost notes
 
@@ -202,9 +202,9 @@ For larger usage, expect to upgrade Supabase to Pro mainly for Realtime quotas.
 
 ## Troubleshooting
 
-**"Invalid API key" when starting the bridge** — confirm the key was copied in full (they're long), and confirm `--server-url` points at the same server where you generated the key.
+**"Invalid API key" when starting Omni** — confirm the key was copied in full (they're long), and confirm `--server-url` points at the same server where you generated the key.
 
-**Agent shows online but doesn't respond** — check that Claude Code is installed on the machine running the bridge (`which claude`) and that the bridge has access to your `~/.claude/` config.
+**Agent shows online but doesn't respond** — check that Claude Code is installed on the machine running Omni (`which claude`) and that Omni has access to your `~/.claude/` config.
 
 **RLS errors in the web app** — if you customized the schema, double-check `fix-rls.sql` was the last thing applied. The helper function in that file is what avoids the most common circular-dependency errors.
 

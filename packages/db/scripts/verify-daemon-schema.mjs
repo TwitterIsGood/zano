@@ -21,10 +21,10 @@ const checks = [
   { name: "start queue dedupe index", pattern: /create unique index if not exists daemon_start_queue_workspace_dedupe_idx/ },
   { name: "trace event delivery lookup index", pattern: /create index if not exists daemon_trace_events_workspace_delivery_idx/ },
   { name: "deliveries RLS enabled", pattern: /alter table public\.daemon_deliveries enable row level security/ },
-  { name: "bridge can manage deliveries policy", pattern: /create policy "Bridge can manage daemon deliveries"/ },
+  { name: "omni can manage deliveries policy", pattern: /create policy "Omni can manage daemon deliveries"/ },
   {
-    name: "drop bridge manage deliveries policy before create",
-    pattern: /drop policy if exists "Bridge can manage daemon deliveries" on public\.daemon_deliveries;\s*create policy "Bridge can manage daemon deliveries"/,
+    name: "drop omni manage deliveries policy before create",
+    pattern: /drop policy if exists "Omni can manage daemon deliveries" on public\.daemon_deliveries;\s*create policy "Omni can manage daemon deliveries"/,
   },
   {
     name: "drop member trace read policy before create",

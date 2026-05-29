@@ -388,15 +388,15 @@ export interface Reminder {
   updated_at: string;
 }
 
-// --- Bridge Protocol (WebSocket messages between Server <-> Bridge) ---
+// --- Omni Protocol (WebSocket messages between Server <-> Omni) ---
 
-export type ServerToBridgeMessage =
+export type ServerToOmniMessage =
   | { type: "new_message"; agentId: string; message: Message; channel: Channel }
   | { type: "start_agent"; agentConfig: AgentConfig }
   | { type: "stop_agent"; agentId: string }
   | { type: "ping" };
 
-export type BridgeToServerMessage =
+export type OmniToServerMessage =
   | { type: "agent_response"; agentId: string; channelId: string; content: string; threadParentId?: string }
   | { type: "agent_status"; agentId: string; status: Agent["status"] }
   | { type: "cli_command"; agentId: string; command: CliCommand }

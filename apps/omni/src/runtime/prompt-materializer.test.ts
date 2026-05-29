@@ -20,7 +20,7 @@ function validPromptInput(overrides: Partial<Parameters<PromptMaterializer["mate
     hostname: "host",
     platform: "darwin",
     workDir: join(mkdtempSync(join(tmpdir(), "zano-agent-workdir-")), "agent-1"),
-    bridgeVersion: "0.1.5",
+    omniVersion: "0.1.5",
     model: "opus",
     runtimeControlMcpUrl: "http://127.0.0.1:8732/runtime-control/mcp",
     ...overrides,

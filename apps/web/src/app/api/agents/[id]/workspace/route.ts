@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
-// GET /api/agents/[id]/workspace — validate access; files are read by the local bridge daemon.
+// GET /api/agents/[id]/workspace — validate access; files are read by the Omni runtime.
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -30,7 +30,7 @@ export async function GET(
   return NextResponse.json(
     {
       error: "remote_workspace",
-      message: "Workspace files are owned by the local bridge daemon. Start the bridge to browse them here.",
+      message: "Workspace files are owned by the Omni runtime. Start Omni to browse them here.",
     },
     { status: 422 }
   );

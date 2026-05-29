@@ -41,7 +41,7 @@
 | `apps/web/src/hooks/use-member-activity.ts` | Activity fetch/realtime hook |
 | `apps/web/src/components/member-workspace-tab.tsx` | Agent workspace tab |
 | `apps/web/src/components/member-tasks-tab.tsx` | Tasks tab |
-| `apps/bridge/src/agent-manager.ts` | Persist Agent runtime events |
+| `apps/omni/src/agent-manager.ts` | Persist Agent runtime events |
 
 ---
 
@@ -530,7 +530,7 @@ git commit -m "feat(api): record activity for task and agent lifecycle actions"
 ## Task 5: Persist Agent runtime activity from bridge
 
 **Files:**
-- Modify: `apps/bridge/src/agent-manager.ts`
+- Modify: `apps/omni/src/agent-manager.ts`
 
 - [ ] **Step 1: Add a helper that accepts explicit event type**
 
@@ -604,7 +604,7 @@ pnpm --filter @zano/bridge build
 - [ ] **Step 5: Commit**
 
 ```bash
-git add apps/bridge/src/agent-manager.ts
+git add apps/omni/src/agent-manager.ts
 git commit -m "feat(bridge): persist agent runtime activity"
 ```
 
@@ -725,7 +725,7 @@ Agent fields:
 - Model, if present.
 - Created date.
 - Creator/owner, using loaded profile when available; otherwise omit instead of showing a raw orphan ID unless the schema has no profile relation.
-- Runtime as `Claude Code` only if the current Agent data is backed by the bridge/Claude Code runtime.
+- Runtime as `Claude Code` only if the current Agent data is backed by Omni/Claude Code runtime.
 - Workspace/computer/daemon/environment variables only if real fields exist in the loaded data.
 
 Human fields:
@@ -894,7 +894,7 @@ Expected: corresponding `task.*` and `agent.*` rows exist.
 
 - [ ] **Step 4: Verify bridge runtime events**
 
-Run the bridge, message an Agent, and cause it to think/work/use a tool/output text.
+Run Omni, message an Agent, and cause it to think/work/use a tool/output text.
 
 Expected: `agent.started`, `agent.received_message`, `agent.thinking`, `agent.tool_use` or `agent.working`, `agent.output`, and idle/disconnect/error rows appear as appropriate without heartbeat spam.
 
@@ -913,7 +913,7 @@ pnpm build
 
 ```bash
 pnpm dev:web
-pnpm dev:bridge
+pnpm dev:omni
 ```
 
 - [ ] **Step 3: Browser checklist**

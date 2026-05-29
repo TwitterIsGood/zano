@@ -4,7 +4,7 @@
 
 **Goal:** Add the visible Thread UI, drag-and-drop Task Board, task detail experience, notification badges, and agent autonomy prompt updates.
 
-**Architecture:** This plan assumes the foundation and API/CLI plans have landed. The UI uses the new APIs rather than direct Supabase writes where guarded transitions are needed. Agents continue to use the `zano` CLI; the bridge prompt teaches them the Trellis/Superpowers-inspired workflow.
+**Architecture:** This plan assumes the foundation and API/CLI plans have landed. The UI uses the new APIs rather than direct Supabase writes where guarded transitions are needed. Agents continue to use the `zano` CLI; Omni prompt teaches them the Trellis/Superpowers-inspired workflow.
 
 **Tech Stack:** Next.js App Router, React 19, existing shadcn/base UI primitives, Supabase Realtime, existing `TiptapMessageInput`, existing bridge system prompt.
 
@@ -37,7 +37,7 @@
   - Add Tasks nav entry and notification menu.
 - `apps/web/src/app/s/[slug]/layout.tsx`
   - Pass user/server context needed for notification badges if needed.
-- `apps/bridge/src/system-prompt.ts`
+- `apps/omni/src/system-prompt.ts`
   - Teach agents the new thread/task/spec/plan/review/verification workflow.
 
 ---
@@ -633,11 +633,11 @@ Do not commit yet.
 ## Task 4: Add agent workflow prompt updates
 
 **Files:**
-- Modify: `apps/bridge/src/system-prompt.ts`
+- Modify: `apps/omni/src/system-prompt.ts`
 
 - [ ] **Step 1: Add collaboration workflow section**
 
-In `apps/bridge/src/system-prompt.ts`, add a section to the generated prompt that says:
+In `apps/omni/src/system-prompt.ts`, add a section to the generated prompt that says:
 
 ```ts
 const collaborationWorkflow = `
@@ -723,7 +723,7 @@ Open the app in a browser and verify:
 Run:
 
 ```bash
-git add apps/web/src/components/thread-button.tsx apps/web/src/components/thread-panel.tsx apps/web/src/components/task-card.tsx apps/web/src/components/task-detail-drawer.tsx apps/web/src/components/task-board.tsx apps/web/src/components/notifications-menu.tsx apps/web/src/components/message-area.tsx apps/web/src/components/sidebar.tsx apps/web/src/app/s/[slug]/tasks/page.tsx apps/bridge/src/system-prompt.ts
+git add apps/web/src/components/thread-button.tsx apps/web/src/components/thread-panel.tsx apps/web/src/components/task-card.tsx apps/web/src/components/task-detail-drawer.tsx apps/web/src/components/task-board.tsx apps/web/src/components/notifications-menu.tsx apps/web/src/components/message-area.tsx apps/web/src/components/sidebar.tsx apps/web/src/app/s/[slug]/tasks/page.tsx apps/omni/src/system-prompt.ts
 git commit -m "$(cat <<'EOF'
 feat: add collaboration UI and agent workflow guidance
 

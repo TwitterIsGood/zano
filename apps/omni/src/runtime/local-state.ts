@@ -8,7 +8,7 @@ export interface AgentLocalStateStoreOptions {
 }
 
 export interface MachineStateInput {
-  bridgeVersion: string;
+  omniVersion: string;
   workspaceId: string;
   hostname: string;
   platform: string;
@@ -75,7 +75,7 @@ export class AgentLocalStateStore {
     mkdirSync(lockDir, { recursive: true });
     mkdirSync(join(rootDir, "locks"), { recursive: true });
     this.writeJson(join(rootDir, "machine.json"), { machineId: this.machineId, ...input });
-    this.writeJson(join(rootDir, "bridge.json"), { workspaceId: input.workspaceId, bridgeVersion: input.bridgeVersion });
+    this.writeJson(join(rootDir, "omni.json"), { workspaceId: input.workspaceId, omniVersion: input.omniVersion });
     this.writeJson(lockOwnerPath, { machineId: this.machineId, pid: process.pid, startedAt: new Date().toISOString() });
     if (!existsSync(runtimeSessionsPath)) this.writeJson(runtimeSessionsPath, { sessions: [] });
     if (!existsSync(startQueuePath)) writeFileSync(startQueuePath, "", "utf8");

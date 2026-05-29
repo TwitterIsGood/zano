@@ -4,7 +4,7 @@
 
 **Goal:** Implement the target-state A2A conversation obligation protocol so agent group chat supports natural responsibility, silent work, bounded activation, and loop prevention without hard-coding one project domain.
 
-**Architecture:** Extract routing semantics out of `apps/bridge/src/bridge.ts` into focused protocol modules that classify message intent, addressability, activation strength, topic identity, fanout, cooldowns, and prompt envelopes. The bridge will use those modules to select awakened agents and pass structured activation context to the agent prompt; the agent system prompt will teach reply/work/observe/skip decisions while activity types expose quiet-but-not-idle states.
+**Architecture:** Extract routing semantics out of `apps/omni/src/bridge.ts` into focused protocol modules that classify message intent, addressability, activation strength, topic identity, fanout, cooldowns, and prompt envelopes. Omni will use those modules to select awakened agents and pass structured activation context to the agent prompt; the agent system prompt will teach reply/work/observe/skip decisions while activity types expose quiet-but-not-idle states.
 
 **Tech Stack:** TypeScript, Node.js bridge daemon, Supabase Realtime/PostgREST, Vitest, Next.js web UI, shared workspace types.
 
@@ -12,15 +12,15 @@
 
 ## File Structure
 
-- Create: `apps/bridge/src/a2a-protocol.ts`
+- Create: `apps/omni/src/a2a-protocol.ts`
   - Pure protocol types and helpers: conversation space, intents, activation reasons, strengths, decision modes, topic keys, cooldown keys, reply-value classification, fanout caps.
-- Create: `apps/bridge/src/a2a-protocol.test.ts`
+- Create: `apps/omni/src/a2a-protocol.test.ts`
   - Unit tests for classification, addressability, fanout, cooldown, suppression, and prompt envelope formatting.
-- Modify: `apps/bridge/src/bridge.ts`
+- Modify: `apps/omni/src/bridge.ts`
   - Replace binary A2A routing with protocol candidate selection, task/thread context loading, loop guard state, structured activation envelopes, and routing logs.
-- Modify: `apps/bridge/src/system-prompt.ts`
+- Modify: `apps/omni/src/system-prompt.ts`
   - Add the full A2A decision contract: `REPLY_AND_WORK`, `WORK_SILENTLY`, `REPLY_ONLY`, `OBSERVE`, `SKIP`; suppress idle narration and require response value.
-- Modify: `apps/bridge/src/agent-manager.ts`
+- Modify: `apps/omni/src/agent-manager.ts`
   - Add activity states for `working_silently`, `observing`, and `blocked` to activity broadcasts and persisted activity events.
 - Modify: `packages/shared/src/index.ts`
   - Extend `AgentActivity` to include `working_silently`, `observing`, and `blocked` so the web UI can consume them.
@@ -35,13 +35,13 @@
 ### Task 1: Protocol Types and Message Classification
 
 **Files:**
-- Create: `apps/bridge/src/a2a-protocol.ts`
-- Create: `apps/bridge/src/a2a-protocol.test.ts`
-- Modify: `apps/bridge/package.json:12-16`
+- Create: `apps/omni/src/a2a-protocol.ts`
+- Create: `apps/omni/src/a2a-protocol.test.ts`
+- Modify: `apps/omni/package.json:12-16`
 
-- [ ] **Step 1: Add the bridge test script**
+- [ ] **Step 1: Add Omni test script**
 
-Modify `apps/bridge/package.json` scripts to include `test`:
+Modify `apps/omni/package.json` scripts to include `test`:
 
 ```json
 "scripts": {
@@ -55,7 +55,7 @@ Modify `apps/bridge/package.json` scripts to include `test`:
 
 - [ ] **Step 2: Write failing classification tests**
 
-Create `apps/bridge/src/a2a-protocol.test.ts` with:
+Create `apps/omni/src/a2a-protocol.test.ts` with:
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -163,14 +163,14 @@ describe("deriveTopicKey", () => {
 Run:
 
 ```bash
-pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @fehey/zano-bridge test -- src/a2a-protocol.test.ts
+pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @biang/omni test -- src/a2a-protocol.test.ts
 ```
 
 Expected: FAIL with a module resolution error for `./a2a-protocol` or missing exported functions.
 
 - [ ] **Step 4: Implement protocol types and classification**
 
-Create `apps/bridge/src/a2a-protocol.ts` with:
+Create `apps/omni/src/a2a-protocol.ts` with:
 
 ```ts
 export type SenderType = "human" | "agent" | "system";
@@ -319,7 +319,7 @@ export function deriveTopicKey(message: ProtocolMessage, task: ProtocolTaskRef |
 Run:
 
 ```bash
-pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @fehey/zano-bridge test -- src/a2a-protocol.test.ts
+pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @biang/omni test -- src/a2a-protocol.test.ts
 ```
 
 Expected: PASS for all tests in `a2a-protocol.test.ts`.
@@ -329,7 +329,7 @@ Expected: PASS for all tests in `a2a-protocol.test.ts`.
 Run:
 
 ```bash
-git -C /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail add apps/bridge/package.json apps/bridge/src/a2a-protocol.ts apps/bridge/src/a2a-protocol.test.ts && git -C /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail commit -m "feat: add A2A protocol classification"
+git -C /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail add apps/omni/package.json apps/omni/src/a2a-protocol.ts apps/omni/src/a2a-protocol.test.ts && git -C /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail commit -m "feat: add A2A protocol classification"
 ```
 
 Expected: commit succeeds.
@@ -339,12 +339,12 @@ Expected: commit succeeds.
 ### Task 2: Addressability, Activation, and Fanout Selection
 
 **Files:**
-- Modify: `apps/bridge/src/a2a-protocol.ts`
-- Modify: `apps/bridge/src/a2a-protocol.test.ts`
+- Modify: `apps/omni/src/a2a-protocol.ts`
+- Modify: `apps/omni/src/a2a-protocol.test.ts`
 
 - [ ] **Step 1: Add failing activation tests**
 
-Append to `apps/bridge/src/a2a-protocol.test.ts`:
+Append to `apps/omni/src/a2a-protocol.test.ts`:
 
 ```ts
 import {
@@ -475,14 +475,14 @@ describe("selectActivationCandidates", () => {
 Run:
 
 ```bash
-pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @fehey/zano-bridge test -- src/a2a-protocol.test.ts
+pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @biang/omni test -- src/a2a-protocol.test.ts
 ```
 
 Expected: FAIL because `selectActivationCandidates`, `ProtocolAgent`, and `ProtocolRecentMessage` are not exported.
 
 - [ ] **Step 3: Implement activation selection**
 
-Append to `apps/bridge/src/a2a-protocol.ts`:
+Append to `apps/omni/src/a2a-protocol.ts`:
 
 ```ts
 export interface ProtocolAgent {
@@ -627,7 +627,7 @@ export function selectActivationCandidates(input: ActivationSelectionInput): Act
 Run:
 
 ```bash
-pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @fehey/zano-bridge test -- src/a2a-protocol.test.ts
+pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @biang/omni test -- src/a2a-protocol.test.ts
 ```
 
 Expected: PASS for all activation tests.
@@ -637,7 +637,7 @@ Expected: PASS for all activation tests.
 Run:
 
 ```bash
-git -C /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail add apps/bridge/src/a2a-protocol.ts apps/bridge/src/a2a-protocol.test.ts && git -C /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail commit -m "feat: select A2A activation candidates"
+git -C /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail add apps/omni/src/a2a-protocol.ts apps/omni/src/a2a-protocol.test.ts && git -C /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail commit -m "feat: select A2A activation candidates"
 ```
 
 Expected: commit succeeds.
@@ -647,12 +647,12 @@ Expected: commit succeeds.
 ### Task 3: Loop Guards, Cooldowns, and Activation Envelopes
 
 **Files:**
-- Modify: `apps/bridge/src/a2a-protocol.ts`
-- Modify: `apps/bridge/src/a2a-protocol.test.ts`
+- Modify: `apps/omni/src/a2a-protocol.ts`
+- Modify: `apps/omni/src/a2a-protocol.test.ts`
 
 - [ ] **Step 1: Add failing loop guard and envelope tests**
 
-Append to `apps/bridge/src/a2a-protocol.test.ts`:
+Append to `apps/omni/src/a2a-protocol.test.ts`:
 
 ```ts
 import {
@@ -750,14 +750,14 @@ describe("buildActivationEnvelope", () => {
 Run:
 
 ```bash
-pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @fehey/zano-bridge test -- src/a2a-protocol.test.ts
+pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @biang/omni test -- src/a2a-protocol.test.ts
 ```
 
 Expected: FAIL because loop guard and envelope helpers are not exported.
 
 - [ ] **Step 3: Implement cooldown and envelope helpers**
 
-Append to `apps/bridge/src/a2a-protocol.ts`:
+Append to `apps/omni/src/a2a-protocol.ts`:
 
 ```ts
 export interface ActivationCooldownEntry {
@@ -827,7 +827,7 @@ expected_decision=Choose one internal mode before doing anything visible: REPLY_
 Run:
 
 ```bash
-pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @fehey/zano-bridge test -- src/a2a-protocol.test.ts
+pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @biang/omni test -- src/a2a-protocol.test.ts
 ```
 
 Expected: PASS for all protocol tests.
@@ -837,7 +837,7 @@ Expected: PASS for all protocol tests.
 Run:
 
 ```bash
-git -C /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail add apps/bridge/src/a2a-protocol.ts apps/bridge/src/a2a-protocol.test.ts && git -C /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail commit -m "feat: add A2A loop guard helpers"
+git -C /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail add apps/omni/src/a2a-protocol.ts apps/omni/src/a2a-protocol.test.ts && git -C /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail commit -m "feat: add A2A loop guard helpers"
 ```
 
 Expected: commit succeeds.
@@ -847,13 +847,13 @@ Expected: commit succeeds.
 ### Task 4: Bridge Integration with Task and Thread Context
 
 **Files:**
-- Modify: `apps/bridge/src/bridge.ts:19-423`
-- Modify: `apps/bridge/src/a2a-protocol.ts`
-- Modify: `apps/bridge/src/a2a-protocol.test.ts`
+- Modify: `apps/omni/src/bridge.ts:19-423`
+- Modify: `apps/omni/src/a2a-protocol.ts`
+- Modify: `apps/omni/src/a2a-protocol.test.ts`
 
 - [ ] **Step 1: Add test for bridge-ready context conversion**
 
-Append to `apps/bridge/src/a2a-protocol.test.ts`:
+Append to `apps/omni/src/a2a-protocol.test.ts`:
 
 ```ts
 describe("bridge integration helpers", () => {
@@ -880,14 +880,14 @@ describe("bridge integration helpers", () => {
 Run:
 
 ```bash
-pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @fehey/zano-bridge test -- src/a2a-protocol.test.ts
+pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @biang/omni test -- src/a2a-protocol.test.ts
 ```
 
 Expected: PASS. This establishes protocol helpers are ready before bridge wiring.
 
 - [ ] **Step 3: Import protocol helpers in bridge**
 
-Modify the top of `apps/bridge/src/bridge.ts` to include:
+Modify the top of `apps/omni/src/bridge.ts` to include:
 
 ```ts
 import {
@@ -911,7 +911,7 @@ Keep existing imports.
 
 - [ ] **Step 4: Add bridge context interfaces and state**
 
-In `apps/bridge/src/bridge.ts`, after `interface DbChannelMember`, add:
+In `apps/omni/src/bridge.ts`, after `interface DbChannelMember`, add:
 
 ```ts
 interface DbTaskRoutingRef {
@@ -934,7 +934,7 @@ private topicHopCounts = new Map<string, number>();
 
 - [ ] **Step 5: Add task and recent message loaders**
 
-Add these private methods before `handleNewMessage` in `apps/bridge/src/bridge.ts`:
+Add these private methods before `handleNewMessage` in `apps/omni/src/bridge.ts`:
 
 ```ts
 private toProtocolAgents(agentIds: Set<string>): ProtocolAgent[] {
@@ -1016,7 +1016,7 @@ private formatRoutingLog(input: {
 
 - [ ] **Step 6: Replace `handleNewMessage` routing body**
 
-In `apps/bridge/src/bridge.ts`, replace the section from `const channelType = this.channelTypes.get(msg.channel_id);` through the prompt construction `if (!isDm ...` block with protocol routing:
+In `apps/omni/src/bridge.ts`, replace the section from `const channelType = this.channelTypes.get(msg.channel_id);` through the prompt construction `if (!isDm ...` block with protocol routing:
 
 ```ts
 const channelType = this.channelTypes.get(msg.channel_id) as "dm" | "public" | "private" | undefined;
@@ -1131,7 +1131,7 @@ Ensure the old `mentioned`, `respondingAgentIds`, and old prompt blocks are remo
 Run:
 
 ```bash
-pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @fehey/zano-bridge build
+pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @biang/omni build
 ```
 
 Expected: `tsc` exits 0. If TypeScript complains about Supabase `.or()` syntax or `maybeSingle`, adjust only the query shape while preserving behavior.
@@ -1141,7 +1141,7 @@ Expected: `tsc` exits 0. If TypeScript complains about Supabase `.or()` syntax o
 Run:
 
 ```bash
-pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @fehey/zano-bridge test -- src/a2a-protocol.test.ts
+pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @biang/omni test -- src/a2a-protocol.test.ts
 ```
 
 Expected: PASS.
@@ -1151,7 +1151,7 @@ Expected: PASS.
 Run:
 
 ```bash
-git -C /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail add apps/bridge/src/bridge.ts apps/bridge/src/a2a-protocol.ts apps/bridge/src/a2a-protocol.test.ts && git -C /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail commit -m "feat: route bridge messages through A2A protocol"
+git -C /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail add apps/omni/src/bridge.ts apps/omni/src/a2a-protocol.ts apps/omni/src/a2a-protocol.test.ts && git -C /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail commit -m "feat: route bridge messages through A2A protocol"
 ```
 
 Expected: commit succeeds.
@@ -1161,12 +1161,12 @@ Expected: commit succeeds.
 ### Task 5: Agent Prompt Contract
 
 **Files:**
-- Modify: `apps/bridge/src/system-prompt.ts:49-190`
-- Test: `apps/bridge/src/a2a-protocol.test.ts`
+- Modify: `apps/omni/src/system-prompt.ts:49-190`
+- Test: `apps/omni/src/a2a-protocol.test.ts`
 
 - [ ] **Step 1: Add prompt contract test**
 
-Append to `apps/bridge/src/a2a-protocol.test.ts`:
+Append to `apps/omni/src/a2a-protocol.test.ts`:
 
 ```ts
 import { buildSystemPrompt } from "./system-prompt";
@@ -1201,14 +1201,14 @@ describe("system prompt A2A contract", () => {
 Run:
 
 ```bash
-pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @fehey/zano-bridge test -- src/a2a-protocol.test.ts
+pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @biang/omni test -- src/a2a-protocol.test.ts
 ```
 
 Expected: FAIL because the system prompt does not yet include all decision modes or the literal-SKIP rule.
 
 - [ ] **Step 3: Replace startup and conversation etiquette guidance**
 
-In `apps/bridge/src/system-prompt.ts`, replace lines 49-56 with:
+In `apps/omni/src/system-prompt.ts`, replace lines 49-56 with:
 
 ```ts
 ## Startup sequence
@@ -1222,7 +1222,7 @@ In `apps/bridge/src/system-prompt.ts`, replace lines 49-56 with:
 
 - [ ] **Step 4: Add the A2A decision protocol section**
 
-In `apps/bridge/src/system-prompt.ts`, after the “Channel awareness” section and before “Reading history”, insert:
+In `apps/omni/src/system-prompt.ts`, after the “Channel awareness” section and before “Reading history”, insert:
 
 ```ts
 ## A2A Conversation Protocol
@@ -1246,7 +1246,7 @@ If you hand work to another agent, use an explicit @mention and include the conc
 
 - [ ] **Step 5: Update task and mention guidance**
 
-In `apps/bridge/src/system-prompt.ts`, adjust the task/mention guidance so it says:
+In `apps/omni/src/system-prompt.ts`, adjust the task/mention guidance so it says:
 
 ```ts
 When someone sends a message that asks you to do work and you choose `REPLY_AND_WORK` or `WORK_SILENTLY`, claim or reuse the relevant task before starting. If another agent already owns the work, choose `OBSERVE` unless you were explicitly asked to help, own a dependency, or found a blocker.
@@ -1259,7 +1259,7 @@ Do not remove existing task commands or CLI instructions.
 Run:
 
 ```bash
-pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @fehey/zano-bridge test -- src/a2a-protocol.test.ts
+pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @biang/omni test -- src/a2a-protocol.test.ts
 ```
 
 Expected: PASS.
@@ -1269,7 +1269,7 @@ Expected: PASS.
 Run:
 
 ```bash
-pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @fehey/zano-bridge build
+pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @biang/omni build
 ```
 
 Expected: `tsc` exits 0.
@@ -1279,7 +1279,7 @@ Expected: `tsc` exits 0.
 Run:
 
 ```bash
-git -C /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail add apps/bridge/src/system-prompt.ts apps/bridge/src/a2a-protocol.test.ts && git -C /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail commit -m "feat: teach agents A2A decision modes"
+git -C /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail add apps/omni/src/system-prompt.ts apps/omni/src/a2a-protocol.test.ts && git -C /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail commit -m "feat: teach agents A2A decision modes"
 ```
 
 Expected: commit succeeds.
@@ -1290,7 +1290,7 @@ Expected: commit succeeds.
 
 **Files:**
 - Modify: `packages/shared/src/index.ts:33-44`
-- Modify: `apps/bridge/src/agent-manager.ts:9-188`
+- Modify: `apps/omni/src/agent-manager.ts:9-188`
 - Modify: `apps/web/src/components/member-activity-tab.tsx:122-129`
 - Test: `packages/shared/src/collaboration.test.ts`
 
@@ -1331,13 +1331,13 @@ export type AgentActivity = "idle" | "thinking" | "working" | "working_silently"
 
 - [ ] **Step 4: Extend bridge activity type and event mapping**
 
-Modify `apps/bridge/src/agent-manager.ts:9`:
+Modify `apps/omni/src/agent-manager.ts:9`:
 
 ```ts
 type AgentActivity = "idle" | "thinking" | "working" | "working_silently" | "observing" | "blocked" | "error";
 ```
 
-Modify the event type mapping around `apps/bridge/src/agent-manager.ts:184-188` to:
+Modify the event type mapping around `apps/omni/src/agent-manager.ts:184-188` to:
 
 ```ts
 const eventType = activity === "working" && label && label !== "Working"
@@ -1382,7 +1382,7 @@ Expected: PASS.
 Run:
 
 ```bash
-pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @fehey/zano-bridge build && pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @zano/web lint
+pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @biang/omni build && pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @zano/web lint
 ```
 
 Expected: both commands exit 0.
@@ -1392,7 +1392,7 @@ Expected: both commands exit 0.
 Run:
 
 ```bash
-git -C /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail add packages/shared/src/index.ts packages/shared/src/collaboration.test.ts apps/bridge/src/agent-manager.ts apps/web/src/components/member-activity-tab.tsx && git -C /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail commit -m "feat: add A2A quiet activity states"
+git -C /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail add packages/shared/src/index.ts packages/shared/src/collaboration.test.ts apps/omni/src/agent-manager.ts apps/web/src/components/member-activity-tab.tsx && git -C /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail commit -m "feat: add A2A quiet activity states"
 ```
 
 Expected: commit succeeds.
@@ -1402,12 +1402,12 @@ Expected: commit succeeds.
 ### Task 7: End-to-End Routing Verification Harness
 
 **Files:**
-- Modify: `apps/bridge/src/a2a-protocol.test.ts`
-- Modify: `apps/bridge/src/a2a-protocol.ts`
+- Modify: `apps/omni/src/a2a-protocol.test.ts`
+- Modify: `apps/omni/src/a2a-protocol.ts`
 
 - [ ] **Step 1: Add end-to-end protocol scenario tests**
 
-Append to `apps/bridge/src/a2a-protocol.test.ts`:
+Append to `apps/omni/src/a2a-protocol.test.ts`:
 
 ```ts
 describe("A2A target-state scenarios", () => {
@@ -1486,7 +1486,7 @@ describe("A2A target-state scenarios", () => {
 Run:
 
 ```bash
-pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @fehey/zano-bridge test -- src/a2a-protocol.test.ts
+pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @biang/omni test -- src/a2a-protocol.test.ts
 ```
 
 Expected: PASS. If a scenario fails, adjust protocol helpers only enough to match the approved spec; do not add domain-specific hard-coded names from the user's current conversation.
@@ -1496,7 +1496,7 @@ Expected: PASS. If a scenario fails, adjust protocol helpers only enough to matc
 Run:
 
 ```bash
-pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @fehey/zano-bridge build && pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @zano/shared build && pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @zano/web lint
+pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @biang/omni build && pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @zano/shared build && pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @zano/web lint
 ```
 
 Expected: all commands exit 0.
@@ -1506,7 +1506,7 @@ Expected: all commands exit 0.
 Run:
 
 ```bash
-git -C /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail add apps/bridge/src/a2a-protocol.ts apps/bridge/src/a2a-protocol.test.ts && git -C /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail commit -m "test: cover A2A routing scenarios"
+git -C /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail add apps/omni/src/a2a-protocol.ts apps/omni/src/a2a-protocol.test.ts && git -C /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail commit -m "test: cover A2A routing scenarios"
 ```
 
 Expected: commit succeeds.
@@ -1524,7 +1524,7 @@ Expected: commit succeeds.
 Run:
 
 ```bash
-ps aux | grep -E "AgentTeam/.worktrees/member-detail.*(zano-bridge|dist/index.js|--filter @fehey/zano-bridge|apps/bridge)|node dist/index.js" | grep -v grep
+ps aux | grep -E "AgentTeam/.worktrees/member-detail.*(omni|dist/index.js|--filter @biang/omni|apps/omni)|node dist/index.js" | grep -v grep
 ```
 
 Expected: shows current bridge process if one is running.
@@ -1542,7 +1542,7 @@ Expected: rerunning the `ps aux | grep ...` command shows no member-detail bridg
 Run:
 
 ```bash
-pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @fehey/zano-bridge build
+pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @biang/omni build
 ```
 
 Expected: `tsc` exits 0.
@@ -1552,7 +1552,7 @@ Expected: `tsc` exits 0.
 Create a temporary env file manually using the current workspace API key supplied by the user, then run:
 
 ```bash
-(set -a; source /private/tmp/zano-bridge-member-detail.env; set +a; rm -f /private/tmp/zano-bridge-member-detail.env; exec pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @fehey/zano-bridge start)
+(set -a; source /private/tmp/omni-member-detail.env; set +a; rm -f /private/tmp/omni-member-detail.env; exec pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @biang/omni start)
 ```
 
 Expected log includes:
@@ -1613,7 +1613,7 @@ Observe the chat and member activity UI:
 Run:
 
 ```bash
-pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @fehey/zano-bridge test -- src/a2a-protocol.test.ts && pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @fehey/zano-bridge build && pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @zano/shared test -- src/collaboration.test.ts && pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @zano/web lint
+pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @biang/omni test -- src/a2a-protocol.test.ts && pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @biang/omni build && pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @zano/shared test -- src/collaboration.test.ts && pnpm --dir /Users/biangwua/Documents/biang/thinkAndTry/AgentTeam/.worktrees/member-detail --filter @zano/web lint
 ```
 
 Expected: all commands exit 0.

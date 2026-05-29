@@ -80,8 +80,8 @@ const MODEL_ITEMS = [
   { value: 'haiku', label: 'Haiku' },
 ];
 
-type BridgeRpcFn = (action: string, extra?: Record<string, unknown>) => Promise<Record<string, unknown>>;
-type BridgeRpcResponse = { payload: Record<string, unknown> };
+type OmniRpcFn = (action: string, extra?: Record<string, unknown>) => Promise<Record<string, unknown>>;
+type OmniRpcResponse = { payload: Record<string, unknown> };
 
 function creatorLabel(createdByType: AgentProvenanceInfo['created_by_type']) {
   if (createdByType === 'agent') return 'Agent';
@@ -110,15 +110,15 @@ export function AgentSettingsPanel({
   onDeleted: () => void;
   onUpdated: (updated: AgentInfo) => void;
 }) {
-  // Shared RPC channel for bridge communication (workspace + skills)
+  // Shared RPC channel for Omni communication (workspace + skills)
   const rpcChannelRef = useRef<RealtimeChannel | null>(null);
   const rpcCallbacksRef = useRef(new Map<string, (payload: Record<string, unknown>) => void>());
 
   useEffect(() => {
     const supabase = createClient();
     const channel = supabase
-      .channel('bridge-rpc')
-      .on('broadcast', { event: 'rpc:response' }, ({ payload }: BridgeRpcResponse) => {
+      .channel('omni-rpc')
+      .on('broadcast', { event: 'rpc:response' }, ({ payload }: OmniRpcResponse) => {
         const requestId = payload.requestId;
         if (typeof requestId !== 'string') return;
 
@@ -138,16 +138,16 @@ export function AgentSettingsPanel({
     };
   }, []);
 
-  const bridgeRpc: BridgeRpcFn = useCallback(
+  const omniRpc: OmniRpcFn = useCallback(
     async (action, extra = {}) => {
       const channel = rpcChannelRef.current;
-      if (!channel) throw new Error('bridge_offline');
+      if (!channel) throw new Error('omni_offline');
 
       const requestId = crypto.randomUUID();
       return new Promise<Record<string, unknown>>((resolve, reject) => {
         const timeout = setTimeout(() => {
           rpcCallbacksRef.current.delete(requestId);
-          reject(new Error('bridge_offline'));
+          reject(new Error('omni_offline'));
         }, 8000);
 
         rpcCallbacksRef.current.set(requestId, (payload) => {
@@ -187,10 +187,10 @@ export function AgentSettingsPanel({
         </div>
 
         <TabsPanel value="settings" className="flex-1 min-h-0 overflow-y-auto">
-          <SettingsTab agent={agent} onDeleted={onDeleted} onUpdated={onUpdated} bridgeRpc={bridgeRpc} />
+          <SettingsTab agent={agent} onDeleted={onDeleted} onUpdated={onUpdated} omniRpc={omniRpc} />
         </TabsPanel>
         <TabsPanel value="workspace" className="flex-1 min-h-0 overflow-y-auto">
-          <WorkspaceTab agentId={agent.id} bridgeRpc={bridgeRpc} />
+          <WorkspaceTab agentId={agent.id} omniRpc={omniRpc} />
         </TabsPanel>
       </Tabs>
     </div>
@@ -203,12 +203,12 @@ function SettingsTab({
   agent,
   onDeleted,
   onUpdated,
-  bridgeRpc,
+  omniRpc,
 }: {
   agent: AgentInfo;
   onDeleted: () => void;
   onUpdated: (updated: AgentInfo) => void;
-  bridgeRpc: BridgeRpcFn;
+  omniRpc: OmniRpcFn;
 }) {
   const [loading, setLoading] = useState(true);
   const [displayName, setDisplayName] = useState('');
@@ -264,9 +264,9 @@ function SettingsTab({
           setSkills(data.skills);
           return;
         }
-        // API returned empty — might be remote, try bridge RPC
+        // API returned empty — might be remote, try Omni RPC
         if (data.remote) {
-          const rpcData = await bridgeRpc('skills:list');
+          const rpcData = await omniRpc('skills:list');
           setSkills((rpcData.skills as Skill[]) || []);
           return;
         }
@@ -274,10 +274,10 @@ function SettingsTab({
     } catch {
       // Skills loading is non-critical — try RPC as last resort
       try {
-        const rpcData = await bridgeRpc('skills:list');
+        const rpcData = await omniRpc('skills:list');
         setSkills((rpcData.skills as Skill[]) || []);
       } catch {
-        // Bridge offline or no skills — leave empty
+        // Omni offline or no skills — leave empty
       }
     }
   }
@@ -617,7 +617,7 @@ function SettingsTab({
 
 // ─── Workspace Tab ──────────────────────────────────────────────────────────
 
-function WorkspaceTab({ agentId, bridgeRpc }: { agentId: string; bridgeRpc: BridgeRpcFn }) {
+function WorkspaceTab({ agentId, omniRpc }: { agentId: string; omniRpc: OmniRpcFn }) {
   const [loading, setLoading] = useState(true);
   const [workspacePath, setWorkspacePath] = useState('');
   const [files, setFiles] = useState<FileEntry[]>([]);
@@ -628,7 +628,7 @@ function WorkspaceTab({ agentId, bridgeRpc }: { agentId: string; bridgeRpc: Brid
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState('');
   const [isRemote, setIsRemote] = useState(false);
-  const [bridgeOnline, setBridgeOnline] = useState(true);
+  const [omniOnline, setOmniOnline] = useState(true);
   const [showPreview, setShowPreview] = useState(false);
 
   useEffect(() => {
@@ -639,7 +639,7 @@ function WorkspaceTab({ agentId, bridgeRpc }: { agentId: string; bridgeRpc: Brid
     setLoading(true);
     setError('');
     setIsRemote(false);
-    setBridgeOnline(true);
+    setOmniOnline(true);
     try {
       const res = await fetch(`/api/agents/${agentId}/workspace`);
       const data = await res.json();
@@ -653,16 +653,16 @@ function WorkspaceTab({ agentId, bridgeRpc }: { agentId: string; bridgeRpc: Brid
       }
 
       if (data.error === 'remote_workspace') {
-        // Remote mode — try RPC to bridge
+        // Remote mode — try RPC to Omni
         setIsRemote(true);
         setWorkspacePath(data.workspace_path || '');
         try {
-          const rpcData = await bridgeRpc('list', { agentId });
+          const rpcData = await omniRpc('list', { agentId });
           setWorkspacePath((rpcData.workspace_path as string) || data.workspace_path || '');
           setFiles((rpcData.files as FileEntry[]) || []);
           setNotesFiles((rpcData.notes_files as FileEntry[]) || []);
         } catch {
-          setBridgeOnline(false);
+          setOmniOnline(false);
         }
         return;
       }
@@ -683,7 +683,7 @@ function WorkspaceTab({ agentId, bridgeRpc }: { agentId: string; bridgeRpc: Brid
     setFileContent(null);
     try {
       if (isRemote) {
-        const data = await bridgeRpc('read', { agentId, filePath });
+        const data = await omniRpc('read', { agentId, filePath });
         setFileContent(data.content as string);
       } else {
         const res = await fetch(`/api/agents/${agentId}/workspace?file=${encodeURIComponent(filePath)}`);
@@ -718,14 +718,14 @@ function WorkspaceTab({ agentId, bridgeRpc }: { agentId: string; bridgeRpc: Brid
     );
   }
 
-  if (isRemote && !bridgeOnline) {
+  if (isRemote && !omniOnline) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-4 px-6">
         <FolderOpen size={32} className="text-muted-foreground/40" />
         <div className="text-center space-y-1.5">
-          <p className="text-sm font-medium text-foreground">Bridge is offline</p>
+          <p className="text-sm font-medium text-foreground">Omni is offline</p>
           <p className="text-xs text-muted-foreground leading-relaxed max-w-[280px]">
-            The workspace files are on the machine running the bridge. Start the bridge to browse them here.
+            The workspace files are on the machine running Omni. Start Omni to browse them here.
           </p>
         </div>
         {workspacePath && (

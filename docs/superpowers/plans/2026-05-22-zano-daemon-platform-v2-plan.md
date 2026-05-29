@@ -4,57 +4,57 @@
 
 **Goal:** Build Zano's Slock-parity daemon runtime with durable deliveries, per-agent sequence numbers, trace context, start scheduling, idle restart, busy/gated delivery, local `~/.zano` state, materialized prompts/wrappers, CLI inspection, and web observability.
 
-**Architecture:** Keep the existing A2A routing planner in the bridge, then route every planned activation through a new runtime layer under `apps/bridge/src/runtime`. The runtime owns delivery ledger writes, local trace files, process lifecycle state, queueing/gating decisions, and prompt/wrapper/session materialization while `AgentManager` remains the compatibility façade during migration.
+**Architecture:** Keep the existing A2A routing planner in Omni, then route every planned activation through a new runtime layer under `apps/omni/src/runtime`. The runtime owns delivery ledger writes, local trace files, process lifecycle state, queueing/gating decisions, and prompt/wrapper/session materialization while `AgentManager` remains the compatibility façade during migration.
 
-**Tech Stack:** TypeScript, Node.js 20+, Vitest, Supabase PostgREST/Realtime, Next.js 16, pnpm workspaces, existing `@fehey/zano-bridge`, `@fehey/zano-cli`, `@zano/db`, and `@zano/web` packages.
+**Tech Stack:** TypeScript, Node.js 20+, Vitest, Supabase PostgREST/Realtime, Next.js 16, pnpm workspaces, existing `@biang/omni`, `@fehey/zano-cli`, `@zano/db`, and `@zano/web` packages.
 
 ---
 
 ## File Structure
 
-- Create: `apps/bridge/src/runtime/types.ts`
+- Create: `apps/omni/src/runtime/types.ts`
   - Shared runtime enums, delivery/session/start/trace interfaces, redaction types, and transition validation helpers.
-- Create: `apps/bridge/src/runtime/trace-context.ts`
+- Create: `apps/omni/src/runtime/trace-context.ts`
   - W3C-style trace id/span id/traceparent generation and parsing.
-- Create: `apps/bridge/src/runtime/local-trace-sink.ts`
+- Create: `apps/omni/src/runtime/local-trace-sink.ts`
   - Secret-redacting JSONL trace sink with deterministic file rotation boundary.
-- Create: `apps/bridge/src/runtime/local-state.ts`
+- Create: `apps/omni/src/runtime/local-state.ts`
   - `~/.zano/machines/<machine-id>` and `~/.zano/agents/<agent-id>` directory/materialized-state manager.
-- Create: `apps/bridge/src/runtime/prompt-materializer.ts`
+- Create: `apps/omni/src/runtime/prompt-materializer.ts`
   - Builds and writes daemon-aware system prompt snapshots with delivery header grammar.
-- Create: `apps/bridge/src/runtime/cli-transport.ts`
+- Create: `apps/omni/src/runtime/cli-transport.ts`
   - Builds per-agent `zano` wrapper scripts without embedding secrets.
-- Create: `apps/bridge/src/runtime/delivery-ledger.ts`
+- Create: `apps/omni/src/runtime/delivery-ledger.ts`
   - Supabase-backed delivery/trace persistence with idempotency and per-agent sequence allocation.
-- Create: `apps/bridge/src/runtime/session-ledger.ts`
+- Create: `apps/omni/src/runtime/session-ledger.ts`
   - Supabase-backed runtime session persistence and row mapping for `daemon_runtime_sessions`.
-- Create: `apps/bridge/src/runtime/start-coordinator.ts`
+- Create: `apps/omni/src/runtime/start-coordinator.ts`
   - Dedupe, concurrency, start interval, and starting inbox policy.
-- Create: `apps/bridge/src/runtime/agent-supervisor.ts`
+- Create: `apps/omni/src/runtime/agent-supervisor.ts`
   - Process lifecycle state machine boundary extracted from `AgentManager`.
-- Create: `apps/bridge/src/runtime/delivery-runtime.ts`
+- Create: `apps/omni/src/runtime/delivery-runtime.ts`
   - High-level delivery state machine that ties ledger, supervisor, start coordinator, local state, and trace sink together.
-- Create: `apps/bridge/src/runtime/index.ts`
+- Create: `apps/omni/src/runtime/index.ts`
   - Runtime public exports for bridge and tests.
 - Create tests beside the runtime files:
-  - `apps/bridge/src/runtime/types.test.ts`
-  - `apps/bridge/src/runtime/trace-context.test.ts`
-  - `apps/bridge/src/runtime/local-trace-sink.test.ts`
-  - `apps/bridge/src/runtime/local-state.test.ts`
-  - `apps/bridge/src/runtime/prompt-materializer.test.ts`
-  - `apps/bridge/src/runtime/cli-transport.test.ts`
-  - `apps/bridge/src/runtime/delivery-ledger.test.ts`
-  - `apps/bridge/src/runtime/session-ledger.test.ts`
-  - `apps/bridge/src/runtime/start-coordinator.test.ts`
-  - `apps/bridge/src/runtime/agent-supervisor.test.ts`
-  - `apps/bridge/src/runtime/delivery-runtime.test.ts`
-- Modify: `apps/bridge/src/bridge.ts`
+  - `apps/omni/src/runtime/types.test.ts`
+  - `apps/omni/src/runtime/trace-context.test.ts`
+  - `apps/omni/src/runtime/local-trace-sink.test.ts`
+  - `apps/omni/src/runtime/local-state.test.ts`
+  - `apps/omni/src/runtime/prompt-materializer.test.ts`
+  - `apps/omni/src/runtime/cli-transport.test.ts`
+  - `apps/omni/src/runtime/delivery-ledger.test.ts`
+  - `apps/omni/src/runtime/session-ledger.test.ts`
+  - `apps/omni/src/runtime/start-coordinator.test.ts`
+  - `apps/omni/src/runtime/agent-supervisor.test.ts`
+  - `apps/omni/src/runtime/delivery-runtime.test.ts`
+- Modify: `apps/omni/src/bridge.ts`
   - Export routing delivery inputs, instantiate runtime when `ZANO_DAEMON_V2=1`, and submit planned deliveries to the runtime.
-- Modify: `apps/bridge/src/agent-manager.ts`
+- Modify: `apps/omni/src/agent-manager.ts`
   - Add a runtime driver boundary so v2 can reuse existing spawn/stdin/result parsing while moving queue decisions out of `AgentManager`.
-- Modify: `apps/bridge/src/system-prompt.ts`
+- Modify: `apps/omni/src/system-prompt.ts`
   - Add daemon delivery header grammar and runtime note to generated prompts.
-- Modify: `apps/bridge/src/index.ts`
+- Modify: `apps/omni/src/index.ts`
   - Pass machine/workspace metadata and bridge version into runtime config.
 - Create: `packages/db/src/daemon.sql`
   - Daemon delivery/session/start/trace schema.
@@ -84,13 +84,13 @@
 ### Task 1: Runtime Types and State Transitions
 
 **Files:**
-- Create: `apps/bridge/src/runtime/types.ts`
-- Create: `apps/bridge/src/runtime/types.test.ts`
-- Create: `apps/bridge/src/runtime/index.ts`
+- Create: `apps/omni/src/runtime/types.ts`
+- Create: `apps/omni/src/runtime/types.test.ts`
+- Create: `apps/omni/src/runtime/index.ts`
 
 - [ ] **Step 1: Write failing runtime type tests**
 
-Create `apps/bridge/src/runtime/types.test.ts`:
+Create `apps/omni/src/runtime/types.test.ts`:
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -167,14 +167,14 @@ describe("trace redaction", () => {
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- src/runtime/types.test.ts
+pnpm --filter @biang/omni test -- src/runtime/types.test.ts
 ```
 
-Expected: FAIL because `apps/bridge/src/runtime/types.ts` does not exist.
+Expected: FAIL because `apps/omni/src/runtime/types.ts` does not exist.
 
 - [ ] **Step 3: Implement runtime types**
 
-Create `apps/bridge/src/runtime/types.ts`:
+Create `apps/omni/src/runtime/types.ts`:
 
 ```ts
 export type DeliveryState =
@@ -346,7 +346,7 @@ export function redactTraceAttributes(value: unknown): unknown {
 }
 ```
 
-Create `apps/bridge/src/runtime/index.ts`:
+Create `apps/omni/src/runtime/index.ts`:
 
 ```ts
 export * from "./types";
@@ -367,7 +367,7 @@ export * from "./delivery-runtime";
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- src/runtime/types.test.ts
+pnpm --filter @biang/omni test -- src/runtime/types.test.ts
 ```
 
 Expected: PASS.
@@ -375,7 +375,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add apps/bridge/src/runtime/types.ts apps/bridge/src/runtime/types.test.ts apps/bridge/src/runtime/index.ts
+git add apps/omni/src/runtime/types.ts apps/omni/src/runtime/types.test.ts apps/omni/src/runtime/index.ts
 git commit -m "feat: add daemon runtime type contract"
 ```
 
@@ -384,14 +384,14 @@ git commit -m "feat: add daemon runtime type contract"
 ### Task 2: Trace Context and Local Trace Sink
 
 **Files:**
-- Create: `apps/bridge/src/runtime/trace-context.ts`
-- Create: `apps/bridge/src/runtime/trace-context.test.ts`
-- Create: `apps/bridge/src/runtime/local-trace-sink.ts`
-- Create: `apps/bridge/src/runtime/local-trace-sink.test.ts`
+- Create: `apps/omni/src/runtime/trace-context.ts`
+- Create: `apps/omni/src/runtime/trace-context.test.ts`
+- Create: `apps/omni/src/runtime/local-trace-sink.ts`
+- Create: `apps/omni/src/runtime/local-trace-sink.test.ts`
 
 - [ ] **Step 1: Write failing trace context tests**
 
-Create `apps/bridge/src/runtime/trace-context.test.ts`:
+Create `apps/omni/src/runtime/trace-context.test.ts`:
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -421,7 +421,7 @@ describe("trace context", () => {
 
 - [ ] **Step 2: Write failing local trace sink tests**
 
-Create `apps/bridge/src/runtime/local-trace-sink.test.ts`:
+Create `apps/omni/src/runtime/local-trace-sink.test.ts`:
 
 ```ts
 import { mkdtempSync, readFileSync } from "node:fs";
@@ -463,14 +463,14 @@ describe("LocalTraceSink", () => {
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- src/runtime/trace-context.test.ts src/runtime/local-trace-sink.test.ts
+pnpm --filter @biang/omni test -- src/runtime/trace-context.test.ts src/runtime/local-trace-sink.test.ts
 ```
 
 Expected: FAIL because trace modules do not exist.
 
 - [ ] **Step 4: Implement trace context**
 
-Create `apps/bridge/src/runtime/trace-context.ts`:
+Create `apps/omni/src/runtime/trace-context.ts`:
 
 ```ts
 import { randomBytes } from "node:crypto";
@@ -506,7 +506,7 @@ export function parseTraceparent(value: string): TraceContext | null {
 
 - [ ] **Step 5: Implement local trace sink**
 
-Create `apps/bridge/src/runtime/local-trace-sink.ts`:
+Create `apps/omni/src/runtime/local-trace-sink.ts`:
 
 ```ts
 import { mkdirSync, appendFileSync } from "node:fs";
@@ -550,7 +550,7 @@ export class LocalTraceSink {
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- src/runtime/trace-context.test.ts src/runtime/local-trace-sink.test.ts
+pnpm --filter @biang/omni test -- src/runtime/trace-context.test.ts src/runtime/local-trace-sink.test.ts
 ```
 
 Expected: PASS.
@@ -558,7 +558,7 @@ Expected: PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add apps/bridge/src/runtime/trace-context.ts apps/bridge/src/runtime/trace-context.test.ts apps/bridge/src/runtime/local-trace-sink.ts apps/bridge/src/runtime/local-trace-sink.test.ts
+git add apps/omni/src/runtime/trace-context.ts apps/omni/src/runtime/trace-context.test.ts apps/omni/src/runtime/local-trace-sink.ts apps/omni/src/runtime/local-trace-sink.test.ts
 git commit -m "feat: add daemon trace context and sink"
 ```
 
@@ -599,7 +599,7 @@ const checks = [
   { name: "start queue dedupe index", pattern: /create unique index if not exists daemon_start_queue_workspace_dedupe_idx/ },
   { name: "trace event delivery lookup index", pattern: /create index if not exists daemon_trace_events_workspace_delivery_idx/ },
   { name: "deliveries RLS enabled", pattern: /alter table public\.daemon_deliveries enable row level security/ },
-  { name: "bridge can manage deliveries policy", pattern: /create policy "Bridge can manage daemon deliveries"/ },
+  { name: "omni can manage deliveries policy", pattern: /create policy "Omni can manage daemon deliveries"/ },
 ];
 
 const failures = checks.filter((check) => !check.pattern.test(schema));
@@ -765,7 +765,7 @@ alter table public.daemon_runtime_sessions enable row level security;
 alter table public.daemon_start_queue enable row level security;
 alter table public.daemon_trace_events enable row level security;
 
-create policy "Bridge can manage daemon deliveries"
+create policy "Omni can manage daemon deliveries"
   on public.daemon_deliveries
   for all
   using (workspace_id = zano_private.current_actor_server_id() and zano_private.current_actor_scope() = 'bridge')
@@ -776,7 +776,7 @@ create policy "Server members can read daemon deliveries"
   for select
   using (zano_private.actor_is_server_member(workspace_id));
 
-create policy "Bridge can manage daemon runtime sessions"
+create policy "Omni can manage daemon runtime sessions"
   on public.daemon_runtime_sessions
   for all
   using (workspace_id = zano_private.current_actor_server_id() and zano_private.current_actor_scope() = 'bridge')
@@ -787,7 +787,7 @@ create policy "Server members can read daemon runtime sessions"
   for select
   using (zano_private.actor_is_server_member(workspace_id));
 
-create policy "Bridge can manage daemon start queue"
+create policy "Omni can manage daemon start queue"
   on public.daemon_start_queue
   for all
   using (workspace_id = zano_private.current_actor_server_id() and zano_private.current_actor_scope() = 'bridge')
@@ -798,7 +798,7 @@ create policy "Server members can read daemon start queue"
   for select
   using (zano_private.actor_is_server_member(workspace_id));
 
-create policy "Bridge can manage daemon trace events"
+create policy "Omni can manage daemon trace events"
   on public.daemon_trace_events
   for all
   using (workspace_id = zano_private.current_actor_server_id() and zano_private.current_actor_scope() = 'bridge')
@@ -911,12 +911,12 @@ git commit -m "feat: add daemon runtime database schema"
 ### Task 4: Local Zano State Store
 
 **Files:**
-- Create: `apps/bridge/src/runtime/local-state.ts`
-- Create: `apps/bridge/src/runtime/local-state.test.ts`
+- Create: `apps/omni/src/runtime/local-state.ts`
+- Create: `apps/omni/src/runtime/local-state.test.ts`
 
 - [ ] **Step 1: Write failing local state tests**
 
-Create `apps/bridge/src/runtime/local-state.test.ts`:
+Create `apps/omni/src/runtime/local-state.test.ts`:
 
 ```ts
 import { existsSync, mkdtempSync, readFileSync } from "node:fs";
@@ -930,7 +930,7 @@ describe("AgentLocalStateStore", () => {
     const rootDir = mkdtempSync(join(tmpdir(), "zano-local-state-"));
     const store = new AgentLocalStateStore({ rootDir, machineId: "machine-test" });
 
-    const machine = store.ensureMachine({ bridgeVersion: "0.1.5", workspaceId: "server-1", hostname: "host", platform: "darwin", arch: "arm64" });
+    const machine = store.ensureMachine({ omniVersion: "0.1.5", workspaceId: "server-1", hostname: "host", platform: "darwin", arch: "arm64" });
     const agent = store.ensureAgent({ agentId: "agent-1", displayName: "Alpha", description: "Builder" });
 
     expect(existsSync(machine.traceDir)).toBe(true);
@@ -955,14 +955,14 @@ describe("AgentLocalStateStore", () => {
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- src/runtime/local-state.test.ts
+pnpm --filter @biang/omni test -- src/runtime/local-state.test.ts
 ```
 
 Expected: FAIL because `local-state.ts` does not exist.
 
 - [ ] **Step 3: Implement local state store**
 
-Create `apps/bridge/src/runtime/local-state.ts`:
+Create `apps/omni/src/runtime/local-state.ts`:
 
 ```ts
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
@@ -975,7 +975,7 @@ export interface AgentLocalStateStoreOptions {
 }
 
 export interface MachineStateInput {
-  bridgeVersion: string;
+  omniVersion: string;
   workspaceId: string;
   hostname: string;
   platform: string;
@@ -1032,7 +1032,7 @@ export class AgentLocalStateStore {
     mkdirSync(lockDir, { recursive: true });
     mkdirSync(join(rootDir, "locks"), { recursive: true });
     this.writeJson(join(rootDir, "machine.json"), { machineId: this.machineId, ...input });
-    this.writeJson(join(rootDir, "bridge.json"), { workspaceId: input.workspaceId, bridgeVersion: input.bridgeVersion });
+    this.writeJson(join(rootDir, "omni.json"), { workspaceId: input.workspaceId, omniVersion: input.omniVersion });
     this.writeJson(lockOwnerPath, { machineId: this.machineId, pid: process.pid, startedAt: new Date().toISOString() });
     if (!existsSync(runtimeSessionsPath)) this.writeJson(runtimeSessionsPath, { sessions: [] });
     if (!existsSync(startQueuePath)) writeFileSync(startQueuePath, "", "utf8");
@@ -1090,7 +1090,7 @@ export class AgentLocalStateStore {
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- src/runtime/local-state.test.ts
+pnpm --filter @biang/omni test -- src/runtime/local-state.test.ts
 ```
 
 Expected: PASS.
@@ -1098,7 +1098,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add apps/bridge/src/runtime/local-state.ts apps/bridge/src/runtime/local-state.test.ts
+git add apps/omni/src/runtime/local-state.ts apps/omni/src/runtime/local-state.test.ts
 git commit -m "feat: add daemon local state store"
 ```
 
@@ -1107,15 +1107,15 @@ git commit -m "feat: add daemon local state store"
 ### Task 5: Prompt and CLI Wrapper Materialization
 
 **Files:**
-- Create: `apps/bridge/src/runtime/prompt-materializer.ts`
-- Create: `apps/bridge/src/runtime/prompt-materializer.test.ts`
-- Create: `apps/bridge/src/runtime/cli-transport.ts`
-- Create: `apps/bridge/src/runtime/cli-transport.test.ts`
-- Modify: `apps/bridge/src/system-prompt.ts`
+- Create: `apps/omni/src/runtime/prompt-materializer.ts`
+- Create: `apps/omni/src/runtime/prompt-materializer.test.ts`
+- Create: `apps/omni/src/runtime/cli-transport.ts`
+- Create: `apps/omni/src/runtime/cli-transport.test.ts`
+- Modify: `apps/omni/src/system-prompt.ts`
 
 - [ ] **Step 1: Write failing prompt materializer tests**
 
-Create `apps/bridge/src/runtime/prompt-materializer.test.ts`:
+Create `apps/omni/src/runtime/prompt-materializer.test.ts`:
 
 ```ts
 import { mkdtempSync, readFileSync } from "node:fs";
@@ -1142,7 +1142,7 @@ describe("PromptMaterializer", () => {
       hostname: "host",
       platform: "darwin",
       workDir: "/tmp/agent",
-      bridgeVersion: "0.1.5",
+      omniVersion: "0.1.5",
       model: "opus",
     });
 
@@ -1158,7 +1158,7 @@ describe("PromptMaterializer", () => {
 
 - [ ] **Step 2: Write failing CLI wrapper tests**
 
-Create `apps/bridge/src/runtime/cli-transport.test.ts`:
+Create `apps/omni/src/runtime/cli-transport.test.ts`:
 
 ```ts
 import { mkdtempSync, readFileSync } from "node:fs";
@@ -1188,14 +1188,14 @@ describe("CliTransportMaterializer", () => {
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- src/runtime/prompt-materializer.test.ts src/runtime/cli-transport.test.ts
+pnpm --filter @biang/omni test -- src/runtime/prompt-materializer.test.ts src/runtime/cli-transport.test.ts
 ```
 
 Expected: FAIL because materializer modules do not exist.
 
 - [ ] **Step 4: Implement prompt materializer**
 
-Create `apps/bridge/src/runtime/prompt-materializer.ts`:
+Create `apps/omni/src/runtime/prompt-materializer.ts`:
 
 ```ts
 import { createHash } from "node:crypto";
@@ -1221,7 +1221,7 @@ export interface PromptMaterializeInput {
   hostname: string;
   platform: string;
   workDir: string;
-  bridgeVersion: string;
+  omniVersion: string;
   model: string;
 }
 
@@ -1257,7 +1257,7 @@ export class PromptMaterializer {
       `- Hostname: ${input.hostname}`,
       `- Platform: ${input.platform}`,
       `- Workdir: ${input.workDir}`,
-      `- Bridge version: ${input.bridgeVersion}`,
+      `- Omni version: ${input.omniVersion}`,
       `- Runtime model: ${input.model}`,
       "",
       "## Daemon Delivery Header Grammar",
@@ -1286,7 +1286,7 @@ export class PromptMaterializer {
 
 - [ ] **Step 5: Implement CLI wrapper materializer**
 
-Create `apps/bridge/src/runtime/cli-transport.ts`:
+Create `apps/omni/src/runtime/cli-transport.ts`:
 
 ```ts
 import { createHash } from "node:crypto";
@@ -1334,7 +1334,7 @@ export class CliTransportMaterializer {
 
 - [ ] **Step 6: Update core prompt contract test**
 
-Modify `apps/bridge/src/a2a-protocol.test.ts` prompt contract test to also assert daemon grammar after `buildSystemPrompt(...)` is updated in the next step:
+Modify `apps/omni/src/a2a-protocol.test.ts` prompt contract test to also assert daemon grammar after `buildSystemPrompt(...)` is updated in the next step:
 
 ```ts
 expect(prompt).toContain("delivery=");
@@ -1343,7 +1343,7 @@ expect(prompt).toContain("traceparent=");
 
 - [ ] **Step 7: Update `buildSystemPrompt` daemon section**
 
-Modify `apps/bridge/src/system-prompt.ts` in the message header section so the examples include daemon fields:
+Modify `apps/omni/src/system-prompt.ts` in the message header section so the examples include daemon fields:
 
 ```md
 `[delivery=d1e2f3a4 seq=43 traceparent=00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01 target=#general msg=a1b2c3d4 time=2026-03-15T01:00:00 sender=@richard type=human] hello everyone`
@@ -1362,7 +1362,7 @@ Add this explanation beside the existing target/message/sender bullets:
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- src/runtime/prompt-materializer.test.ts src/runtime/cli-transport.test.ts src/a2a-protocol.test.ts
+pnpm --filter @biang/omni test -- src/runtime/prompt-materializer.test.ts src/runtime/cli-transport.test.ts src/a2a-protocol.test.ts
 ```
 
 Expected: PASS.
@@ -1370,7 +1370,7 @@ Expected: PASS.
 - [ ] **Step 9: Commit**
 
 ```bash
-git add apps/bridge/src/runtime/prompt-materializer.ts apps/bridge/src/runtime/prompt-materializer.test.ts apps/bridge/src/runtime/cli-transport.ts apps/bridge/src/runtime/cli-transport.test.ts apps/bridge/src/system-prompt.ts apps/bridge/src/a2a-protocol.test.ts
+git add apps/omni/src/runtime/prompt-materializer.ts apps/omni/src/runtime/prompt-materializer.test.ts apps/omni/src/runtime/cli-transport.ts apps/omni/src/runtime/cli-transport.test.ts apps/omni/src/system-prompt.ts apps/omni/src/a2a-protocol.test.ts
 git commit -m "feat: materialize daemon prompts and cli wrappers"
 ```
 
@@ -1379,12 +1379,12 @@ git commit -m "feat: materialize daemon prompts and cli wrappers"
 ### Task 6: Delivery Ledger
 
 **Files:**
-- Create: `apps/bridge/src/runtime/delivery-ledger.ts`
-- Create: `apps/bridge/src/runtime/delivery-ledger.test.ts`
+- Create: `apps/omni/src/runtime/delivery-ledger.ts`
+- Create: `apps/omni/src/runtime/delivery-ledger.test.ts`
 
 - [ ] **Step 1: Write failing delivery ledger tests with an in-memory Supabase adapter**
 
-Create `apps/bridge/src/runtime/delivery-ledger.test.ts`:
+Create `apps/omni/src/runtime/delivery-ledger.test.ts`:
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -1474,14 +1474,14 @@ describe("DeliveryLedger", () => {
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- src/runtime/delivery-ledger.test.ts
+pnpm --filter @biang/omni test -- src/runtime/delivery-ledger.test.ts
 ```
 
 Expected: FAIL because `delivery-ledger.ts` does not exist.
 
 - [ ] **Step 3: Implement delivery ledger and in-memory store**
 
-Create `apps/bridge/src/runtime/delivery-ledger.ts`:
+Create `apps/omni/src/runtime/delivery-ledger.ts`:
 
 ```ts
 import { randomUUID } from "node:crypto";
@@ -1650,7 +1650,7 @@ private timestampPatch(state: DeliveryState, now: string): Partial<RuntimeDelive
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- src/runtime/types.test.ts src/runtime/delivery-ledger.test.ts
+pnpm --filter @biang/omni test -- src/runtime/types.test.ts src/runtime/delivery-ledger.test.ts
 ```
 
 Expected: PASS.
@@ -1658,7 +1658,7 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add apps/bridge/src/runtime/types.ts apps/bridge/src/runtime/delivery-ledger.ts apps/bridge/src/runtime/delivery-ledger.test.ts
+git add apps/omni/src/runtime/types.ts apps/omni/src/runtime/delivery-ledger.ts apps/omni/src/runtime/delivery-ledger.test.ts
 git commit -m "feat: add daemon delivery ledger"
 ```
 
@@ -1667,12 +1667,12 @@ git commit -m "feat: add daemon delivery ledger"
 ### Task 7: Start Coordinator
 
 **Files:**
-- Create: `apps/bridge/src/runtime/start-coordinator.ts`
-- Create: `apps/bridge/src/runtime/start-coordinator.test.ts`
+- Create: `apps/omni/src/runtime/start-coordinator.ts`
+- Create: `apps/omni/src/runtime/start-coordinator.test.ts`
 
 - [ ] **Step 1: Write failing start coordinator tests**
 
-Create `apps/bridge/src/runtime/start-coordinator.test.ts`:
+Create `apps/omni/src/runtime/start-coordinator.test.ts`:
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -1709,14 +1709,14 @@ describe("StartCoordinator", () => {
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- src/runtime/start-coordinator.test.ts
+pnpm --filter @biang/omni test -- src/runtime/start-coordinator.test.ts
 ```
 
 Expected: FAIL because `start-coordinator.ts` does not exist.
 
 - [ ] **Step 3: Implement start coordinator**
 
-Create `apps/bridge/src/runtime/start-coordinator.ts`:
+Create `apps/omni/src/runtime/start-coordinator.ts`:
 
 ```ts
 import { randomUUID } from "node:crypto";
@@ -1804,7 +1804,7 @@ export class StartCoordinator {
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- src/runtime/start-coordinator.test.ts
+pnpm --filter @biang/omni test -- src/runtime/start-coordinator.test.ts
 ```
 
 Expected: PASS.
@@ -1812,7 +1812,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add apps/bridge/src/runtime/start-coordinator.ts apps/bridge/src/runtime/start-coordinator.test.ts
+git add apps/omni/src/runtime/start-coordinator.ts apps/omni/src/runtime/start-coordinator.test.ts
 git commit -m "feat: add daemon start coordinator"
 ```
 
@@ -1821,13 +1821,13 @@ git commit -m "feat: add daemon start coordinator"
 ### Task 8: Agent Supervisor Boundary
 
 **Files:**
-- Create: `apps/bridge/src/runtime/agent-supervisor.ts`
-- Create: `apps/bridge/src/runtime/agent-supervisor.test.ts`
-- Modify: `apps/bridge/src/agent-manager.ts`
+- Create: `apps/omni/src/runtime/agent-supervisor.ts`
+- Create: `apps/omni/src/runtime/agent-supervisor.test.ts`
+- Modify: `apps/omni/src/agent-manager.ts`
 
 - [ ] **Step 1: Write failing supervisor tests**
 
-Create `apps/bridge/src/runtime/agent-supervisor.test.ts`:
+Create `apps/omni/src/runtime/agent-supervisor.test.ts`:
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -1866,14 +1866,14 @@ describe("AgentSupervisor", () => {
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- src/runtime/agent-supervisor.test.ts
+pnpm --filter @biang/omni test -- src/runtime/agent-supervisor.test.ts
 ```
 
 Expected: FAIL because `agent-supervisor.ts` does not exist.
 
 - [ ] **Step 3: Implement supervisor state boundary**
 
-Create `apps/bridge/src/runtime/agent-supervisor.ts`:
+Create `apps/omni/src/runtime/agent-supervisor.ts`:
 
 ```ts
 export type SupervisorAgentState = "stopped" | "starting" | "ready" | "busy" | "gated" | "idle" | "stale" | "failed";
@@ -1965,7 +1965,7 @@ export class AgentSupervisor {
 
 - [ ] **Step 4: Add AgentManager driver hooks without changing old delivery behavior**
 
-Modify `apps/bridge/src/agent-manager.ts` by exporting process state methods near `sendToAgent(...)`:
+Modify `apps/omni/src/agent-manager.ts` by exporting process state methods near `sendToAgent(...)`:
 
 ```ts
 getRuntimeAgentState(agentId: string) {
@@ -1992,8 +1992,8 @@ async deliverRuntimeMessage(agentId: string, prompt: string): Promise<void> {
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- src/runtime/agent-supervisor.test.ts
-pnpm --filter @fehey/zano-bridge build
+pnpm --filter @biang/omni test -- src/runtime/agent-supervisor.test.ts
+pnpm --filter @biang/omni build
 ```
 
 Expected: both PASS.
@@ -2001,7 +2001,7 @@ Expected: both PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add apps/bridge/src/runtime/agent-supervisor.ts apps/bridge/src/runtime/agent-supervisor.test.ts apps/bridge/src/agent-manager.ts
+git add apps/omni/src/runtime/agent-supervisor.ts apps/omni/src/runtime/agent-supervisor.test.ts apps/omni/src/agent-manager.ts
 git commit -m "feat: add daemon agent supervisor boundary"
 ```
 
@@ -2010,12 +2010,12 @@ git commit -m "feat: add daemon agent supervisor boundary"
 ### Task 9: Delivery Runtime State Machine
 
 **Files:**
-- Create: `apps/bridge/src/runtime/delivery-runtime.ts`
-- Create: `apps/bridge/src/runtime/delivery-runtime.test.ts`
+- Create: `apps/omni/src/runtime/delivery-runtime.ts`
+- Create: `apps/omni/src/runtime/delivery-runtime.test.ts`
 
 - [ ] **Step 1: Write failing delivery runtime tests**
 
-Create `apps/bridge/src/runtime/delivery-runtime.test.ts`:
+Create `apps/omni/src/runtime/delivery-runtime.test.ts`:
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -2104,14 +2104,14 @@ describe("DeliveryRuntime", () => {
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- src/runtime/delivery-runtime.test.ts
+pnpm --filter @biang/omni test -- src/runtime/delivery-runtime.test.ts
 ```
 
 Expected: FAIL because `delivery-runtime.ts` does not exist.
 
 - [ ] **Step 3: Implement delivery runtime**
 
-Create `apps/bridge/src/runtime/delivery-runtime.ts`:
+Create `apps/omni/src/runtime/delivery-runtime.ts`:
 
 ```ts
 import type { AgentSupervisor } from "./agent-supervisor";
@@ -2183,7 +2183,7 @@ export class DeliveryRuntime {
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- src/runtime/delivery-runtime.test.ts src/runtime/delivery-ledger.test.ts src/runtime/start-coordinator.test.ts src/runtime/agent-supervisor.test.ts
+pnpm --filter @biang/omni test -- src/runtime/delivery-runtime.test.ts src/runtime/delivery-ledger.test.ts src/runtime/start-coordinator.test.ts src/runtime/agent-supervisor.test.ts
 ```
 
 Expected: PASS.
@@ -2191,7 +2191,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add apps/bridge/src/runtime/delivery-runtime.ts apps/bridge/src/runtime/delivery-runtime.test.ts
+git add apps/omni/src/runtime/delivery-runtime.ts apps/omni/src/runtime/delivery-runtime.test.ts
 git commit -m "feat: add daemon delivery runtime"
 ```
 
@@ -2200,14 +2200,14 @@ git commit -m "feat: add daemon delivery runtime"
 ### Task 10: Bridge Runtime Integration Behind `ZANO_DAEMON_V2`
 
 **Files:**
-- Modify: `apps/bridge/src/bridge.ts`
-- Modify: `apps/bridge/src/index.ts`
-- Modify: `apps/bridge/src/agent-manager.ts`
-- Create: `apps/bridge/src/bridge-runtime.test.ts`
+- Modify: `apps/omni/src/bridge.ts`
+- Modify: `apps/omni/src/index.ts`
+- Modify: `apps/omni/src/agent-manager.ts`
+- Create: `apps/omni/src/bridge-runtime.test.ts`
 
 - [ ] **Step 1: Write integration tests for v2 delivery submission**
 
-Create `apps/bridge/src/bridge-runtime.test.ts`:
+Create `apps/omni/src/bridge-runtime.test.ts`:
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -2252,14 +2252,14 @@ describe("buildRuntimeDeliveryInput", () => {
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- src/bridge-runtime.test.ts
+pnpm --filter @biang/omni test -- src/bridge-runtime.test.ts
 ```
 
 Expected: FAIL because `buildRuntimeDeliveryInput` is not exported.
 
 - [ ] **Step 3: Export bridge routing types and runtime input helper**
 
-Modify `apps/bridge/src/bridge.ts` so these interfaces are exported:
+Modify `apps/omni/src/bridge.ts` so these interfaces are exported:
 
 ```ts
 export interface DbMessage { ... }
@@ -2331,7 +2331,7 @@ This uses the in-memory store for the first bridge integration. Task 11 replaces
 
 - [ ] **Step 5: Route executor through runtime when v2 is enabled**
 
-Modify `executeRoutingPlan(...)` in `apps/bridge/src/bridge.ts`:
+Modify `executeRoutingPlan(...)` in `apps/omni/src/bridge.ts`:
 
 ```ts
 private async executeRoutingPlan(plan: RoutingPlan) {
@@ -2372,8 +2372,8 @@ private async executeRoutingPlan(plan: RoutingPlan) {
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- src/bridge-runtime.test.ts src/a2a-protocol.test.ts
-pnpm --filter @fehey/zano-bridge build
+pnpm --filter @biang/omni test -- src/bridge-runtime.test.ts src/a2a-protocol.test.ts
+pnpm --filter @biang/omni build
 ```
 
 Expected: PASS.
@@ -2381,7 +2381,7 @@ Expected: PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add apps/bridge/src/bridge.ts apps/bridge/src/index.ts apps/bridge/src/agent-manager.ts apps/bridge/src/bridge-runtime.test.ts
+git add apps/omni/src/bridge.ts apps/omni/src/index.ts apps/omni/src/agent-manager.ts apps/omni/src/bridge-runtime.test.ts
 git commit -m "feat: route bridge deliveries through daemon runtime"
 ```
 
@@ -2390,13 +2390,13 @@ git commit -m "feat: route bridge deliveries through daemon runtime"
 ### Task 11: Supabase Ledger Store and Recovery Query
 
 **Files:**
-- Modify: `apps/bridge/src/runtime/delivery-ledger.ts`
-- Modify: `apps/bridge/src/runtime/delivery-ledger.test.ts`
-- Modify: `apps/bridge/src/bridge.ts`
+- Modify: `apps/omni/src/runtime/delivery-ledger.ts`
+- Modify: `apps/omni/src/runtime/delivery-ledger.test.ts`
+- Modify: `apps/omni/src/bridge.ts`
 
 - [ ] **Step 1: Add store contract tests for row mapping**
 
-Append to `apps/bridge/src/runtime/delivery-ledger.test.ts`:
+Append to `apps/omni/src/runtime/delivery-ledger.test.ts`:
 
 ```ts
 import { mapDeliveryRow, mapDeliveryRecordToInsert } from "./delivery-ledger";
@@ -2450,14 +2450,14 @@ it("maps delivery records to daemon_deliveries rows", () => {
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- src/runtime/delivery-ledger.test.ts
+pnpm --filter @biang/omni test -- src/runtime/delivery-ledger.test.ts
 ```
 
 Expected: FAIL because mapping helpers do not exist.
 
 - [ ] **Step 3: Add Supabase row mappers and store**
 
-Append to `apps/bridge/src/runtime/delivery-ledger.ts`:
+Append to `apps/omni/src/runtime/delivery-ledger.ts`:
 
 ```ts
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -2614,7 +2614,7 @@ function mapDeliveryPatch(patch: Partial<RuntimeDeliveryRecord>): Record<string,
 
 - [ ] **Step 4: Use Supabase store in bridge v2 runtime**
 
-Modify the runtime imports in `apps/bridge/src/bridge.ts`:
+Modify the runtime imports in `apps/omni/src/bridge.ts`:
 
 ```ts
 import { AgentSupervisor, DeliveryLedger, DeliveryRuntime, StartCoordinator, SupabaseDeliveryLedgerStore } from "./runtime";
@@ -2631,8 +2631,8 @@ new SupabaseDeliveryLedgerStore(this.supabase)
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- src/runtime/delivery-ledger.test.ts src/bridge-runtime.test.ts
-pnpm --filter @fehey/zano-bridge build
+pnpm --filter @biang/omni test -- src/runtime/delivery-ledger.test.ts src/bridge-runtime.test.ts
+pnpm --filter @biang/omni build
 ```
 
 Expected: PASS.
@@ -2640,7 +2640,7 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add apps/bridge/src/runtime/delivery-ledger.ts apps/bridge/src/runtime/delivery-ledger.test.ts apps/bridge/src/bridge.ts
+git add apps/omni/src/runtime/delivery-ledger.ts apps/omni/src/runtime/delivery-ledger.test.ts apps/omni/src/bridge.ts
 git commit -m "feat: persist daemon deliveries in supabase"
 ```
 
@@ -3070,16 +3070,16 @@ git commit -m "feat: add daemon delivery observability ui"
 ### Task 14: Runtime Session Persistence and Materialized Startup
 
 **Files:**
-- Create: `apps/bridge/src/runtime/session-ledger.ts`
-- Create: `apps/bridge/src/runtime/session-ledger.test.ts`
-- Modify: `apps/bridge/src/runtime/agent-supervisor.ts`
-- Modify: `apps/bridge/src/runtime/delivery-runtime.ts`
-- Modify: `apps/bridge/src/agent-manager.ts`
-- Modify: `apps/bridge/src/bridge.ts`
+- Create: `apps/omni/src/runtime/session-ledger.ts`
+- Create: `apps/omni/src/runtime/session-ledger.test.ts`
+- Modify: `apps/omni/src/runtime/agent-supervisor.ts`
+- Modify: `apps/omni/src/runtime/delivery-runtime.ts`
+- Modify: `apps/omni/src/agent-manager.ts`
+- Modify: `apps/omni/src/bridge.ts`
 
 - [ ] **Step 1: Write failing session ledger tests**
 
-Create `apps/bridge/src/runtime/session-ledger.test.ts`:
+Create `apps/omni/src/runtime/session-ledger.test.ts`:
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -3160,14 +3160,14 @@ describe("RuntimeSessionLedger", () => {
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- src/runtime/session-ledger.test.ts
+pnpm --filter @biang/omni test -- src/runtime/session-ledger.test.ts
 ```
 
 Expected: FAIL because `session-ledger.ts` does not exist.
 
 - [ ] **Step 3: Implement runtime session ledger**
 
-Create `apps/bridge/src/runtime/session-ledger.ts`:
+Create `apps/omni/src/runtime/session-ledger.ts`:
 
 ```ts
 import { randomUUID } from "node:crypto";
@@ -3354,7 +3354,7 @@ function mapRuntimeSessionRow(row: Record<string, unknown>): RuntimeSessionRecor
 
 - [ ] **Step 4: Thread materialized prompt and wrapper into AgentManager**
 
-Modify `apps/bridge/src/agent-manager.ts` constructor to accept optional materializers:
+Modify `apps/omni/src/agent-manager.ts` constructor to accept optional materializers:
 
 ```ts
 interface AgentManagerRuntimeOptions {
@@ -3364,7 +3364,7 @@ interface AgentManagerRuntimeOptions {
   hostname: string;
   platform: string;
   arch: string;
-  bridgeVersion: string;
+  omniVersion: string;
 }
 ```
 
@@ -3401,7 +3401,7 @@ const materializedPrompt = this.runtimeOptions
       hostname: this.runtimeOptions.hostname,
       platform: this.runtimeOptions.platform,
       workDir: session.workDir,
-      bridgeVersion: this.runtimeOptions.bridgeVersion,
+      omniVersion: this.runtimeOptions.omniVersion,
       model,
     }).content
   : systemPrompt;
@@ -3491,8 +3491,8 @@ function deliveryContextMetadata(): JsonObject {
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- src/runtime/session-ledger.test.ts src/runtime/prompt-materializer.test.ts src/runtime/cli-transport.test.ts src/runtime/delivery-runtime.test.ts
-pnpm --filter @fehey/zano-bridge build
+pnpm --filter @biang/omni test -- src/runtime/session-ledger.test.ts src/runtime/prompt-materializer.test.ts src/runtime/cli-transport.test.ts src/runtime/delivery-runtime.test.ts
+pnpm --filter @biang/omni build
 pnpm --filter @fehey/zano-cli build
 ```
 
@@ -3501,7 +3501,7 @@ Expected: PASS.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add apps/bridge/src/runtime/session-ledger.ts apps/bridge/src/runtime/session-ledger.test.ts apps/bridge/src/runtime/agent-supervisor.ts apps/bridge/src/runtime/delivery-runtime.ts apps/bridge/src/agent-manager.ts apps/bridge/src/bridge.ts packages/cli/src/index.ts
+git add apps/omni/src/runtime/session-ledger.ts apps/omni/src/runtime/session-ledger.test.ts apps/omni/src/runtime/agent-supervisor.ts apps/omni/src/runtime/delivery-runtime.ts apps/omni/src/agent-manager.ts apps/omni/src/bridge.ts packages/cli/src/index.ts
 git commit -m "feat: persist daemon runtime sessions"
 ```
 
@@ -3528,9 +3528,9 @@ Expected: PASS.
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test
-pnpm --filter @fehey/zano-bridge build
-pnpm --filter @fehey/zano-bridge verify:autonomous
+pnpm --filter @biang/omni test
+pnpm --filter @biang/omni build
+pnpm --filter @biang/omni verify:autonomous
 ```
 
 Expected: PASS.
@@ -3567,10 +3567,10 @@ Expected: no output.
 
 - [ ] **Step 6: Isolated daemon v2 smoke**
 
-Use a non-production workspace or get explicit approval before sending live messages that wake real agents. Start the bridge with v2 enabled:
+Use a non-production workspace or get explicit approval before sending live messages that wake real agents. Start Omni with v2 enabled:
 
 ```bash
-ZANO_DAEMON_V2=1 pnpm --filter @fehey/zano-bridge dev
+ZANO_DAEMON_V2=1 pnpm --filter @biang/omni dev
 ```
 
 In an isolated workspace, send one human top-level group message and one agent-scoped handoff. Verify with CLI:
@@ -3594,7 +3594,7 @@ Expected:
 
 ```bash
 git status --short
-git add apps/bridge/src apps/web/src packages/cli/src packages/db/src packages/db/scripts packages/db/package.json
+git add apps/omni/src apps/web/src packages/cli/src packages/db/src packages/db/scripts packages/db/package.json
 git commit -m "feat: add zano daemon platform v2"
 ```
 
@@ -3614,7 +3614,7 @@ git commit -m "feat: add zano daemon platform v2"
   - Web observability: Task 13.
   - Verification gates: Task 15.
 - Type consistency:
-  - `RuntimeDeliveryInput`, `RuntimeDeliveryRecord`, `DeliveryState`, `RuntimeTraceEvent`, and `StartQueueEntry` originate in `apps/bridge/src/runtime/types.ts`.
+  - `RuntimeDeliveryInput`, `RuntimeDeliveryRecord`, `DeliveryState`, `RuntimeTraceEvent`, and `StartQueueEntry` originate in `apps/omni/src/runtime/types.ts`.
   - `DeliveryRuntime.accept(...)` consumes `RuntimeDeliveryInput` from `buildRuntimeDeliveryInput(...)`.
   - CLI and web use DB column names returned by Supabase; runtime code uses camelCase records.
 - Safety notes:

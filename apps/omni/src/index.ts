@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { hostname, platform, arch } from "os";
-import { Bridge } from "./bridge.js";
+import { Omni } from "./omni.js";
 
 // Default server URL (can be overridden)
 const DEFAULT_SERVER_URL = "https://zano.fehey.com";
@@ -44,7 +44,7 @@ function parseArgs(): { serverUrl: string; apiKey: string; agentsDir: string } {
       case "--help":
       case "-h":
         console.log(`
-  Usage: zano-bridge [options]
+  Usage: omni [options]
 
   Options:
     --api-key <key>        Machine API key (required, generate at ${DEFAULT_SERVER_URL})
@@ -75,7 +75,7 @@ function parseArgs(): { serverUrl: string; apiKey: string; agentsDir: string } {
     console.error("  Generate one at your workspace settings page,");
     console.error("  then run:");
     console.error("");
-    console.error("    npx @fehey/zano-bridge --api-key zk_your_key_here");
+    console.error("    npx @biang/omni --api-key zk_your_key_here");
     console.error("");
     process.exit(1);
   }
@@ -87,7 +87,7 @@ async function authenticate(
   serverUrl: string,
   apiKey: string
 ): Promise<ConnectResponse> {
-  const res = await fetch(`${serverUrl}/api/bridge/connect`, {
+  const res = await fetch(`${serverUrl}/api/omni/connect`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -119,7 +119,7 @@ async function main() {
 
   console.log(`
   ╔══════════════════════════════════════╗
-  ║         Zano Local Bridge            ║
+  ║                 Omni                 ║
   ╚══════════════════════════════════════╝
 `);
   console.log(`  Server: ${serverUrl}`);
@@ -141,7 +141,7 @@ async function main() {
   console.log(`  Agents dir: ${agentsDir}`);
   console.log("");
 
-  const bridge = new Bridge({
+  const omni = new Omni({
     supabaseUrl: creds.supabaseUrl,
     supabaseKey: creds.supabaseAnonKey,
     authToken: creds.token,
@@ -157,16 +157,16 @@ async function main() {
     hostname: hostname(),
     platform: platform(),
     arch: arch(),
-    bridgeVersion: process.env.npm_package_version ?? "0.1.5",
+    omniVersion: process.env.npm_package_version ?? "0.1.5",
   });
 
-  bridge.start();
+  omni.start();
 
   // Refresh auth token periodically (every 6 hours)
   const refreshInterval = setInterval(async () => {
     try {
       const fresh = await authenticate(serverUrl, apiKey);
-      await bridge.updateAuthToken(fresh.token, agentAuthTokensFromConnect(fresh));
+      await omni.updateAuthToken(fresh.token, agentAuthTokensFromConnect(fresh));
       console.log("  Auth token refreshed.");
     } catch (err) {
       console.error(
@@ -176,15 +176,15 @@ async function main() {
   }, 6 * 60 * 60 * 1000);
 
   process.on("SIGINT", () => {
-    console.log("\n  Shutting down bridge...");
+    console.log("\n  Shutting down Omni...");
     clearInterval(refreshInterval);
-    bridge.stop();
+    omni.stop();
     process.exit(0);
   });
 
   process.on("SIGTERM", () => {
     clearInterval(refreshInterval);
-    bridge.stop();
+    omni.stop();
     process.exit(0);
   });
 }

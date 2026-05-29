@@ -1,10 +1,10 @@
 {
-  "name": "@fehey/zano-bridge",
+  "name": "@biang/omni",
   "version": "0.1.5",
-  "description": "Zano local bridge — connects your Claude Code agents to Zano",
+  "description": "Omni local runtime — connects Claude Code agents to your workspace",
   "type": "module",
   "bin": {
-    "zano-bridge": "./dist/index.js"
+    "omni": "./dist/index.js"
   },
   "files": [
     "dist"
@@ -15,7 +15,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "test": "vitest run",
-    "verify:autonomous": "node scripts/verify-autonomous-bridge.mjs",
+    "verify:autonomous": "node scripts/verify-autonomous-omni.mjs",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
@@ -23,7 +23,7 @@
     "claude",
     "ai",
     "agent",
-    "bridge"
+    "omni"
   ],
   "license": "MIT",
   "dependencies": {

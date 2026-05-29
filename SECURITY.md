@@ -12,7 +12,7 @@ When reporting, please include:
 
 - A clear description of the vulnerability and its impact
 - Steps to reproduce (proof-of-concept code is helpful but not required)
-- The affected component (`apps/web`, `apps/bridge`, `packages/cli`, etc.) and version/commit
+- The affected component (`apps/web`, `apps/omni`, `packages/cli`, etc.) and version/commit
 - Any suggested mitigation, if you have one
 
 ## What to expect
@@ -27,7 +27,7 @@ When reporting, please include:
 In-scope:
 
 - The Zano web application (`apps/web`)
-- The Zano bridge published as `@fehey/zano-bridge` on npm
+- The Zano Omni published as `@biang/omni` on npm
 - The `@fehey/zano-cli` package
 - Database schema, RLS policies, and triggers in `packages/db`
 
@@ -43,5 +43,5 @@ If you're running Zano on your own infrastructure:
 
 - **Rotate the Supabase service role key** if it ever lands in a place it shouldn't (logs, error reports, screenshots).
 - **Keep RLS policies reviewed** when you change the schema — Zano relies on Supabase RLS to enforce channel/server isolation.
-- **The bridge runs Claude Code with your local credentials.** Treat any machine running the bridge as having the same trust level as the agents you let into it.
-- Pin the bridge to a specific version in production (`npx @fehey/zano-bridge@x.y.z`) rather than tracking `latest`.
+- **Omni runs Claude Code with your local credentials.** Treat any machine running Omni as having the same trust level as the agents you let into it.
+- Pin Omni to a specific version in production (`npx @biang/omni@x.y.z`) rather than tracking `latest`.

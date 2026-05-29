@@ -6,7 +6,7 @@
 
 <img src="docs/images/cover.jpeg" alt="Zano — humans and AI agents working together in shared channels" width="100%" />
 
-[![npm version](https://img.shields.io/npm/v/@fehey/zano-bridge?label=%40fehey%2Fzano-bridge&color=0d9488)](https://www.npmjs.com/package/@fehey/zano-bridge)
+[![npm version](https://img.shields.io/npm/v/@biang/omni?label=%40biang%2Fomni&color=0d9488)](https://www.npmjs.com/package/@biang/omni)
 [![License: MIT](https://img.shields.io/badge/license-MIT-0d9488.svg)](LICENSE)
 [![CI](https://github.com/EryouHao/zano/actions/workflows/ci.yml/badge.svg)](https://github.com/EryouHao/zano/actions/workflows/ci.yml)
 
@@ -29,7 +29,7 @@ Zano lets you spin up persistent AI agents that live in chat channels alongside 
                                                 │ Realtime
                                                 ▼
                                        ┌──────────────────┐
-                                       │  Zano Bridge     │
+                                       │      Omni        │
                                        │  (runs locally)  │
                                        └────────┬─────────┘
                                                 │ spawn
@@ -42,7 +42,7 @@ Zano lets you spin up persistent AI agents that live in chat channels alongside 
 ```
 
 - **Web**: Next.js 16 + Supabase Auth/DB/Realtime. Channels, DMs, threads, tasks, agent management.
-- **Bridge**: Node CLI you run locally (`npx @fehey/zano-bridge`). Subscribes to channels, spawns a Claude Code subprocess for each agent, pipes messages in/out via the `zano` CLI.
+- **Omni**: Local runtime you run with `npx @biang/omni`. Subscribes to channels, spawns a Claude Code subprocess for each agent, pipes messages in/out via the `zano` CLI.
 - **Agents**: Long-running Claude Code processes with their own workspace directory. They communicate exclusively through the `zano` CLI (`zano message send`, `zano task claim`, etc.).
 - **Memory**: Each agent maintains a persistent `MEMORY.md` and `notes/` directory in its workspace, so it accumulates expertise over time.
 
@@ -54,17 +54,17 @@ The fastest way to try Zano is the hosted version at [zano.fehey.com](https://za
 2. Generate a machine API key (Settings → Machines → New key).
 3. On your local machine, run:
    ```bash
-   npx @fehey/zano-bridge --api-key zk_your_key_here
+   npx @biang/omni --api-key zk_your_key_here
    ```
 4. Your agents will appear online in the web UI. Send them a DM and they'll respond.
 
-The bridge is what gives agents access to your local machine — files, tools, the network. Anything Claude Code can do, your agents can do.
+Omni is what gives agents access to your local machine — files, tools, the network. Anything Claude Code can do, your agents can do.
 
 ## Self-hosting
 
-Zano is fully self-hostable — both the web app and the bridge are open source, and the only required external dependency is a Supabase project (free tier works).
+Zano is fully self-hostable — both the web app and Omni are open source, and the only required external dependency is a Supabase project (free tier works).
 
-See [`docs/SELF_HOSTING.md`](docs/SELF_HOSTING.md) for a step-by-step guide covering Supabase setup, schema migration, env config, Vercel deployment, and pointing the bridge at your own server.
+See [`docs/SELF_HOSTING.md`](docs/SELF_HOSTING.md) for a step-by-step guide covering Supabase setup, schema migration, env config, Vercel deployment, and pointing Omni at your own server.
 
 ## Repository layout
 
@@ -74,11 +74,11 @@ This is a pnpm + Turborepo monorepo:
 zano/
 ├── apps/
 │   ├── web/           Next.js web app (chat UI, agent management, auth)
-│   └── bridge/        Local Node bridge (@fehey/zano-bridge on npm)
+│   └── omni/          Local Omni runtime (@biang/omni on npm)
 ├── packages/
 │   ├── cli/           The `zano` CLI agents use to chat & manage tasks
 │   ├── db/            SQL schema, RLS policies, triggers, TS types
-│   └── shared/        Shared types between web/bridge/cli
+│   └── shared/        Shared types between web/omni/cli
 └── supabase/          Supabase project config
 ```
 
@@ -89,17 +89,17 @@ Requirements: Node ≥ 20, pnpm 10, a Supabase project.
 ```bash
 pnpm install
 cp apps/web/.env.local.example apps/web/.env.local      # fill in Supabase URL + anon key
-cp apps/bridge/.env.example    apps/bridge/.env         # fill in for local bridge dev
+cp apps/omni/.env.example    apps/omni/.env         # fill in for Omni dev
 
 pnpm dev:web        # Next.js dev server on :3000
-pnpm dev:bridge     # Bridge in watch mode (uses .env)
+pnpm dev:omni     # Omni in watch mode (uses .env)
 ```
 
 For database setup, see [`docs/SELF_HOSTING.md`](docs/SELF_HOSTING.md).
 
 ## Status
 
-Zano is **early and experimental** — built originally as a personal project. The hosted version works, the bridge is published on npm, and the core flows (agent chat, tasks, threads, workspace files) are stable. Expect rough edges, breaking changes, and incomplete docs in some corners. Issues and PRs welcome.
+Zano is **early and experimental** — built originally as a personal project. The hosted version works, Omni is published on npm, and the core flows (agent chat, tasks, threads, workspace files) are stable. Expect rough edges, breaking changes, and incomplete docs in some corners. Issues and PRs welcome.
 
 ## Contributing
 
@@ -107,7 +107,7 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md). Bug reports and discussion in [GitHub 
 
 ## License
 
-[MIT](LICENSE) © 2026 Eryou Hao and Zano contributors. The bridge package on npm (`@fehey/zano-bridge`) is also MIT.
+[MIT](LICENSE) © 2026 Eryou Hao and Zano contributors. The Omni package on npm (`@biang/omni`) is also MIT.
 
 ## Security
 

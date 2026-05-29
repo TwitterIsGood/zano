@@ -29,8 +29,8 @@ interface FileResponse {
   error?: string;
 }
 
-type BridgeRpcFn = (action: string, extra?: Record<string, unknown>) => Promise<Record<string, unknown>>;
-type BridgeRpcResponse = { payload: Record<string, unknown> };
+type OmniRpcFn = (action: string, extra?: Record<string, unknown>) => Promise<Record<string, unknown>>;
+type OmniRpcResponse = { payload: Record<string, unknown> };
 
 interface MemberWorkspaceTabProps {
   memberType: "agent" | "human";
@@ -89,7 +89,7 @@ export function MemberWorkspaceTab({ memberType, agentId }: MemberWorkspaceTabPr
   const [loadingFile, setLoadingFile] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copyLabel, setCopyLabel] = useState("Copy path");
-  const [useBridge, setUseBridge] = useState(false);
+  const [useOmni, setUseOmni] = useState(false);
 
   const topLevelFiles = useMemo(() => sortEntries(files.filter((file) => file.type === "file")), [files]);
   const topLevelDirs = useMemo(
@@ -105,8 +105,8 @@ export function MemberWorkspaceTab({ memberType, agentId }: MemberWorkspaceTabPr
 
     const supabase = createClient();
     const channel = supabase
-      .channel("bridge-rpc")
-      .on("broadcast", { event: "rpc:response" }, ({ payload }: BridgeRpcResponse) => {
+      .channel("omni-rpc")
+      .on("broadcast", { event: "rpc:response" }, ({ payload }: OmniRpcResponse) => {
         const requestId = payload.requestId;
         if (typeof requestId !== "string") return;
 
@@ -126,15 +126,15 @@ export function MemberWorkspaceTab({ memberType, agentId }: MemberWorkspaceTabPr
     };
   }, [memberType]);
 
-  const bridgeRpc: BridgeRpcFn = useCallback(async (action, extra = {}) => {
+  const omniRpc: OmniRpcFn = useCallback(async (action, extra = {}) => {
     const channel = rpcChannelRef.current;
-    if (!channel) throw new Error("bridge_offline");
+    if (!channel) throw new Error("omni_offline");
 
     const requestId = crypto.randomUUID();
     return new Promise<Record<string, unknown>>((resolve, reject) => {
       const timeout = window.setTimeout(() => {
         rpcCallbacksRef.current.delete(requestId);
-        reject(new Error("bridge_offline"));
+        reject(new Error("omni_offline"));
       }, 8000);
 
       rpcCallbacksRef.current.set(requestId, (payload) => {
@@ -158,7 +158,7 @@ export function MemberWorkspaceTab({ memberType, agentId }: MemberWorkspaceTabPr
     setError(null);
     setSelectedFile(null);
     setFileContent(null);
-    setUseBridge(false);
+    setUseOmni(false);
 
     try {
       const res = await fetch(`/api/agents/${agentId}/workspace`);
@@ -172,8 +172,8 @@ export function MemberWorkspaceTab({ memberType, agentId }: MemberWorkspaceTabPr
       }
 
       if (data.error === "remote_workspace") {
-        setUseBridge(true);
-        const rpcData = await bridgeRpc("list", { agentId });
+        setUseOmni(true);
+        const rpcData = await omniRpc("list", { agentId });
         setWorkspacePath((rpcData.workspace_path as string) || "");
         setFiles((rpcData.files as FileEntry[]) || []);
         setNotesFiles((rpcData.notes_files as FileEntry[]) || []);
@@ -182,8 +182,8 @@ export function MemberWorkspaceTab({ memberType, agentId }: MemberWorkspaceTabPr
 
       throw new Error(data.message || data.error || "Failed to load workspace");
     } catch (err) {
-      const message = err instanceof Error && err.message === "bridge_offline"
-        ? "Bridge is offline. Start the bridge to browse this agent workspace."
+      const message = err instanceof Error && err.message === "omni_offline"
+        ? "Omni is offline. Start Omni to browse this agent workspace."
         : err instanceof Error
           ? err.message
           : "Failed to load workspace";
@@ -193,7 +193,7 @@ export function MemberWorkspaceTab({ memberType, agentId }: MemberWorkspaceTabPr
     } finally {
       setLoading(false);
     }
-  }, [agentId, bridgeRpc, memberType]);
+  }, [agentId, omniRpc, memberType]);
 
   async function loadFile(filePath: string) {
     setSelectedFile(filePath);
@@ -201,8 +201,8 @@ export function MemberWorkspaceTab({ memberType, agentId }: MemberWorkspaceTabPr
     setLoadingFile(true);
 
     try {
-      if (useBridge) {
-        const data = await bridgeRpc("read", { agentId, filePath });
+      if (useOmni) {
+        const data = await omniRpc("read", { agentId, filePath });
         setFileContent((data.content as string) || "");
         return;
       }

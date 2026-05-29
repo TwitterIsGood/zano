@@ -168,7 +168,7 @@ Use explicit inserts for semantic actions that need richer event labels or are n
 - Agent reset.
 - Agent delete.
 
-Record Agent runtime events in the bridge near the existing `broadcastActivity()` path. Keep realtime broadcasts for live UI, but also write meaningful activity rows.
+Record Agent runtime events in Omni near the existing `broadcastActivity()` path. Keep realtime broadcasts for live UI, but also write meaningful activity rows.
 
 Do not persist heartbeat rebroadcasts as separate rows. Persist real state changes and meaningful tool/output/error events to avoid noise.
 

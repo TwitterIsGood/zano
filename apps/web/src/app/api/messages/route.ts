@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ messages: data?.reverse() ?? [] });
 }
 
-// POST /api/messages — used by Bridge CLI to send messages
+// POST /api/messages — used by Omni CLI to send messages
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
   const body = await request.json();

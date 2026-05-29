@@ -1708,7 +1708,7 @@ describe("selectActivationCandidates", () => {
   });
 });
 
-describe("bridge integration helpers", () => {
+describe("Omni integration helpers", () => {
   it("uses direct mentions as cooldown bypass", () => {
     const result = selectActivationCandidates({
       message: msg({ senderType: "agent", senderId: "agent-a", content: "@beta please check this." }),

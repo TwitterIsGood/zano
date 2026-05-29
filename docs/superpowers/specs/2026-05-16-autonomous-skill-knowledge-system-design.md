@@ -10,7 +10,7 @@
 
 ## Problem
 
-Zano already has long-running agents with persistent workspaces and `MEMORY.md`, plus chat, tasks, A2A activation, local bridge processes, and a web surface for browsing agent workspaces. This gives each agent a personal memory surface, but it does not yet create an autonomous organization memory.
+Zano already has long-running agents with persistent workspaces and `MEMORY.md`, plus chat, tasks, A2A activation, Omni processes, and a web surface for browsing agent workspaces. This gives each agent a personal memory surface, but it does not yet create an autonomous organization memory.
 
 The missing system is not just "skills." It is a closed learning loop:
 
@@ -31,9 +31,9 @@ The key product constraint is philosophical and architectural: Zano should not b
 
 Existing components already provide good insertion points:
 
-- `apps/bridge/src/system-prompt.ts` defines agent identity, communication rules, task behavior, and the current workspace/memory model.
-- `apps/bridge/src/agent-manager.ts` creates per-agent workspaces and launches Claude Code processes with appended system prompts.
-- `apps/bridge/src/bridge.ts` routes messages, observes task context, and already exposes bridge RPC for workspace files and machine-local skill listing.
+- `apps/omni/src/system-prompt.ts` defines agent identity, communication rules, task behavior, and the current workspace/memory model.
+- `apps/omni/src/agent-manager.ts` creates per-agent workspaces and launches Claude Code processes with appended system prompts.
+- `apps/omni/src/bridge.ts` routes messages, observes task context, and already exposes bridge RPC for workspace files and machine-local skill listing.
 - `packages/cli/src/index.ts` is the only channel agents are supposed to use for Zano communication and task actions.
 - `packages/db/src/schema.sql` and `packages/db/src/collaboration.sql` contain the canonical Supabase schema and collaboration/task structures.
 - `apps/web/src/components/agent-settings-panel.tsx` already displays installed machine skills, but the source is currently a read-only local `~/.claude/skills` scan.
@@ -218,7 +218,7 @@ flowchart TD
    - Keeps query paths simple for agents and the UI.
 
 7. **Bridge Materializer**
-   - Syncs active and probation skills to local files for the machine running the bridge.
+   - Syncs active and probation skills to local files for the machine running Omni.
    - Injects a compact skill index into agent prompts.
    - Exposes skill/knowledge RPC to web and CLI when local files are needed.
 
@@ -238,7 +238,7 @@ The autonomy model only works if database writes carry the real acting actor. A 
 
 ### Current Gap
 
-The current bridge connection returns a Supabase-compatible JWT whose `sub` is the owner user. The CLI also receives `ZANO_AGENT_ID`, but RLS sees the owner, not the agent. That is acceptable for today's bridge but insufficient for autonomous actor governance because it makes agent actions indistinguishable from owner-user actions at the database policy layer.
+The current Omni connection returns a Supabase-compatible JWT whose `sub` is the owner user. The CLI also receives `ZANO_AGENT_ID`, but RLS sees the owner, not the agent. That is acceptable for today's bridge but insufficient for autonomous actor governance because it makes agent actions indistinguishable from owner-user actions at the database policy layer.
 
 ### Target Actor Context
 
@@ -247,7 +247,7 @@ Every write that affects skills, knowledge, agents, tasks, or ledger state must 
 - `actor_id`
 - `actor_type`: `human | agent | system`
 - `server_id`
-- `machine_key_id` when the write comes through a bridge
+- `machine_key_id` when the write comes through Omni
 - `session_id` or `turn_id` when the write comes from an agent process
 - `delegated_by_actor_id` and `delegated_by_actor_type` when a system actor is applying a candidate on behalf of another actor
 
@@ -276,7 +276,7 @@ Claims:
 
 #### Agent JWT
 
-The bridge should mint or request short-lived agent-scoped JWTs for each local agent process.
+Omni should mint or request short-lived agent-scoped JWTs for each local agent process.
 
 Claims:
 
@@ -290,9 +290,9 @@ Claims:
 - `scope = agent`
 - `exp` short enough to limit damage
 
-The bridge may still hold a machine-scoped token for bridge maintenance, but the agent CLI should use an agent-scoped token for agent actions.
+Omni may still hold a machine-scoped token for bridge maintenance, but the agent CLI should use an agent-scoped token for agent actions.
 
-Implementation note: during the transition, the bridge may expose both `ZANO_AUTH_TOKEN` (owner-scoped compatibility token for existing RLS policies) and `ZANO_AGENT_AUTH_TOKEN` (agent-scoped actor token for the autonomous actor model). New autonomous write paths should use the actor token once the actor RLS helpers and RPC functions are installed.
+Implementation note: during the transition, Omni may expose both `ZANO_AUTH_TOKEN` (owner-scoped compatibility token for existing RLS policies) and `ZANO_AGENT_AUTH_TOKEN` (agent-scoped actor token for the autonomous actor model). New autonomous write paths should use the actor token once the actor RLS helpers and RPC functions are installed.
 
 ### System Actor Context
 
@@ -1830,7 +1830,7 @@ Failures should keep the existing JSON stderr style:
 
 ## Bridge Materialization
 
-The bridge is responsible for making server-side active skills usable by local Claude Code processes.
+Omni is responsible for making server-side active skills usable by local Claude Code processes.
 
 ### Local Directory Layout
 
@@ -1884,7 +1884,7 @@ The system prompt should include:
 
 When active skills change:
 
-- bridge updates materialized files
+- Omni updates materialized files
 - bridge records manifest hash
 - running agents receive a system notification or restart on next safe boundary
 - context compaction reloads the fresh skill index
@@ -2290,7 +2290,7 @@ Rebuild output:
 
 ### Materialization Consistency
 
-The bridge materializer consumes projected active state, not raw unprojected events.
+Omni materializer consumes projected active state, not raw unprojected events.
 
 Materialized files should include metadata:
 
@@ -2586,11 +2586,11 @@ This is not an MVP scope. It is a dependency-aware build order for the full desi
 
 ### Current Implementation Notes
 
-- Bridge connect now returns both the temporary owner-scoped bridge token and per-agent actor tokens; existing message/task RLS still uses the owner token for compatibility.
+- Bridge connect now returns both the temporary owner-scoped Omni token and per-agent actor tokens; existing message/task RLS still uses the owner token for compatibility.
 - Spawned agents receive `ZANO_AGENT_AUTH_TOKEN` in addition to `ZANO_AUTH_TOKEN`; new autonomous CLI commands prefer the actor token while legacy commands keep the compatibility path.
 - `packages/db/src/autonomous.sql` owns the first actor-governed ledger schema and trusted RPC entrypoints for skill episodes, skill candidates, deterministic candidate lint, candidate apply, knowledge saves, agent blueprints, and spawn requests.
-- Runtime turn/tool evidence hooks exist in the bridge but are disabled by default behind `ZANO_ENABLE_AUTONOMOUS_EVIDENCE=1` until the autonomous schema is applied in the target Supabase project.
-- Shared skill materialization exists in the bridge but is disabled by default behind `ZANO_ENABLE_AUTONOMOUS_SKILLS=1`; when enabled, active/probation skill versions are written to each agent workspace under `.zano/autonomous-skills` and summarized in the system prompt.
+- Runtime turn/tool evidence hooks exist in Omni but are disabled by default behind `ZANO_ENABLE_AUTONOMOUS_EVIDENCE=1` until the autonomous schema is applied in the target Supabase project.
+- Shared skill materialization exists in Omni but is disabled by default behind `ZANO_ENABLE_AUTONOMOUS_SKILLS=1`; when enabled, active/probation skill versions are written to each agent workspace under `.zano/autonomous-skills` and summarized in the system prompt.
 - A bridge-local spawn governor exists behind `ZANO_ENABLE_AUTONOMOUS_SPAWN=1`; it consumes `spawn_requested` ledger events with a blueprint, creates the agent/DM/server membership through the existing owner-token compatibility path, and records `spawn_created`, `spawn_deferred`, or `spawn_failed` outcomes.
 - Apply the autonomous schema with `DATABASE_URL='postgresql://...' pnpm --filter @zano/db apply:autonomous`; the helper accepts `DATABASE_URL`, `SUPABASE_DB_URL`, `POSTGRES_URL`, or `POSTGRES_PRISMA_URL` and runs `packages/db/src/autonomous.sql` with `psql`.
 - This compatibility mode is intentionally temporary: once existing message/task RLS accepts actor claims safely, agents should operate through actor-scoped authority instead of owner impersonation.

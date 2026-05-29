@@ -41,43 +41,43 @@ Forbidden behaviors:
 
 ### Create
 
-- `apps/bridge/src/runtime/runtime-profiles.ts` — runtime driver profile definitions and lookup helpers. Claude is the active strict-parity path; other observed profiles are represented so Claude-specific behavior is explicit.
-- `apps/bridge/src/runtime/runtime-profiles.test.ts` — profile coverage for Claude, direct-stdin runtimes, and non-stdin/per-turn runtimes.
-- `apps/bridge/src/runtime/gated-steering.ts` — pure Claude gated-steering state machine, event reducer, flush decision helper, and mutation-error detector.
-- `apps/bridge/src/runtime/gated-steering.test.ts` — safe-boundary and mutation-error tests.
-- `apps/bridge/src/runtime/claude-stream-events.ts` — maps Claude stream-json events into gated-steering events without depending on `AgentManager`.
-- `apps/bridge/src/runtime/claude-stream-events.test.ts` — stream event mapping tests.
-- `apps/bridge/src/runtime/runtime-profile-controls.ts` — reserved runtime-profile migration/release-notice control lifecycle helpers.
-- `apps/bridge/src/runtime/runtime-profile-controls.test.ts` — control ACK and migration-done tests.
-- `apps/bridge/src/runtime/runtime-session-ref.ts` — native Claude/Codex session reference resolver with `.zano/runtime-sessions` fallback handoff.
-- `apps/bridge/src/runtime/runtime-session-ref.test.ts` — native/fallback session reference tests.
+- `apps/omni/src/runtime/runtime-profiles.ts` — runtime driver profile definitions and lookup helpers. Claude is the active strict-parity path; other observed profiles are represented so Claude-specific behavior is explicit.
+- `apps/omni/src/runtime/runtime-profiles.test.ts` — profile coverage for Claude, direct-stdin runtimes, and non-stdin/per-turn runtimes.
+- `apps/omni/src/runtime/gated-steering.ts` — pure Claude gated-steering state machine, event reducer, flush decision helper, and mutation-error detector.
+- `apps/omni/src/runtime/gated-steering.test.ts` — safe-boundary and mutation-error tests.
+- `apps/omni/src/runtime/claude-stream-events.ts` — maps Claude stream-json events into gated-steering events without depending on `AgentManager`.
+- `apps/omni/src/runtime/claude-stream-events.test.ts` — stream event mapping tests.
+- `apps/omni/src/runtime/runtime-profile-controls.ts` — reserved runtime-profile migration/release-notice control lifecycle helpers.
+- `apps/omni/src/runtime/runtime-profile-controls.test.ts` — control ACK and migration-done tests.
+- `apps/omni/src/runtime/runtime-session-ref.ts` — native Claude/Codex session reference resolver with `.zano/runtime-sessions` fallback handoff.
+- `apps/omni/src/runtime/runtime-session-ref.test.ts` — native/fallback session reference tests.
 - `packages/cli/src/local-state.ts` — CLI-local state reader/writer for `.zano/state.json`, freshness cursors, and drafts.
 - `packages/cli/src/freshness.ts` — pure freshness preflight and draft behavior helpers for CLI side effects.
 - `packages/cli/src/freshness.test.ts` — freshness hold, send-draft, and explicit `--anyway` tests.
 
 ### Modify
 
-- `apps/bridge/src/runtime/types.ts` — delivery custody fields, state transition table, runtime profile/control types, and no-ordinary-completion helpers.
-- `apps/bridge/src/runtime/types.test.ts` — transition and derived-completion tests.
-- `apps/bridge/src/runtime/delivery-ledger.ts` — preserve accepted/ACK custody semantics, add `ackTraceparent` and `lastRuntimeEventAt`, prevent ACK from setting completion.
-- `apps/bridge/src/runtime/delivery-ledger.test.ts` — accepted custody and no-completion tests.
-- `apps/bridge/src/runtime/delivery-runtime.ts` — accept custody before queue/delivery, distinguish rejection/no ACK from accepted daemon-owned state, and record safe queue reasons.
-- `apps/bridge/src/runtime/delivery-runtime.test.ts` — ACK/retry boundary tests.
-- `apps/bridge/src/runtime/agent-supervisor.ts` — store runtime profile, gated state, inbox, pending notification count, and process-adjacent runtime facts.
-- `apps/bridge/src/runtime/agent-supervisor.test.ts` — inbox/gated snapshot tests.
-- `apps/bridge/src/agent-manager.ts` — integrate gated event mapping, pending notification delivery, turn-end full flush, profile controls, materialized env, and session refs.
-- `apps/bridge/src/agent-manager-runtime-session.test.ts` — session/ref/control integration tests.
-- `apps/bridge/src/bridge.ts` — send ACK only when daemon accepted custody; do not emit ordinary completion.
-- `apps/bridge/src/bridge-runtime.test.ts` — wire ACK tests.
-- `apps/bridge/src/runtime/cli-transport.ts` — materialize `.zano/zano`, token/proxy-token file references, local state path, and secret-safe wrapper body.
-- `apps/bridge/src/runtime/cli-transport.test.ts` — layout, permissions, env reference, and secret absence tests.
-- `apps/bridge/src/runtime/prompt-materializer.ts` — write `.zano/claude-system-prompt.md`, MCP config, prompt hash, and teammate runtime contract inputs.
-- `apps/bridge/src/runtime/prompt-materializer.test.ts` — prompt path and contract coverage tests.
-- `apps/bridge/src/runtime/session-ledger.ts` — record launch ID, sessionRef, workspacePathRef, reachability, runtime profile facts.
-- `apps/bridge/src/runtime/session-ledger.test.ts` — session reporting tests.
-- `apps/bridge/src/system-prompt.ts` — Slock-like teammate contract sections and freshness/control wording.
-- `apps/bridge/src/a2a-protocol.ts` — include bounded thread join context in deliveries.
-- `apps/bridge/src/a2a-protocol.test.ts` — thread join context and default thread target tests.
+- `apps/omni/src/runtime/types.ts` — delivery custody fields, state transition table, runtime profile/control types, and no-ordinary-completion helpers.
+- `apps/omni/src/runtime/types.test.ts` — transition and derived-completion tests.
+- `apps/omni/src/runtime/delivery-ledger.ts` — preserve accepted/ACK custody semantics, add `ackTraceparent` and `lastRuntimeEventAt`, prevent ACK from setting completion.
+- `apps/omni/src/runtime/delivery-ledger.test.ts` — accepted custody and no-completion tests.
+- `apps/omni/src/runtime/delivery-runtime.ts` — accept custody before queue/delivery, distinguish rejection/no ACK from accepted daemon-owned state, and record safe queue reasons.
+- `apps/omni/src/runtime/delivery-runtime.test.ts` — ACK/retry boundary tests.
+- `apps/omni/src/runtime/agent-supervisor.ts` — store runtime profile, gated state, inbox, pending notification count, and process-adjacent runtime facts.
+- `apps/omni/src/runtime/agent-supervisor.test.ts` — inbox/gated snapshot tests.
+- `apps/omni/src/agent-manager.ts` — integrate gated event mapping, pending notification delivery, turn-end full flush, profile controls, materialized env, and session refs.
+- `apps/omni/src/agent-manager-runtime-session.test.ts` — session/ref/control integration tests.
+- `apps/omni/src/bridge.ts` — send ACK only when daemon accepted custody; do not emit ordinary completion.
+- `apps/omni/src/bridge-runtime.test.ts` — wire ACK tests.
+- `apps/omni/src/runtime/cli-transport.ts` — materialize `.zano/zano`, token/proxy-token file references, local state path, and secret-safe wrapper body.
+- `apps/omni/src/runtime/cli-transport.test.ts` — layout, permissions, env reference, and secret absence tests.
+- `apps/omni/src/runtime/prompt-materializer.ts` — write `.zano/claude-system-prompt.md`, MCP config, prompt hash, and teammate runtime contract inputs.
+- `apps/omni/src/runtime/prompt-materializer.test.ts` — prompt path and contract coverage tests.
+- `apps/omni/src/runtime/session-ledger.ts` — record launch ID, sessionRef, workspacePathRef, reachability, runtime profile facts.
+- `apps/omni/src/runtime/session-ledger.test.ts` — session reporting tests.
+- `apps/omni/src/system-prompt.ts` — Slock-like teammate contract sections and freshness/control wording.
+- `apps/omni/src/a2a-protocol.ts` — include bounded thread join context in deliveries.
+- `apps/omni/src/a2a-protocol.test.ts` — thread join context and default thread target tests.
 - `packages/db/src/daemon.sql` — source-of-truth daemon schema fields/states without dead-letter product state.
 - `packages/db/scripts/verify-daemon-schema.mjs` — verify ACK fields and forbidden dead-letter absence.
 - `packages/db/src/schema.ts` and `packages/db/src/index.ts` — generated/exported type alignment if this repo keeps checked-in DB types.
@@ -92,14 +92,14 @@ Forbidden behaviors:
 ## Task 1: Add runtime driver profiles
 
 **Files:**
-- Create: `apps/bridge/src/runtime/runtime-profiles.ts`
-- Create: `apps/bridge/src/runtime/runtime-profiles.test.ts`
-- Modify: `apps/bridge/src/runtime/types.ts`
-- Test: `apps/bridge/src/runtime/runtime-profiles.test.ts`
+- Create: `apps/omni/src/runtime/runtime-profiles.ts`
+- Create: `apps/omni/src/runtime/runtime-profiles.test.ts`
+- Modify: `apps/omni/src/runtime/types.ts`
+- Test: `apps/omni/src/runtime/runtime-profiles.test.ts`
 
 - [ ] **Step 1: Write the failing profile tests**
 
-Create `apps/bridge/src/runtime/runtime-profiles.test.ts`:
+Create `apps/omni/src/runtime/runtime-profiles.test.ts`:
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -160,14 +160,14 @@ describe("runtime driver profiles", () => {
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- runtime-profiles.test.ts
+pnpm --filter @biang/omni test -- runtime-profiles.test.ts
 ```
 
 Expected: FAIL with an import error because `runtime-profiles.ts` does not exist.
 
 - [ ] **Step 3: Add runtime profile types to `types.ts`**
 
-Append these exported types to `apps/bridge/src/runtime/types.ts`:
+Append these exported types to `apps/omni/src/runtime/types.ts`:
 
 ```ts
 export type RuntimeKind = "claude" | "codex" | "kimi" | "copilot" | "cursor" | "gemini" | "opencode";
@@ -188,7 +188,7 @@ export interface RuntimeDriverProfile {
 
 - [ ] **Step 4: Implement the runtime profiles**
 
-Create `apps/bridge/src/runtime/runtime-profiles.ts`:
+Create `apps/omni/src/runtime/runtime-profiles.ts`:
 
 ```ts
 import type { RuntimeDriverProfile, RuntimeKind } from "./types";
@@ -268,7 +268,7 @@ export function listRuntimeDriverProfiles(): RuntimeDriverProfile[] {
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- runtime-profiles.test.ts
+pnpm --filter @biang/omni test -- runtime-profiles.test.ts
 ```
 
 Expected: PASS.
@@ -276,7 +276,7 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add apps/bridge/src/runtime/types.ts apps/bridge/src/runtime/runtime-profiles.ts apps/bridge/src/runtime/runtime-profiles.test.ts
+git add apps/omni/src/runtime/types.ts apps/omni/src/runtime/runtime-profiles.ts apps/omni/src/runtime/runtime-profiles.test.ts
 git commit -m "feat: model daemon runtime profiles
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -287,14 +287,14 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ## Task 2: Add Claude gated-steering state machine
 
 **Files:**
-- Create: `apps/bridge/src/runtime/gated-steering.ts`
-- Create: `apps/bridge/src/runtime/gated-steering.test.ts`
-- Modify: `apps/bridge/src/runtime/types.ts`
-- Test: `apps/bridge/src/runtime/gated-steering.test.ts`
+- Create: `apps/omni/src/runtime/gated-steering.ts`
+- Create: `apps/omni/src/runtime/gated-steering.test.ts`
+- Modify: `apps/omni/src/runtime/types.ts`
+- Test: `apps/omni/src/runtime/gated-steering.test.ts`
 
 - [ ] **Step 1: Write the failing gated-steering tests**
 
-Create `apps/bridge/src/runtime/gated-steering.test.ts`:
+Create `apps/omni/src/runtime/gated-steering.test.ts`:
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -364,14 +364,14 @@ describe("Claude gated steering", () => {
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- gated-steering.test.ts
+pnpm --filter @biang/omni test -- gated-steering.test.ts
 ```
 
 Expected: FAIL with an import error because `gated-steering.ts` does not exist.
 
 - [ ] **Step 3: Add gated-steering types**
 
-Append these exported types to `apps/bridge/src/runtime/types.ts`:
+Append these exported types to `apps/omni/src/runtime/types.ts`:
 
 ```ts
 export type GatedSteeringPhase = "idle" | "assistant_continuation" | "tool_wait" | "tool_boundary" | "compacting" | "error";
@@ -409,7 +409,7 @@ export type ClaudeGatedSteeringEvent =
 
 - [ ] **Step 4: Implement gated steering**
 
-Create `apps/bridge/src/runtime/gated-steering.ts`:
+Create `apps/omni/src/runtime/gated-steering.ts`:
 
 ```ts
 import type { ClaudeGatedSteeringEvent, GatedFlushReason, GatedSteeringState } from "./types";
@@ -531,7 +531,7 @@ export function decideGatedFlush(
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- gated-steering.test.ts
+pnpm --filter @biang/omni test -- gated-steering.test.ts
 ```
 
 Expected: PASS.
@@ -539,7 +539,7 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add apps/bridge/src/runtime/types.ts apps/bridge/src/runtime/gated-steering.ts apps/bridge/src/runtime/gated-steering.test.ts
+git add apps/omni/src/runtime/types.ts apps/omni/src/runtime/gated-steering.ts apps/omni/src/runtime/gated-steering.test.ts
 git commit -m "feat: add Claude gated steering state machine
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -550,13 +550,13 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ## Task 3: Align delivery states with ACK custody semantics
 
 **Files:**
-- Modify: `apps/bridge/src/runtime/types.ts`
-- Modify: `apps/bridge/src/runtime/types.test.ts`
-- Test: `apps/bridge/src/runtime/types.test.ts`
+- Modify: `apps/omni/src/runtime/types.ts`
+- Modify: `apps/omni/src/runtime/types.test.ts`
+- Test: `apps/omni/src/runtime/types.test.ts`
 
 - [ ] **Step 1: Add failing custody transition tests**
 
-Add these tests to `apps/bridge/src/runtime/types.test.ts`:
+Add these tests to `apps/omni/src/runtime/types.test.ts`:
 
 ```ts
 it("treats accepted as daemon custody rather than business completion", () => {
@@ -588,14 +588,14 @@ import { canTransitionDelivery, isDeliveryAckState, isOrdinaryDeliveryCompletion
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- types.test.ts
+pnpm --filter @biang/omni test -- types.test.ts
 ```
 
 Expected: FAIL because `accepted -> completed` is currently valid or the new helper functions do not exist.
 
 - [ ] **Step 3: Update delivery state transitions**
 
-In `apps/bridge/src/runtime/types.ts`, update the transition table so `accepted` is custody and can move into queue/delivery/diagnostic states, but not ordinary completion:
+In `apps/omni/src/runtime/types.ts`, update the transition table so `accepted` is custody and can move into queue/delivery/diagnostic states, but not ordinary completion:
 
 ```ts
 const DELIVERY_TRANSITIONS: Record<DeliveryState, DeliveryState[]> = {
@@ -618,7 +618,7 @@ const DELIVERY_TRANSITIONS: Record<DeliveryState, DeliveryState[]> = {
 
 - [ ] **Step 4: Add custody helper functions**
 
-Add these exports in `apps/bridge/src/runtime/types.ts`:
+Add these exports in `apps/omni/src/runtime/types.ts`:
 
 ```ts
 export function isDeliveryAckState(state: DeliveryState): boolean {
@@ -635,7 +635,7 @@ export function isOrdinaryDeliveryCompletionState(_state: DeliveryState): boolea
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- types.test.ts
+pnpm --filter @biang/omni test -- types.test.ts
 ```
 
 Expected: PASS.
@@ -643,7 +643,7 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add apps/bridge/src/runtime/types.ts apps/bridge/src/runtime/types.test.ts
+git add apps/omni/src/runtime/types.ts apps/omni/src/runtime/types.test.ts
 git commit -m "fix: align delivery transitions with ACK custody
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -656,16 +656,16 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 **Files:**
 - Modify: `packages/db/src/daemon.sql`
 - Modify: `packages/db/scripts/verify-daemon-schema.mjs`
-- Modify: `apps/bridge/src/runtime/types.ts`
-- Modify: `apps/bridge/src/runtime/delivery-ledger.ts`
-- Modify: `apps/bridge/src/runtime/delivery-ledger.test.ts`
+- Modify: `apps/omni/src/runtime/types.ts`
+- Modify: `apps/omni/src/runtime/delivery-ledger.ts`
+- Modify: `apps/omni/src/runtime/delivery-ledger.test.ts`
 - Modify: `packages/db/src/schema.ts`
 - Modify: `packages/db/src/index.ts`
-- Test: `apps/bridge/src/runtime/delivery-ledger.test.ts`, `pnpm --filter @zano/db verify:daemon`
+- Test: `apps/omni/src/runtime/delivery-ledger.test.ts`, `pnpm --filter @zano/db verify:daemon`
 
 - [ ] **Step 1: Add failing ledger tests for ACK fields and no completion from ACK**
 
-Add these tests to `apps/bridge/src/runtime/delivery-ledger.test.ts`:
+Add these tests to `apps/omni/src/runtime/delivery-ledger.test.ts`:
 
 ```ts
 it("records ACK custody metadata without setting completion", async () => {
@@ -701,14 +701,14 @@ Use the existing test helper names in `delivery-ledger.test.ts`. If the file nam
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- delivery-ledger.test.ts
+pnpm --filter @biang/omni test -- delivery-ledger.test.ts
 ```
 
 Expected: FAIL because `ackTraceparent` is missing or `accepted -> completed` is still allowed.
 
 - [ ] **Step 3: Add delivery record fields**
 
-In `apps/bridge/src/runtime/types.ts`, update `RuntimeDeliveryRecord` with these fields:
+In `apps/omni/src/runtime/types.ts`, update `RuntimeDeliveryRecord` with these fields:
 
 ```ts
 ackTraceparent: string | null;
@@ -766,7 +766,7 @@ Use the existing query/result variables in the script. Keep the check local to d
 
 - [ ] **Step 6: Update ledger mapping**
 
-In `apps/bridge/src/runtime/delivery-ledger.ts`, update the record creation defaults:
+In `apps/omni/src/runtime/delivery-ledger.ts`, update the record creation defaults:
 
 ```ts
 ackTraceparent: null,
@@ -819,7 +819,7 @@ Expected: generated type file includes the new columns and does not include a `d
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- delivery-ledger.test.ts
+pnpm --filter @biang/omni test -- delivery-ledger.test.ts
 pnpm --filter @zano/db verify:daemon
 ```
 
@@ -828,7 +828,7 @@ Expected: both PASS.
 - [ ] **Step 9: Commit**
 
 ```bash
-git add packages/db/src/daemon.sql packages/db/scripts/verify-daemon-schema.mjs packages/db/src/schema.ts packages/db/src/index.ts apps/bridge/src/runtime/types.ts apps/bridge/src/runtime/delivery-ledger.ts apps/bridge/src/runtime/delivery-ledger.test.ts
+git add packages/db/src/daemon.sql packages/db/scripts/verify-daemon-schema.mjs packages/db/src/schema.ts packages/db/src/index.ts apps/omni/src/runtime/types.ts apps/omni/src/runtime/delivery-ledger.ts apps/omni/src/runtime/delivery-ledger.test.ts
 git commit -m "fix: record daemon ACK custody without completion
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -839,15 +839,15 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ## Task 5: Refactor delivery runtime around ACK and retry boundaries
 
 **Files:**
-- Modify: `apps/bridge/src/runtime/delivery-runtime.ts`
-- Modify: `apps/bridge/src/runtime/delivery-runtime.test.ts`
-- Modify: `apps/bridge/src/bridge.ts`
-- Modify: `apps/bridge/src/bridge-runtime.test.ts`
-- Test: `apps/bridge/src/runtime/delivery-runtime.test.ts`, `apps/bridge/src/bridge-runtime.test.ts`
+- Modify: `apps/omni/src/runtime/delivery-runtime.ts`
+- Modify: `apps/omni/src/runtime/delivery-runtime.test.ts`
+- Modify: `apps/omni/src/bridge.ts`
+- Modify: `apps/omni/src/bridge-runtime.test.ts`
+- Test: `apps/omni/src/runtime/delivery-runtime.test.ts`, `apps/omni/src/bridge-runtime.test.ts`
 
 - [ ] **Step 1: Add failing delivery runtime ACK tests**
 
-Add these tests to `apps/bridge/src/runtime/delivery-runtime.test.ts`:
+Add these tests to `apps/omni/src/runtime/delivery-runtime.test.ts`:
 
 ```ts
 it("ACKs custody before queueing a delivery for a starting runtime", async () => {
@@ -884,7 +884,7 @@ Use the existing harness/helper names in `delivery-runtime.test.ts`. The expecte
 
 - [ ] **Step 2: Add failing bridge wire ACK tests**
 
-Add this test to `apps/bridge/src/bridge-runtime.test.ts`:
+Add this test to `apps/omni/src/bridge-runtime.test.ts`:
 
 ```ts
 it("sends agent:deliver:ack only when daemon accepted custody", async () => {
@@ -921,21 +921,21 @@ it("sends agent:deliver:ack only when daemon accepted custody", async () => {
 });
 ```
 
-Adapt to the existing `bridge-runtime.test.ts` harness names. If the bridge handler is private, drive the same path through the existing test-facing subscription helper.
+Adapt to the existing `bridge-runtime.test.ts` harness names. If Omni handler is private, drive the same path through the existing test-facing subscription helper.
 
 - [ ] **Step 3: Run the focused tests to verify they fail**
 
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- delivery-runtime.test.ts bridge-runtime.test.ts
+pnpm --filter @biang/omni test -- delivery-runtime.test.ts bridge-runtime.test.ts
 ```
 
 Expected: FAIL because delivery runtime currently marks accepted after stdin delivery and bridge ACK behavior is not custody-driven.
 
 - [ ] **Step 4: Refactor `DeliveryRuntime.accept`**
 
-In `apps/bridge/src/runtime/delivery-runtime.ts`, replace the post-delivery accepted transition with custody-first flow:
+In `apps/omni/src/runtime/delivery-runtime.ts`, replace the post-delivery accepted transition with custody-first flow:
 
 ```ts
 async accept(input: RuntimeDeliveryInput): Promise<RuntimeDeliveryRecord> {
@@ -1013,7 +1013,7 @@ Use the existing agent manager delivery method name if it differs; preserve trac
 
 - [ ] **Step 5: Update bridge ACK emission**
 
-In `apps/bridge/src/bridge.ts`, send ACK only if `acceptedAt` is present:
+In `apps/omni/src/bridge.ts`, send ACK only if `acceptedAt` is present:
 
 ```ts
 const acceptedRecord = await this.deliveryRuntime.accept(deliveryInput);
@@ -1038,7 +1038,7 @@ Remove any ordinary `agent:deliver:completed` send path if one exists.
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- delivery-runtime.test.ts bridge-runtime.test.ts
+pnpm --filter @biang/omni test -- delivery-runtime.test.ts bridge-runtime.test.ts
 ```
 
 Expected: PASS.
@@ -1046,7 +1046,7 @@ Expected: PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add apps/bridge/src/runtime/delivery-runtime.ts apps/bridge/src/runtime/delivery-runtime.test.ts apps/bridge/src/bridge.ts apps/bridge/src/bridge-runtime.test.ts
+git add apps/omni/src/runtime/delivery-runtime.ts apps/omni/src/runtime/delivery-runtime.test.ts apps/omni/src/bridge.ts apps/omni/src/bridge-runtime.test.ts
 git commit -m "fix: ACK daemon custody before runtime delivery
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -1057,13 +1057,13 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ## Task 6: Store gated runtime state in the supervisor
 
 **Files:**
-- Modify: `apps/bridge/src/runtime/agent-supervisor.ts`
-- Modify: `apps/bridge/src/runtime/agent-supervisor.test.ts`
-- Test: `apps/bridge/src/runtime/agent-supervisor.test.ts`
+- Modify: `apps/omni/src/runtime/agent-supervisor.ts`
+- Modify: `apps/omni/src/runtime/agent-supervisor.test.ts`
+- Test: `apps/omni/src/runtime/agent-supervisor.test.ts`
 
 - [ ] **Step 1: Add failing supervisor snapshot tests**
 
-Add these tests to `apps/bridge/src/runtime/agent-supervisor.test.ts`:
+Add these tests to `apps/omni/src/runtime/agent-supervisor.test.ts`:
 
 ```ts
 it("initializes Claude gated steering and inbox state for an agent", () => {
@@ -1105,14 +1105,14 @@ it("records pending stdin notification count separately from full delivery queue
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- agent-supervisor.test.ts
+pnpm --filter @biang/omni test -- agent-supervisor.test.ts
 ```
 
 Expected: FAIL because supervisor snapshots do not include runtime profiles, gated state, inbox delivery ids, or pending notification count.
 
 - [ ] **Step 3: Update supervisor entry and snapshot types**
 
-In `apps/bridge/src/runtime/agent-supervisor.ts`, add imports:
+In `apps/omni/src/runtime/agent-supervisor.ts`, add imports:
 
 ```ts
 import { createGatedSteeringState } from "./gated-steering";
@@ -1227,7 +1227,7 @@ return {
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- agent-supervisor.test.ts
+pnpm --filter @biang/omni test -- agent-supervisor.test.ts
 ```
 
 Expected: PASS.
@@ -1235,7 +1235,7 @@ Expected: PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add apps/bridge/src/runtime/agent-supervisor.ts apps/bridge/src/runtime/agent-supervisor.test.ts
+git add apps/omni/src/runtime/agent-supervisor.ts apps/omni/src/runtime/agent-supervisor.test.ts
 git commit -m "feat: track daemon inbox and gated supervisor state
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -1246,15 +1246,15 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ## Task 7: Map Claude stream events into gated boundaries
 
 **Files:**
-- Create: `apps/bridge/src/runtime/claude-stream-events.ts`
-- Create: `apps/bridge/src/runtime/claude-stream-events.test.ts`
-- Modify: `apps/bridge/src/agent-manager.ts`
-- Modify: `apps/bridge/src/agent-manager-runtime-session.test.ts`
-- Test: `apps/bridge/src/runtime/claude-stream-events.test.ts`, `apps/bridge/src/agent-manager-runtime-session.test.ts`
+- Create: `apps/omni/src/runtime/claude-stream-events.ts`
+- Create: `apps/omni/src/runtime/claude-stream-events.test.ts`
+- Modify: `apps/omni/src/agent-manager.ts`
+- Modify: `apps/omni/src/agent-manager-runtime-session.test.ts`
+- Test: `apps/omni/src/runtime/claude-stream-events.test.ts`, `apps/omni/src/agent-manager-runtime-session.test.ts`
 
 - [ ] **Step 1: Write failing stream event mapper tests**
 
-Create `apps/bridge/src/runtime/claude-stream-events.test.ts`:
+Create `apps/omni/src/runtime/claude-stream-events.test.ts`:
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -1291,14 +1291,14 @@ describe("Claude stream event mapping", () => {
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- claude-stream-events.test.ts
+pnpm --filter @biang/omni test -- claude-stream-events.test.ts
 ```
 
 Expected: FAIL with an import error because `claude-stream-events.ts` does not exist.
 
 - [ ] **Step 3: Implement stream event mapping**
 
-Create `apps/bridge/src/runtime/claude-stream-events.ts`:
+Create `apps/omni/src/runtime/claude-stream-events.ts`:
 
 ```ts
 import type { ClaudeGatedSteeringEvent } from "./types";
@@ -1351,7 +1351,7 @@ export function mapClaudeStreamJsonToGatedEvent(value: unknown): ClaudeGatedStee
 
 - [ ] **Step 4: Integrate mapper into `AgentManager`**
 
-In `apps/bridge/src/agent-manager.ts`, import the helpers:
+In `apps/omni/src/agent-manager.ts`, import the helpers:
 
 ```ts
 import { decideGatedFlush, recordGatedSteeringEvent } from "./runtime/gated-steering";
@@ -1390,7 +1390,7 @@ recordGatedEvent(agentId: string, event: ClaudeGatedSteeringEvent): void {
 
 - [ ] **Step 5: Add AgentManager integration test for notification vs full delivery**
 
-Add this test to `apps/bridge/src/agent-manager-runtime-session.test.ts`:
+Add this test to `apps/omni/src/agent-manager-runtime-session.test.ts`:
 
 ```ts
 it("sends pending notification at tool boundary and full queued delivery at turn end", async () => {
@@ -1418,7 +1418,7 @@ Use the existing harness helpers if present; otherwise add minimal fake child-pr
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- claude-stream-events.test.ts agent-manager-runtime-session.test.ts
+pnpm --filter @biang/omni test -- claude-stream-events.test.ts agent-manager-runtime-session.test.ts
 ```
 
 Expected: PASS.
@@ -1426,7 +1426,7 @@ Expected: PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add apps/bridge/src/runtime/claude-stream-events.ts apps/bridge/src/runtime/claude-stream-events.test.ts apps/bridge/src/runtime/agent-supervisor.ts apps/bridge/src/agent-manager.ts apps/bridge/src/agent-manager-runtime-session.test.ts
+git add apps/omni/src/runtime/claude-stream-events.ts apps/omni/src/runtime/claude-stream-events.test.ts apps/omni/src/runtime/agent-supervisor.ts apps/omni/src/agent-manager.ts apps/omni/src/agent-manager-runtime-session.test.ts
 git commit -m "feat: steer queued deliveries at Claude safe boundaries
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -1437,16 +1437,16 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ## Task 8: Materialize Slock-equivalent local runtime layout and secrets
 
 **Files:**
-- Modify: `apps/bridge/src/runtime/cli-transport.ts`
-- Modify: `apps/bridge/src/runtime/cli-transport.test.ts`
-- Modify: `apps/bridge/src/runtime/prompt-materializer.ts`
-- Modify: `apps/bridge/src/runtime/prompt-materializer.test.ts`
-- Modify: `apps/bridge/src/agent-manager.ts`
-- Test: `apps/bridge/src/runtime/cli-transport.test.ts`, `apps/bridge/src/runtime/prompt-materializer.test.ts`
+- Modify: `apps/omni/src/runtime/cli-transport.ts`
+- Modify: `apps/omni/src/runtime/cli-transport.test.ts`
+- Modify: `apps/omni/src/runtime/prompt-materializer.ts`
+- Modify: `apps/omni/src/runtime/prompt-materializer.test.ts`
+- Modify: `apps/omni/src/agent-manager.ts`
+- Test: `apps/omni/src/runtime/cli-transport.test.ts`, `apps/omni/src/runtime/prompt-materializer.test.ts`
 
 - [ ] **Step 1: Add failing CLI transport materialization tests**
 
-Add these tests to `apps/bridge/src/runtime/cli-transport.test.ts`:
+Add these tests to `apps/omni/src/runtime/cli-transport.test.ts`:
 
 ```ts
 it("writes the wrapper at .zano/zano and references token files without inlining token contents", () => {
@@ -1497,7 +1497,7 @@ it("supports proxy token mode without writing direct agent-token", () => {
 
 - [ ] **Step 2: Add failing prompt materialization tests**
 
-Add this test to `apps/bridge/src/runtime/prompt-materializer.test.ts`:
+Add this test to `apps/omni/src/runtime/prompt-materializer.test.ts`:
 
 ```ts
 it("writes claude-system-prompt.md and reserved MCP config without secrets", () => {
@@ -1511,7 +1511,7 @@ it("writes claude-system-prompt.md and reserved MCP config without secrets", () 
     hostname: "test-host",
     platform: "darwin",
     workDir: join(rootDir, "agents", "agent-1"),
-    bridgeVersion: "0.1.5",
+    omniVersion: "0.1.5",
     model: "claude-opus-4-7",
     runtimeProfile: "claude",
     runtimeControlMcpServerUrl: "http://127.0.0.1:48124/mcp",
@@ -1534,14 +1534,14 @@ it("writes claude-system-prompt.md and reserved MCP config without secrets", () 
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- cli-transport.test.ts prompt-materializer.test.ts
+pnpm --filter @biang/omni test -- cli-transport.test.ts prompt-materializer.test.ts
 ```
 
 Expected: FAIL because wrapper path, token-file fields, and prompt/MCP config output do not match strict parity yet.
 
 - [ ] **Step 4: Update CLI transport input/output types**
 
-In `apps/bridge/src/runtime/cli-transport.ts`, update interfaces:
+In `apps/omni/src/runtime/cli-transport.ts`, update interfaces:
 
 ```ts
 export interface CliTransportInput {
@@ -1570,7 +1570,7 @@ export interface CliTransportResult {
 
 - [ ] **Step 5: Implement token/proxy-token materialization**
 
-In `apps/bridge/src/runtime/cli-transport.ts`, use `.zano/zano` as wrapper path and write token files outside wrapper text:
+In `apps/omni/src/runtime/cli-transport.ts`, use `.zano/zano` as wrapper path and write token files outside wrapper text:
 
 ```ts
 const agentBaseDir = this.options.agentsDir ?? join(this.options.rootDir, "agents");
@@ -1631,7 +1631,7 @@ const body = ["#!/usr/bin/env bash", ...envLines, command, ""].join("\n");
 
 - [ ] **Step 6: Update prompt materializer outputs**
 
-In `apps/bridge/src/runtime/prompt-materializer.ts`, write the prompt and MCP config under `.zano`:
+In `apps/omni/src/runtime/prompt-materializer.ts`, write the prompt and MCP config under `.zano`:
 
 ```ts
 const zanoDir = join(input.workDir, ".zano");
@@ -1664,7 +1664,7 @@ promptHash: string;
 
 - [ ] **Step 7: Update AgentManager spawn env**
 
-In `apps/bridge/src/agent-manager.ts`, pass `launchId`, `serverUrl`, and `agentToken` or `credentialProxy` to `CliTransportMaterializer.materialize(...)`. Update the child process `env` so raw token env vars are not forwarded:
+In `apps/omni/src/agent-manager.ts`, pass `launchId`, `serverUrl`, and `agentToken` or `credentialProxy` to `CliTransportMaterializer.materialize(...)`. Update the child process `env` so raw token env vars are not forwarded:
 
 ```ts
 const spawnEnv = { ...process.env };
@@ -1696,7 +1696,7 @@ Do not include raw token values in `childEnv`.
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- cli-transport.test.ts prompt-materializer.test.ts
+pnpm --filter @biang/omni test -- cli-transport.test.ts prompt-materializer.test.ts
 ```
 
 Expected: PASS.
@@ -1704,7 +1704,7 @@ Expected: PASS.
 - [ ] **Step 9: Commit**
 
 ```bash
-git add apps/bridge/src/runtime/cli-transport.ts apps/bridge/src/runtime/cli-transport.test.ts apps/bridge/src/runtime/prompt-materializer.ts apps/bridge/src/runtime/prompt-materializer.test.ts apps/bridge/src/agent-manager.ts
+git add apps/omni/src/runtime/cli-transport.ts apps/omni/src/runtime/cli-transport.test.ts apps/omni/src/runtime/prompt-materializer.ts apps/omni/src/runtime/prompt-materializer.test.ts apps/omni/src/agent-manager.ts
 git commit -m "feat: materialize Slock-like runtime files safely
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -1715,16 +1715,16 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ## Task 9: Report runtime session references separately from local files
 
 **Files:**
-- Create: `apps/bridge/src/runtime/runtime-session-ref.ts`
-- Create: `apps/bridge/src/runtime/runtime-session-ref.test.ts`
-- Modify: `apps/bridge/src/runtime/session-ledger.ts`
-- Modify: `apps/bridge/src/runtime/session-ledger.test.ts`
-- Modify: `apps/bridge/src/agent-manager.ts`
-- Test: `apps/bridge/src/runtime/runtime-session-ref.test.ts`, `apps/bridge/src/runtime/session-ledger.test.ts`
+- Create: `apps/omni/src/runtime/runtime-session-ref.ts`
+- Create: `apps/omni/src/runtime/runtime-session-ref.test.ts`
+- Modify: `apps/omni/src/runtime/session-ledger.ts`
+- Modify: `apps/omni/src/runtime/session-ledger.test.ts`
+- Modify: `apps/omni/src/agent-manager.ts`
+- Test: `apps/omni/src/runtime/runtime-session-ref.test.ts`, `apps/omni/src/runtime/session-ledger.test.ts`
 
 - [ ] **Step 1: Write failing session reference resolver tests**
 
-Create `apps/bridge/src/runtime/runtime-session-ref.test.ts`:
+Create `apps/omni/src/runtime/runtime-session-ref.test.ts`:
 
 ```ts
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -1766,14 +1766,14 @@ describe("runtime session refs", () => {
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- runtime-session-ref.test.ts
+pnpm --filter @biang/omni test -- runtime-session-ref.test.ts
 ```
 
 Expected: FAIL with an import error because `runtime-session-ref.ts` does not exist.
 
 - [ ] **Step 3: Implement session reference resolver**
 
-Create `apps/bridge/src/runtime/runtime-session-ref.ts`:
+Create `apps/omni/src/runtime/runtime-session-ref.ts`:
 
 ```ts
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
@@ -1831,7 +1831,7 @@ export function resolveRuntimeSessionRef(input: RuntimeSessionRefInput): Runtime
 
 - [ ] **Step 4: Add session ledger fields**
 
-In `apps/bridge/src/runtime/session-ledger.ts`, add fields to `RuntimeSessionRecord` and insertion input:
+In `apps/omni/src/runtime/session-ledger.ts`, add fields to `RuntimeSessionRecord` and insertion input:
 
 ```ts
 launchId: string;
@@ -1845,7 +1845,7 @@ Update insert defaults and Supabase/in-memory mapping to preserve these fields.
 
 - [ ] **Step 5: Add session ledger tests**
 
-Add this test to `apps/bridge/src/runtime/session-ledger.test.ts`:
+Add this test to `apps/omni/src/runtime/session-ledger.test.ts`:
 
 ```ts
 it("records runtime session refs separately from fallback files", async () => {
@@ -1876,7 +1876,7 @@ it("records runtime session refs separately from fallback files", async () => {
 
 - [ ] **Step 6: Update AgentManager session reporting**
 
-In `apps/bridge/src/agent-manager.ts`, after Claude reports `session_id`, resolve and record the session ref:
+In `apps/omni/src/agent-manager.ts`, after Claude reports `session_id`, resolve and record the session ref:
 
 ```ts
 const sessionRef = resolveRuntimeSessionRef({
@@ -1911,7 +1911,7 @@ Use existing variable names from the current file.
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- runtime-session-ref.test.ts session-ledger.test.ts agent-manager-runtime-session.test.ts
+pnpm --filter @biang/omni test -- runtime-session-ref.test.ts session-ledger.test.ts agent-manager-runtime-session.test.ts
 ```
 
 Expected: PASS.
@@ -1919,7 +1919,7 @@ Expected: PASS.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add apps/bridge/src/runtime/runtime-session-ref.ts apps/bridge/src/runtime/runtime-session-ref.test.ts apps/bridge/src/runtime/session-ledger.ts apps/bridge/src/runtime/session-ledger.test.ts apps/bridge/src/agent-manager.ts apps/bridge/src/agent-manager-runtime-session.test.ts
+git add apps/omni/src/runtime/runtime-session-ref.ts apps/omni/src/runtime/runtime-session-ref.test.ts apps/omni/src/runtime/session-ledger.ts apps/omni/src/runtime/session-ledger.test.ts apps/omni/src/agent-manager.ts apps/omni/src/agent-manager-runtime-session.test.ts
 git commit -m "feat: report runtime session references
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -1930,16 +1930,16 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ## Task 10: Add reserved runtime-profile controls
 
 **Files:**
-- Create: `apps/bridge/src/runtime/runtime-profile-controls.ts`
-- Create: `apps/bridge/src/runtime/runtime-profile-controls.test.ts`
-- Modify: `apps/bridge/src/runtime/prompt-materializer.ts`
-- Modify: `apps/bridge/src/agent-manager.ts`
-- Modify: `apps/bridge/src/bridge.ts`
-- Test: `apps/bridge/src/runtime/runtime-profile-controls.test.ts`, `apps/bridge/src/agent-manager-runtime-session.test.ts`, `apps/bridge/src/bridge-runtime.test.ts`
+- Create: `apps/omni/src/runtime/runtime-profile-controls.ts`
+- Create: `apps/omni/src/runtime/runtime-profile-controls.test.ts`
+- Modify: `apps/omni/src/runtime/prompt-materializer.ts`
+- Modify: `apps/omni/src/agent-manager.ts`
+- Modify: `apps/omni/src/bridge.ts`
+- Test: `apps/omni/src/runtime/runtime-profile-controls.test.ts`, `apps/omni/src/agent-manager-runtime-session.test.ts`, `apps/omni/src/bridge-runtime.test.ts`
 
 - [ ] **Step 1: Write failing runtime-profile control tests**
 
-Create `apps/bridge/src/runtime/runtime-profile-controls.test.ts`:
+Create `apps/omni/src/runtime/runtime-profile-controls.test.ts`:
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -1981,14 +1981,14 @@ describe("runtime profile controls", () => {
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- runtime-profile-controls.test.ts
+pnpm --filter @biang/omni test -- runtime-profile-controls.test.ts
 ```
 
 Expected: FAIL with an import error because `runtime-profile-controls.ts` does not exist.
 
 - [ ] **Step 3: Implement runtime-profile controls**
 
-Create `apps/bridge/src/runtime/runtime-profile-controls.ts`:
+Create `apps/omni/src/runtime/runtime-profile-controls.ts`:
 
 ```ts
 export type RuntimeProfileControlKind = "migration" | "daemon_release_notice";
@@ -2034,7 +2034,7 @@ export function isRuntimeProfileControlAck(value: unknown): value is RuntimeProf
 
 - [ ] **Step 4: Add prompt and MCP config instructions**
 
-In `apps/bridge/src/runtime/prompt-materializer.ts` and `apps/bridge/src/system-prompt.ts`, include this exact runtime-control rule block in the materialized prompt:
+In `apps/omni/src/runtime/prompt-materializer.ts` and `apps/omni/src/system-prompt.ts`, include this exact runtime-control rule block in the materialized prompt:
 
 ```text
 ## Runtime Profile Controls
@@ -2049,7 +2049,7 @@ Keep ordinary collaboration CLI-only; do not add chat/task MCP tools.
 
 - [ ] **Step 5: Observe reserved MCP action in AgentManager**
 
-In `apps/bridge/src/agent-manager.ts`, when processing assistant `tool_use` stream events, detect the reserved runtime action and emit an ACK through the bridge/control connection:
+In `apps/omni/src/agent-manager.ts`, when processing assistant `tool_use` stream events, detect the reserved runtime action and emit an ACK through Omni/control connection:
 
 ```ts
 const ack = observeRuntimeProfileMigrationDone(agentProc.pendingRuntimeProfileControl, {
@@ -2067,7 +2067,7 @@ Add `pendingRuntimeProfileControl` to `AgentProcess` and set it when a migration
 
 - [ ] **Step 6: Add integration tests for migration ACK**
 
-Add this test to `apps/bridge/src/agent-manager-runtime-session.test.ts`:
+Add this test to `apps/omni/src/agent-manager-runtime-session.test.ts`:
 
 ```ts
 it("ACKs runtime-profile migration only after reserved MCP action", async () => {
@@ -2088,7 +2088,7 @@ it("ACKs runtime-profile migration only after reserved MCP action", async () => 
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- runtime-profile-controls.test.ts prompt-materializer.test.ts agent-manager-runtime-session.test.ts bridge-runtime.test.ts
+pnpm --filter @biang/omni test -- runtime-profile-controls.test.ts prompt-materializer.test.ts agent-manager-runtime-session.test.ts bridge-runtime.test.ts
 ```
 
 Expected: PASS.
@@ -2096,7 +2096,7 @@ Expected: PASS.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add apps/bridge/src/runtime/runtime-profile-controls.ts apps/bridge/src/runtime/runtime-profile-controls.test.ts apps/bridge/src/runtime/prompt-materializer.ts apps/bridge/src/runtime/prompt-materializer.test.ts apps/bridge/src/system-prompt.ts apps/bridge/src/agent-manager.ts apps/bridge/src/agent-manager-runtime-session.test.ts apps/bridge/src/bridge.ts apps/bridge/src/bridge-runtime.test.ts
+git add apps/omni/src/runtime/runtime-profile-controls.ts apps/omni/src/runtime/runtime-profile-controls.test.ts apps/omni/src/runtime/prompt-materializer.ts apps/omni/src/runtime/prompt-materializer.test.ts apps/omni/src/system-prompt.ts apps/omni/src/agent-manager.ts apps/omni/src/agent-manager-runtime-session.test.ts apps/omni/src/bridge.ts apps/omni/src/bridge-runtime.test.ts
 git commit -m "feat: add reserved runtime profile controls
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -2112,7 +2112,7 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 - Create: `packages/cli/src/freshness.ts`
 - Create: `packages/cli/src/freshness.test.ts`
 - Modify: `packages/cli/src/index.ts`
-- Modify: `apps/bridge/src/system-prompt.ts`
+- Modify: `apps/omni/src/system-prompt.ts`
 - Test: `packages/cli/src/freshness.test.ts`, CLI build
 
 - [ ] **Step 1: Add CLI test script**
@@ -2337,7 +2337,7 @@ Add `message send-draft <draft-id>` command that reads the draft JSON from `.zan
 
 - [ ] **Step 7: Teach prompt freshness behavior**
 
-In `apps/bridge/src/system-prompt.ts`, include this wording in the CLI/freshness section:
+In `apps/omni/src/system-prompt.ts`, include this wording in the CLI/freshness section:
 
 ```text
 If `zano message send`, `zano task claim`, or `zano task update` returns a freshness hold, stop and review the newer bounded context before acting.
@@ -2359,7 +2359,7 @@ Expected: PASS.
 - [ ] **Step 9: Commit**
 
 ```bash
-git add packages/cli/package.json packages/cli/src/local-state.ts packages/cli/src/freshness.ts packages/cli/src/freshness.test.ts packages/cli/src/index.ts apps/bridge/src/system-prompt.ts
+git add packages/cli/package.json packages/cli/src/local-state.ts packages/cli/src/freshness.ts packages/cli/src/freshness.test.ts packages/cli/src/index.ts apps/omni/src/system-prompt.ts
 git commit -m "feat: hold stale CLI side effects for freshness review
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -2370,15 +2370,15 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ## Task 12: Add bounded thread join context to deliveries
 
 **Files:**
-- Modify: `apps/bridge/src/a2a-protocol.ts`
-- Modify: `apps/bridge/src/a2a-protocol.test.ts`
-- Modify: `apps/bridge/src/runtime/prompt-materializer.ts`
-- Modify: `apps/bridge/src/system-prompt.ts`
-- Test: `apps/bridge/src/a2a-protocol.test.ts`, `apps/bridge/src/runtime/prompt-materializer.test.ts`
+- Modify: `apps/omni/src/a2a-protocol.ts`
+- Modify: `apps/omni/src/a2a-protocol.test.ts`
+- Modify: `apps/omni/src/runtime/prompt-materializer.ts`
+- Modify: `apps/omni/src/system-prompt.ts`
+- Test: `apps/omni/src/a2a-protocol.test.ts`, `apps/omni/src/runtime/prompt-materializer.test.ts`
 
 - [ ] **Step 1: Add failing thread join context tests**
 
-Add this test to `apps/bridge/src/a2a-protocol.test.ts`:
+Add this test to `apps/omni/src/a2a-protocol.test.ts`:
 
 ```ts
 it("includes bounded thread join context when an agent is pulled into a thread", () => {
@@ -2418,14 +2418,14 @@ Use the existing planner/helper names in `a2a-protocol.test.ts`; preserve the ex
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- a2a-protocol.test.ts
+pnpm --filter @biang/omni test -- a2a-protocol.test.ts
 ```
 
 Expected: FAIL because deliveries do not include bounded thread context yet.
 
 - [ ] **Step 3: Add thread context types and formatting**
 
-In `apps/bridge/src/a2a-protocol.ts`, add:
+In `apps/omni/src/a2a-protocol.ts`, add:
 
 ```ts
 export interface DeliveryThreadContext {
@@ -2465,7 +2465,7 @@ Keep thread/task boundaries scoped; do not expand this context into top-level al
 
 - [ ] **Step 5: Update prompt wording**
 
-In `apps/bridge/src/system-prompt.ts`, include:
+In `apps/omni/src/system-prompt.ts`, include:
 
 ```text
 When a delivery includes thread join context, read the parent message and recent thread messages before replying.
@@ -2478,7 +2478,7 @@ Only move thread/task context back to the top-level channel when doing so is use
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- a2a-protocol.test.ts prompt-materializer.test.ts
+pnpm --filter @biang/omni test -- a2a-protocol.test.ts prompt-materializer.test.ts
 ```
 
 Expected: PASS.
@@ -2486,7 +2486,7 @@ Expected: PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add apps/bridge/src/a2a-protocol.ts apps/bridge/src/a2a-protocol.test.ts apps/bridge/src/runtime/prompt-materializer.ts apps/bridge/src/runtime/prompt-materializer.test.ts apps/bridge/src/system-prompt.ts
+git add apps/omni/src/a2a-protocol.ts apps/omni/src/a2a-protocol.test.ts apps/omni/src/runtime/prompt-materializer.ts apps/omni/src/runtime/prompt-materializer.test.ts apps/omni/src/system-prompt.ts
 git commit -m "feat: include bounded thread join context
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -2497,14 +2497,14 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 ## Task 13: Harden the agent prompt teammate contract
 
 **Files:**
-- Modify: `apps/bridge/src/system-prompt.ts`
-- Modify: `apps/bridge/src/runtime/prompt-materializer.ts`
-- Modify: `apps/bridge/src/runtime/prompt-materializer.test.ts`
-- Test: `apps/bridge/src/runtime/prompt-materializer.test.ts`
+- Modify: `apps/omni/src/system-prompt.ts`
+- Modify: `apps/omni/src/runtime/prompt-materializer.ts`
+- Modify: `apps/omni/src/runtime/prompt-materializer.test.ts`
+- Test: `apps/omni/src/runtime/prompt-materializer.test.ts`
 
 - [ ] **Step 1: Add failing prompt contract coverage**
 
-Add this test to `apps/bridge/src/runtime/prompt-materializer.test.ts`:
+Add this test to `apps/omni/src/runtime/prompt-materializer.test.ts`:
 
 ```ts
 it("includes the strict Slock-like teammate contract sections", () => {
@@ -2535,14 +2535,14 @@ Use an existing prompt test helper if present. If none exists, add a local helpe
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- prompt-materializer.test.ts
+pnpm --filter @biang/omni test -- prompt-materializer.test.ts
 ```
 
 Expected: FAIL if any required section is missing or has weaker wording.
 
 - [ ] **Step 3: Update `system-prompt.ts` sections**
 
-In `apps/bridge/src/system-prompt.ts`, ensure the prompt includes these sections with these core rules:
+In `apps/omni/src/system-prompt.ts`, ensure the prompt includes these sections with these core rules:
 
 ```text
 # Who you are
@@ -2588,7 +2588,7 @@ Preserve existing project-specific Zano instructions that do not conflict with s
 
 - [ ] **Step 4: Update materializer daemon context**
 
-In `apps/bridge/src/runtime/prompt-materializer.ts`, update the daemon delivery header grammar to include ACK/freshness/thread context without implying completion:
+In `apps/omni/src/runtime/prompt-materializer.ts`, update the daemon delivery header grammar to include ACK/freshness/thread context without implying completion:
 
 ```text
 Incoming messages may begin with `[delivery=<delivery-short-id> seq=<per-agent-seq> traceparent=<traceparent> target=<target> msg=<message-short-id> time=<iso-time> sender=@<display-name> type=<human|agent|system>]`.
@@ -2603,7 +2603,7 @@ Busy wake-ups may be represented as pending-message notifications until a safe r
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test -- prompt-materializer.test.ts
+pnpm --filter @biang/omni test -- prompt-materializer.test.ts
 ```
 
 Expected: PASS.
@@ -2611,7 +2611,7 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add apps/bridge/src/system-prompt.ts apps/bridge/src/runtime/prompt-materializer.ts apps/bridge/src/runtime/prompt-materializer.test.ts
+git add apps/omni/src/system-prompt.ts apps/omni/src/runtime/prompt-materializer.ts apps/omni/src/runtime/prompt-materializer.test.ts
 git commit -m "feat: harden Slock-like agent prompt contract
 
 Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
@@ -2764,7 +2764,7 @@ Expected: matches only appear in explicit forbidden/non-goal text or spec wordin
 Run:
 
 ```bash
-pnpm --filter @fehey/zano-bridge test
+pnpm --filter @biang/omni test
 ```
 
 Expected: PASS.
@@ -2814,7 +2814,7 @@ Expected: PASS.
 
 - [ ] **Step 7: Local bridge smoke without sending real workspace messages**
 
-Run the bridge against local/dev configuration only. Do not send real messages to production-like workspaces unless the human explicitly approves.
+Run Omni against local/dev configuration only. Do not send real messages to production-like workspaces unless the human explicitly approves.
 
 Expected local observations:
 

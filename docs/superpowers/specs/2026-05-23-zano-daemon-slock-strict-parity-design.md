@@ -454,7 +454,7 @@ Secret categories:
 bridge API keys
 Supabase service-role key
 Supabase JWT secret
-raw bridge auth token
+raw Omni auth token
 raw agent token
 MCP auth parameters
 proxy token contents

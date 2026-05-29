@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Zano MCP Chat Bridge
+ * Zano MCP Chat Omni
  *
  * A standalone MCP server that Claude Code agents can call to:
  * - send_message: Send messages to channels or DMs
@@ -423,6 +423,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error("Chat bridge fatal error:", err);
+  console.error("Chat Omni fatal error:", err);
   process.exit(1);
 });

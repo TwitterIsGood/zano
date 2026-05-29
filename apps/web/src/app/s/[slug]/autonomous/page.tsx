@@ -389,7 +389,7 @@ export default async function AutonomousPage({ params }: AutonomousPageProps) {
                   <Badge variant={stateVariant(agent.status)}>{agent.status}</Badge>
                 </div>
                 <div className="mt-2 text-xs text-muted-foreground">
-                  Daemon workspace is read by agent id from the local bridge.
+                  Daemon workspace is read by agent id from the Omni.
                 </div>
               </a>
             ))

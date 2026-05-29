@@ -6,7 +6,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const agentManagerPath = join(__dirname, "..", "src", "agent-manager.ts");
 const systemPromptPath = join(__dirname, "..", "src", "system-prompt.ts");
 const skillsPath = join(__dirname, "..", "src", "autonomous-skills.ts");
-const connectRoutePath = join(__dirname, "..", "..", "web", "src", "app", "api", "bridge", "connect", "route.ts");
+const connectRoutePath = join(__dirname, "..", "..", "web", "src", "app", "api", "omni", "connect", "route.ts");
 
 const agentManager = readFileSync(agentManagerPath, "utf8");
 const systemPrompt = readFileSync(systemPromptPath, "utf8");
@@ -50,7 +50,7 @@ const checks = [
     pattern: /if \(restartedProc && !restartedProc\.busy\) this\.drainQueue\(agentId, restartedProc\)/,
   },
   {
-    name: "bridge connect route fails closed when agent query fails",
+    name: "omni connect route fails closed when agent query fails",
     source: connectRoute,
     pattern: /const \{ data: agents, error: agentsError \}[\s\S]*\.from\("agents"\)[\s\S]*if \(agentsError\)[\s\S]*status: 500/,
   },
@@ -59,11 +59,11 @@ const checks = [
 const failures = checks.filter((check) => !check.pattern.test(check.source));
 
 if (failures.length > 0) {
-  console.error("Autonomous bridge verification failed:");
+  console.error("Autonomous Omni verification failed:");
   for (const failure of failures) {
     console.error(`- ${failure.name}`);
   }
   process.exit(1);
 }
 
-console.log(`Autonomous bridge verification passed (${checks.length} checks).`);
+console.log(`Autonomous Omni verification passed (${checks.length} checks).`);

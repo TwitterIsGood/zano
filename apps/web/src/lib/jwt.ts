@@ -17,7 +17,7 @@ export interface ActorJwtOptions {
  * Sign a minimal Supabase-compatible JWT using HMAC-SHA256.
  * This produces a token that auth.uid() in RLS policies will recognize.
  */
-export function signBridgeJwt(userId: string, serverId: string, expiresInSeconds = 7 * 24 * 3600): string {
+export function signOmniJwt(userId: string, serverId: string, expiresInSeconds = 7 * 24 * 3600): string {
   return signActorJwt({
     actorId: userId,
     actorType: "human",
@@ -90,7 +90,7 @@ export function signAgentJwt(options: {
   });
 }
 
-export function createBridgeConnectCredentials(input: {
+export function createOmniConnectCredentials(input: {
   userId: string;
   serverId: string;
   agents: Array<{ id: string }>;
@@ -99,7 +99,7 @@ export function createBridgeConnectCredentials(input: {
   supabaseAnonKey: string;
 }): {
   supabaseKey: string;
-  bridgeToken: string;
+  omniToken: string;
   agentAuthTokens: Record<string, string>;
 } {
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -107,14 +107,14 @@ export function createBridgeConnectCredentials(input: {
   if (serviceRoleKey?.startsWith("sb_secret_")) {
     return {
       supabaseKey: serviceRoleKey,
-      bridgeToken: serviceRoleKey,
+      omniToken: serviceRoleKey,
       agentAuthTokens: Object.fromEntries(input.agents.map((agent) => [agent.id, serviceRoleKey])),
     };
   }
 
   return {
     supabaseKey: input.supabaseAnonKey,
-    bridgeToken: signBridgeJwt(input.userId, input.serverId, input.expiresInSeconds),
+    omniToken: signOmniJwt(input.userId, input.serverId, input.expiresInSeconds),
     agentAuthTokens: Object.fromEntries(
       input.agents.map((agent) => [
         agent.id,

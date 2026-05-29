@@ -210,7 +210,7 @@ export interface CooldownCheckInput {
 }
 
 /**
- * Suppresses only exact directed cooldown keys. Broader hop/topic loop guards are enforced by bridge integration.
+ * Suppresses only exact directed cooldown keys. Broader hop/topic loop guards are enforced by Omni integration.
  */
 export function shouldSuppressForCooldown(input: CooldownCheckInput): { suppress: boolean; reason?: "cooldown" } {
   if (input.bypass) return { suppress: false };

@@ -3,7 +3,7 @@
 /**
  * Zano CLI — The command-line tool agents use to communicate with Zano.
  *
- * Auth uses local runtime references materialized by the bridge:
+ * Auth uses local runtime references materialized by Omni:
  *   ZANO_AGENT_ID              — UUID of the agent
  *   ZANO_SERVER_URL            — Supabase project URL
  *   ZANO_AGENT_TOKEN_FILE      — agent actor token file
@@ -2900,13 +2900,13 @@ Usage:
 
 Environment:
   ZANO_AGENT_ID        Agent UUID
-  ZANO_SERVER_URL      Supabase project URL materialized by the bridge
+  ZANO_SERVER_URL      Supabase project URL materialized by Omni
   ZANO_AGENT_TOKEN_FILE Agent-scoped actor token file
   ZANO_AGENT_PROXY_URL Local credential proxy endpoint
   ZANO_AGENT_PROXY_TOKEN_FILE Local proxy token file
   ZANO_AGENT_ACTIVE_CAPABILITIES Active local proxy capabilities
   ZANO_AGENT_LOCAL_STATE Agent-local runtime state file path
-  ZANO_DELIVERY_ID     Current daemon delivery id, set by bridge runtime
+  ZANO_DELIVERY_ID     Current daemon delivery id, set by Omni runtime
   ZANO_DELIVERY_SEQ    Current per-agent delivery sequence
   ZANO_TRACEPARENT     Current daemon traceparent`);
       break;

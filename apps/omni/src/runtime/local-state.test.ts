@@ -9,7 +9,7 @@ describe("AgentLocalStateStore", () => {
     const rootDir = mkdtempSync(join(tmpdir(), "zano-local-state-"));
     const store = new AgentLocalStateStore({ rootDir, machineId: "machine-test" });
 
-    const machine = store.ensureMachine({ bridgeVersion: "0.1.5", workspaceId: "server-1", hostname: "host", platform: "darwin", arch: "arm64" });
+    const machine = store.ensureMachine({ omniVersion: "0.1.5", workspaceId: "server-1", hostname: "host", platform: "darwin", arch: "arm64" });
     const agent = store.ensureAgent({ agentId: "agent-1", displayName: "Alpha", description: "Builder" });
 
     expect(existsSync(machine.traceDir)).toBe(true);
@@ -24,7 +24,7 @@ describe("AgentLocalStateStore", () => {
     const store = new AgentLocalStateStore({ rootDir, machineId: "../machine" });
 
     expect(() =>
-      store.ensureMachine({ bridgeVersion: "0.1.5", workspaceId: "server-1", hostname: "host", platform: "darwin", arch: "arm64" }),
+      store.ensureMachine({ omniVersion: "0.1.5", workspaceId: "server-1", hostname: "host", platform: "darwin", arch: "arm64" }),
     ).toThrow(new Error("Unsafe local state path segment: machineId"));
   });
 

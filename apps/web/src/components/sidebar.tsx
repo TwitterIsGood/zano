@@ -175,8 +175,8 @@ export function Sidebar({
   const [showServerMenu, setShowServerMenu] = useState(false);
   const [servers, setServers] = useState<Server[]>(initialData.servers);
   const [machineKeys, setMachineKeys] = useState<MachineKey[]>(initialData.machineKeys);
-  // Heartbeat-based online status (bridge updates last_used_at every 30s)
-  const [bridgeOnline, setBridgeOnline] = useState(false);
+  // Heartbeat-based online status (Omni updates last_used_at every 30s)
+  const [omniOnline, setOmniOnline] = useState(false);
   const [editingChannel, setEditingChannel] = useState<Channel | null>(null);
   const [selectedMachine, setSelectedMachine] = useState<MachineKey | null>(null);
   const [contextMenu, setContextMenu] = useState<{
@@ -200,7 +200,7 @@ export function Sidebar({
   useEffect(() => {
     let cancelled = false;
     queueMicrotask(() => {
-      if (!cancelled) setBridgeOnline(hasRecentMachineHeartbeat(machineKeys));
+      if (!cancelled) setOmniOnline(hasRecentMachineHeartbeat(machineKeys));
     });
     return () => {
       cancelled = true;
@@ -218,7 +218,7 @@ export function Sidebar({
     setServers(data.servers as Server[]);
     setMachineKeys(data.machineKeys as MachineKey[]);
 
-    setBridgeOnline(hasRecentMachineHeartbeat(data.machineKeys as MachineKey[]));
+    setOmniOnline(hasRecentMachineHeartbeat(data.machineKeys as MachineKey[]));
 
     const agentList = (data.agents || []) as Agent[];
     setAgents(agentList);
@@ -242,11 +242,11 @@ export function Sidebar({
         agentIds?: string[];
       }>;
       const online = entries.length > 0;
-      setBridgeOnline(online);
+      setOmniOnline(online);
       return online;
     }
 
-    const presenceTopic = `bridge-presence:${serverId}`;
+    const presenceTopic = `omni-presence:${serverId}`;
     for (const channel of supabase.getChannels() as Array<{ topic: string }>) {
       if (channel.topic === `realtime:${presenceTopic}`) {
         supabase.removeChannel(channel as ReturnType<typeof supabase.channel>);
@@ -325,14 +325,14 @@ export function Sidebar({
     async function checkHeartbeat() {
       const presenceOnline = refreshPresence();
       try {
-        const res = await fetch(`/api/bridge/keys?server_id=${serverId}`);
+        const res = await fetch(`/api/omni/keys?server_id=${serverId}`);
         if (res.ok) {
           const { keys } = await res.json() as { keys: MachineKey[] };
           setMachineKeys(keys);
-          setBridgeOnline(hasRecentMachineHeartbeat(keys));
+          setOmniOnline(hasRecentMachineHeartbeat(keys));
         }
       } catch {
-        setBridgeOnline(presenceOnline);
+        setOmniOnline(presenceOnline);
       }
     }
 
@@ -372,8 +372,8 @@ export function Sidebar({
   function getStatusDot(agentId: string) {
     const activityState = agentActivities.get(agentId);
     const activity = activityState?.activity;
-    // Agent is online when the bridge is online (bridge manages all agents)
-    const isOnline = bridgeOnline;
+    // Agent is online when Omni is online (Omni manages all agents)
+    const isOnline = omniOnline;
 
     if (isOnline && (activity === "thinking" || activity === "working")) return "bg-yellow-400";
     if (isOnline) return "bg-green-500";
@@ -419,7 +419,7 @@ export function Sidebar({
                 if (act?.label && act.activity !== "idle") {
                   return act.detail ? `${act.label}: ${act.detail}` : act.label;
                 }
-                return bridgeOnline ? "Online" : "Offline";
+                return omniOnline ? "Online" : "Offline";
               })()}
             />
           </div>
@@ -627,9 +627,9 @@ export function Sidebar({
                       <MonitorIcon className="size-4 text-muted-foreground/60" />
                       <div
                         className={`absolute -bottom-0.5 -right-0.5 h-1.5 w-1.5 rounded-full border-[1.5px] border-background ${
-                          bridgeOnline ? "bg-green-500" : "bg-muted-foreground/40"
+                          omniOnline ? "bg-green-500" : "bg-muted-foreground/40"
                         }`}
-                        title={bridgeOnline ? "Online" : "Offline"}
+                        title={omniOnline ? "Online" : "Offline"}
                       />
                     </div>
                     <span className="truncate text-left">{mk.name || mk.key_prefix}</span>

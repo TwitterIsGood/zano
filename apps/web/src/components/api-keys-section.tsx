@@ -28,7 +28,7 @@ export function ApiKeysSection({
   const [showForm, setShowForm] = useState(false);
 
   async function loadKeys() {
-    const res = await fetch(`/api/bridge/keys?server_id=${serverId}`);
+    const res = await fetch(`/api/omni/keys?server_id=${serverId}`);
     if (res.ok) {
       const data = await res.json();
       setKeys(data.keys);
@@ -37,7 +37,7 @@ export function ApiKeysSection({
 
   async function handleCreate() {
     setCreating(true);
-    const res = await fetch("/api/bridge/keys", {
+    const res = await fetch("/api/omni/keys", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -57,7 +57,7 @@ export function ApiKeysSection({
   }
 
   async function handleDelete(id: string) {
-    const res = await fetch(`/api/bridge/keys?id=${id}`, { method: "DELETE" });
+    const res = await fetch(`/api/omni/keys?id=${id}`, { method: "DELETE" });
     if (res.ok) {
       setKeys((prev) => prev.filter((k) => k.id !== id));
       if (revealedKey) setRevealedKey(null);
@@ -75,7 +75,7 @@ export function ApiKeysSection({
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <KeyIcon className="size-4 text-muted-foreground" />
-          <h3 className="text-sm font-medium text-foreground">Bridge API Keys</h3>
+          <h3 className="text-sm font-medium text-foreground">Omni API Keys</h3>
         </div>
         {!showForm && (
           <Button
@@ -90,7 +90,7 @@ export function ApiKeysSection({
       </div>
 
       <p className="text-xs text-muted-foreground mb-4">
-        Generate an API key to connect your local bridge to this workspace.
+        Generate an API key to connect your Omni to this workspace.
       </p>
 
       {/* Revealed key (shown once after creation) */}
@@ -118,7 +118,7 @@ export function ApiKeysSection({
           <div className="mt-3 rounded-md bg-background border p-2">
             <p className="text-xs text-muted-foreground mb-1">Quick start:</p>
             <code className="text-xs font-mono break-all select-all text-foreground">
-              npx @fehey/zano-bridge --api-key {revealedKey}
+              npx @biang/omni --api-key {revealedKey}
             </code>
           </div>
           <Button
@@ -163,7 +163,7 @@ export function ApiKeysSection({
       {/* Key list */}
       {keys.length === 0 ? (
         <p className="text-xs text-muted-foreground">
-          No API keys yet. Create one to connect a bridge.
+          No API keys yet. Create one to connect Omni.
         </p>
       ) : (
         <div className="space-y-2">

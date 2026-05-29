@@ -1,9 +1,9 @@
 -- ============================================================
--- Machine API Keys for Bridge Authentication
+-- Machine API Keys for Omni Authentication
 -- Run this in Supabase SQL Editor
 -- ============================================================
 
--- Machine keys table — stores hashed API keys for bridge connections
+-- Machine keys table — stores hashed API keys for Omni connections
 CREATE TABLE IF NOT EXISTS public.machine_keys (
   id uuid DEFAULT uuid_generate_v4() PRIMARY KEY,
   key_prefix text NOT NULL,          -- first 8 chars of key (for display: "zk_a1b2...")
@@ -35,7 +35,7 @@ CREATE POLICY "Users can delete own keys"
   USING (auth.uid() = user_id);
 
 -- ============================================================
--- Helper functions for bridge auth
+-- Helper functions for Omni auth
 -- ============================================================
 
 create or replace function public.auth_actor_is_not_archived_agent()
@@ -75,9 +75,9 @@ RETURNS boolean AS $$
 $$ LANGUAGE sql SECURITY DEFINER STABLE;
 
 -- ============================================================
--- Updated RLS policies for bridge operations
--- Bridge authenticates with a JWT containing the user's ID,
--- so auth.uid() returns the user — but bridge needs to
+-- Updated RLS policies for Omni operations
+-- Omni authenticates with a JWT containing the user's ID,
+-- so auth.uid() returns the user — but Omni needs to
 -- operate on behalf of the user's agents.
 -- ============================================================
 

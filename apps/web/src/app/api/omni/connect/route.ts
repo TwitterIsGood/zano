@@ -1,19 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createBridgeConnectCredentials } from "@/lib/jwt";
+import { createOmniConnectCredentials } from "@/lib/jwt";
 
 /**
- * POST /api/bridge/connect
+ * POST /api/omni/connect
  *
- * Validates a machine API key and returns credentials for the bridge to
+ * Validates a machine API key and returns credentials for Omni to
  * connect to Supabase. Legacy JWT projects receive scoped actor tokens;
  * modern self-hosted projects can receive the opaque service key.
  *
  * Request body: { apiKey: "zk_..." }
  * Response: { supabaseUrl, supabaseAnonKey, token, userId, serverId, serverName, agents }
  *
- * `token` is the bridge owner-scoped compatibility token. Each agent also gets
+ * `token` is Omni owner-scoped compatibility token. Each agent also gets
  * an actor-scoped token for future autonomous actor/RLS flows.
  */
 export async function POST(request: NextRequest) {
@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
 
   if (agentsError) {
     return NextResponse.json(
-      { error: "Failed to load bridge agents" },
+      { error: "Failed to load Omni agents" },
       { status: 500 }
     );
   }
@@ -99,7 +99,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const credentials = createBridgeConnectCredentials({
+  const credentials = createOmniConnectCredentials({
     userId: keyRecord.user_id,
     serverId: keyRecord.server_id,
     agents: agents ?? [],
@@ -111,7 +111,7 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     supabaseUrl,
     supabaseAnonKey: credentials.supabaseKey,
-    token: credentials.bridgeToken,
+    token: credentials.omniToken,
     userId: keyRecord.user_id,
     serverId: keyRecord.server_id,
     serverName: server.name,

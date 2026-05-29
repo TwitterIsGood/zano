@@ -46,13 +46,13 @@ export function MachineDetailDialog({
   const nameChanged = name.trim() !== machine.name;
 
   const apiKeyDisplay = keyValue || `${machine.key_prefix}...`;
-  const npxCommand = `npx @fehey/zano-bridge --api-key ${apiKeyDisplay}`;
+  const npxCommand = `npx @biang/omni --api-key ${apiKeyDisplay}`;
 
   async function handleSaveName() {
     if (!nameChanged) return;
     setSaving(true);
     try {
-      const res = await fetch("/api/bridge/keys", {
+      const res = await fetch("/api/omni/keys", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: machine.id, name: name.trim() }),
@@ -69,9 +69,9 @@ export function MachineDetailDialog({
     setRegenerating(true);
     try {
       // Delete old key
-      await fetch(`/api/bridge/keys?id=${machine.id}`, { method: "DELETE" });
+      await fetch(`/api/omni/keys?id=${machine.id}`, { method: "DELETE" });
       // Create new key with same name
-      const res = await fetch("/api/bridge/keys", {
+      const res = await fetch("/api/omni/keys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -104,7 +104,7 @@ export function MachineDetailDialog({
           </div>
           <DialogTitle className="text-center">Machine Details</DialogTitle>
           <DialogDescription className="text-center">
-            Manage this machine connection and get the bridge command.
+            Manage this machine connection and get the Omni command.
           </DialogDescription>
         </DialogHeader>
         <DialogPanel>
@@ -132,7 +132,7 @@ export function MachineDetailDialog({
             </Field>
 
             <Field>
-              <FieldLabel>Bridge Command</FieldLabel>
+              <FieldLabel>Omni Command</FieldLabel>
               <div className="relative">
                 <div className="rounded-lg border bg-muted/50 p-3 pr-10 font-mono text-xs break-all select-all leading-relaxed">
                   {npxCommand}
