@@ -1,11 +1,13 @@
 'use client';
 
+import type { Task } from '@zano/shared';
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { GearSix } from '@phosphor-icons/react';
 import { Check, MessageSquareText, RotateCcw } from 'lucide-react';
 import TiptapMessageInput, { type TiptapMessageInputHandle } from './tiptap-message-input';
-import { useAgentActivity } from '@/hooks/use-agent-activity';
+import { useAgentActivity, type ActivityState } from '@/hooks/use-agent-activity';
+import { usePageRecovery } from '@/hooks/use-page-recovery';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { GeneratedAvatar } from './generated-avatar';
@@ -13,6 +15,8 @@ import { ThreadPanel } from './thread-panel';
 import { MessageActionMenu } from './message-action-menu';
 import { ContextMenu } from './context-menu';
 import { MessageBody } from './message-body';
+import { MessageDeliveryDrawer } from './message-delivery-drawer';
+import { TaskDetailDrawer } from './task-detail-drawer';
 
 interface Message {
   id: string;
@@ -41,6 +45,81 @@ interface AgentInfo {
   display_name: string;
   status: string;
   description: string | null;
+  archived_at: string | null;
+}
+
+interface ChannelMember {
+  member_id: string;
+}
+
+interface MessageInsertPayload {
+  new: unknown;
+}
+
+function publicAgentHandle(displayName: string, fallback = 'Agent') {
+  const handle = displayName
+    .trim()
+    .replace(/\s+/gu, '')
+    .replace(/[^\p{L}\p{N}_-]+/gu, '');
+  return handle || fallback;
+}
+
+function agentMentionHandle(agent: AgentInfo) {
+  return publicAgentHandle(agent.display_name, agent.name);
+}
+
+function agentIdFromDmChannelName(name: string) {
+  return name.startsWith('dm-') ? name.slice(3) : null;
+}
+
+function getDmTargetAgent(channel: Channel, agents: AgentInfo[]) {
+  if (!channel.name) return null;
+  const targetAgentId = agentIdFromDmChannelName(channel.name);
+  if (targetAgentId) {
+    return agents.find((agent) => agent.id === targetAgentId) ?? null;
+  }
+  return agents.length === 1 ? agents[0] : null;
+}
+
+function isChannelActivity(act: ActivityState | undefined, channelId: string) {
+  return (act?.activity === 'thinking' || act?.activity === 'working') && act.channelId === channelId;
+}
+
+function mergeMessages(prev: Message[], incoming: Message[]) {
+  if (incoming.length === 0) return prev;
+
+  let changed = false;
+  const next = [...prev];
+
+  for (const message of incoming) {
+    const existingIndex = next.findIndex((existing) => existing.id === message.id);
+    if (existingIndex !== -1) {
+      next[existingIndex] = { ...next[existingIndex], ...message };
+      changed = true;
+      continue;
+    }
+
+    const optimisticIndex = next.findIndex(
+      (existing) =>
+        existing.id.startsWith('optimistic-') &&
+        existing.sender_id === message.sender_id &&
+        existing.sender_type === message.sender_type &&
+        existing.content === message.content,
+    );
+    if (optimisticIndex !== -1) {
+      next[optimisticIndex] = message;
+    } else {
+      next.push(message);
+    }
+    changed = true;
+  }
+
+  if (!changed) return prev;
+
+  return next.sort((a, b) => {
+    if (a.seq !== null && b.seq !== null && a.seq !== b.seq) return a.seq - b.seq;
+    return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+  });
 }
 
 export function MessageArea({
@@ -59,6 +138,7 @@ export function MessageArea({
   const [currentUserDisplayName, setCurrentUserDisplayName] = useState<string | null>(null);
   const [agentInfo, setAgentInfo] = useState<AgentInfo | null>(null);
   const [channelAgents, setChannelAgents] = useState<Map<string, AgentInfo>>(new Map());
+  const [dmAgentUnavailable, setDmAgentUnavailable] = useState(false);
   const [agentTyping, setAgentTyping] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -66,73 +146,117 @@ export function MessageArea({
   const [mentionIndex, setMentionIndex] = useState(0);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingStartRef = useRef<string | null>(null);
+  const latestMessageSeqRef = useRef(0);
+  const channelLoadIdRef = useRef(0);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const isNearBottomRef = useRef(true);
   const inputRef = useRef<TiptapMessageInputHandle>(null);
   const [openThreadMessageId, setOpenThreadMessageId] = useState<string | null>(null);
+  const [deliveryMessageId, setDeliveryMessageId] = useState<string | null>(null);
+  const [tasksByNumber, setTasksByNumber] = useState<Map<number, Task>>(new Map());
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [contextMenu, setContextMenu] = useState<{ messageId: string; x: number; y: number } | null>(null);
   const supabase = createClient();
   const agentActivities = useAgentActivity();
+  const channelId = channel?.id ?? null;
 
-  useEffect(() => {
-    supabase.auth.getUser().then(async ({ data: { user } }) => {
-      if (!user) return;
-      setUserId(user.id);
-      const { data } = await supabase.from('profiles').select('display_name').eq('id', user.id).maybeSingle();
-      setCurrentUserDisplayName(data?.display_name ?? null);
-    });
-  }, [supabase]);
+  const loadTasks = useCallback(async () => {
+    if (!channelId) {
+      setTasksByNumber(new Map());
+      return;
+    }
 
-  useEffect(() => {
+    const res = await fetch(`/api/tasks?channelId=${channelId}`);
+    if (!res.ok) return;
+
+    const data = (await res.json()) as { tasks?: Task[] };
+    setTasksByNumber(new Map((data.tasks ?? []).map((task) => [task.task_number, task])));
+  }, [channelId]);
+
+  const applyIncomingMessages = useCallback((incoming: Message[]) => {
+    if (incoming.length === 0) return;
+
+    setMessages((prev) => mergeMessages(prev, incoming));
+
+    if (incoming.some((msg) => msg.sender_type === 'agent')) {
+      setAgentTyping(false);
+      typingStartRef.current = null;
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = null;
+      }
+    }
+
+    if (incoming.some((msg) => /#\d+\b/.test(msg.content))) {
+      void loadTasks();
+    }
+  }, [loadTasks]);
+
+  const loadChannelSnapshot = useCallback(async ({ reset = false, scrollToBottom = false } = {}) => {
     if (!channel) return;
 
-    setMessages([]);
-    setAgentInfo(null);
-    setChannelAgents(new Map());
-    setAgentTyping(false);
-    setHasMore(true);
-    setLoadingMore(false);
-    isNearBottomRef.current = true;
+    const loadId = ++channelLoadIdRef.current;
+    const channelId = channel.id;
 
-    async function loadChannel() {
-      const { data: members } = await supabase
-        .from('channel_members')
-        .select('member_id')
-        .eq('channel_id', channel!.id)
-        .eq('member_type', 'agent');
+    const { data: members } = await supabase
+      .from('channel_members')
+      .select('member_id')
+      .eq('channel_id', channelId)
+      .eq('member_type', 'agent');
 
-      if (members && members.length > 0) {
-        const agentIds = members.map((m) => m.member_id);
-        const { data: agentsData } = await supabase
-          .from('agents')
-          .select('id, name, display_name, status, description')
-          .in('id', agentIds);
+    if (loadId !== channelLoadIdRef.current) return;
 
-        if (agentsData) {
-          const agentMap = new Map<string, AgentInfo>();
-          for (const a of agentsData) {
-            agentMap.set(a.id, a as AgentInfo);
-          }
-          setChannelAgents(agentMap);
+    if (members && members.length > 0) {
+      const agentIds = (members as ChannelMember[]).map((m) => m.member_id);
+      const { data: agentsData } = await supabase
+        .from('agents')
+        .select('id, name, display_name, status, description, archived_at')
+        .in('id', agentIds)
+        .is('archived_at', null);
 
-          if (channel!.type === 'dm' && agentsData.length === 1) {
-            setAgentInfo(agentsData[0] as AgentInfo);
-          }
-        }
+      if (loadId !== channelLoadIdRef.current) return;
+
+      const activeAgents = (agentsData ?? []) as AgentInfo[];
+      const agentMap = new Map<string, AgentInfo>();
+      for (const agent of activeAgents) {
+        agentMap.set(agent.id, agent);
       }
 
-      const { data } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('channel_id', channel!.id)
-        .is('thread_parent_id', null)
-        .order('seq', { ascending: false })
-        .limit(50);
-      if (data) {
-        const reversed = (data as Message[]).reverse();
+      if (channel.type === 'dm') {
+        const dmAgent = getDmTargetAgent(channel, activeAgents);
+        setChannelAgents(dmAgent ? new Map([[dmAgent.id, dmAgent]]) : new Map());
+        setAgentInfo(dmAgent);
+        setDmAgentUnavailable(!dmAgent);
+      } else {
+        setChannelAgents(agentMap);
+        setDmAgentUnavailable(false);
+      }
+    } else {
+      setChannelAgents(new Map());
+      setAgentInfo(null);
+      setDmAgentUnavailable(channel.type === 'dm');
+    }
+
+    const { data } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('channel_id', channelId)
+      .is('thread_parent_id', null)
+      .order('seq', { ascending: false })
+      .limit(50);
+
+    if (loadId !== channelLoadIdRef.current) return;
+
+    if (data) {
+      const reversed = (data as Message[]).reverse();
+      if (reset) {
         setMessages(reversed);
         setHasMore(data.length === 50);
+      } else {
+        setMessages((prev) => mergeMessages(prev, reversed));
+      }
+      if (scrollToBottom) {
         requestAnimationFrame(() => {
           const el = scrollContainerRef.current;
           if (el) el.scrollTop = el.scrollHeight;
@@ -140,7 +264,79 @@ export function MessageArea({
       }
     }
 
-    loadChannel();
+    await loadTasks();
+  }, [channel, loadTasks, supabase]);
+
+  const syncMessagesSince = useCallback(async (sinceSeq: number) => {
+    if (!channel || sinceSeq <= 0) return;
+
+    let cursor = sinceSeq;
+    const recovered: Message[] = [];
+
+    for (;;) {
+      const params = new URLSearchParams({
+        channel_id: channel.id,
+        since_seq: String(cursor),
+        limit: '200',
+      });
+      const res = await fetch(`/api/messages/sync?${params.toString()}`);
+      if (!res.ok) return;
+
+      const payload = (await res.json()) as {
+        messages?: Message[];
+        currentSeq?: number;
+        hasMore?: boolean;
+      };
+      const batch = payload.messages ?? [];
+      if (batch.length > 0) {
+        recovered.push(...batch);
+      }
+
+      const batchMaxSeq = batch.reduce((max, msg) => Math.max(max, msg.seq ?? 0), cursor);
+      cursor = Math.max(cursor, payload.currentSeq ?? 0, batchMaxSeq);
+
+      if (!payload.hasMore || batch.length === 0) break;
+    }
+
+    applyIncomingMessages(recovered);
+  }, [applyIncomingMessages, channel]);
+
+  const reconcileChannelState = useCallback(async () => {
+    const sinceSeq = latestMessageSeqRef.current;
+    await loadChannelSnapshot({ reset: false });
+    if (sinceSeq > 0) await syncMessagesSince(sinceSeq);
+    await loadTasks();
+  }, [loadChannelSnapshot, loadTasks, syncMessagesSince]);
+
+  useEffect(() => {
+    void (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      setUserId(user.id);
+      const { data } = await supabase.from('profiles').select('display_name').eq('id', user.id).maybeSingle();
+      setCurrentUserDisplayName(data?.display_name ?? null);
+    })();
+  }, [supabase]);
+
+  useEffect(() => {
+    if (!channel) return;
+
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setMessages([]);
+      setAgentInfo(null);
+      setChannelAgents(new Map());
+      setDmAgentUnavailable(channel.type === 'dm');
+      setTasksByNumber(new Map());
+      setSelectedTask(null);
+      setAgentTyping(false);
+      setHasMore(true);
+      setLoadingMore(false);
+      latestMessageSeqRef.current = 0;
+      isNearBottomRef.current = true;
+      void loadChannelSnapshot({ reset: true, scrollToBottom: true });
+    });
 
     const subscription = supabase
       .channel(`messages:${channel.id}`)
@@ -152,81 +348,54 @@ export function MessageArea({
           table: 'messages',
           filter: `channel_id=eq.${channel.id}`,
         },
-        (payload) => {
+        (payload: MessageInsertPayload) => {
           const newMsg = payload.new as Message;
           if (!newMsg.thread_parent_id) {
-            setMessages((prev) => {
-              if (prev.some((m) => m.id === newMsg.id)) return prev;
-              const optimisticIndex = prev.findIndex(
-                (m) =>
-                  m.id.startsWith('optimistic-') &&
-                  m.sender_id === newMsg.sender_id &&
-                  m.sender_type === newMsg.sender_type &&
-                  m.content === newMsg.content,
-              );
-              if (optimisticIndex !== -1) {
-                const updated = [...prev];
-                updated[optimisticIndex] = newMsg;
-                return updated;
-              }
-              return [...prev, newMsg];
-            });
-            if (newMsg.sender_type === 'agent') {
-              setAgentTyping(false);
-              typingStartRef.current = null;
-            }
+            applyIncomingMessages([newMsg]);
           }
         },
       )
-      .subscribe();
+      .subscribe((status: string) => {
+        if (status === 'SUBSCRIBED') {
+          void reconcileChannelState();
+        }
+      });
 
     inputRef.current?.focus();
 
     return () => {
+      cancelled = true;
+      channelLoadIdRef.current += 1;
       supabase.removeChannel(subscription);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- channel is memoized; only re-run when channel ID changes
-  }, [channel?.id, supabase]);
+  }, [applyIncomingMessages, channel, loadChannelSnapshot, reconcileChannelState, supabase]);
 
   useEffect(() => {
-    if (!agentTyping || !channel) return;
+    latestMessageSeqRef.current = messages.reduce((maxSeq, msg) => Math.max(maxSeq, msg.seq ?? 0), 0);
+  }, [messages]);
+
+  useEffect(() => {
+    if (!channel) return;
+
+    let cancelled = false;
 
     const poll = async () => {
-      const since = typingStartRef.current;
-      if (!since) return;
-
-      const { data } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('channel_id', channel.id)
-        .is('thread_parent_id', null)
-        .eq('sender_type', 'agent')
-        .gt('created_at', since)
-        .order('created_at', { ascending: true })
-        .limit(10);
-
-      if (data && data.length > 0) {
-        setMessages((prev) => {
-          let updated = [...prev];
-          for (const msg of data) {
-            if (!updated.some((m) => m.id === msg.id)) {
-              updated.push(msg as Message);
-            }
-          }
-          return updated.length > prev.length ? updated : prev;
-        });
-        setAgentTyping(false);
-        typingStartRef.current = null;
-        if (typingTimeoutRef.current) {
-          clearTimeout(typingTimeoutRef.current);
-          typingTimeoutRef.current = null;
-        }
-      }
+      const latestSeq = latestMessageSeqRef.current;
+      if (latestSeq <= 0 || cancelled) return;
+      await syncMessagesSince(latestSeq);
     };
 
     const interval = setInterval(poll, 3000);
-    return () => clearInterval(interval);
-  }, [agentTyping, channel, supabase]);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [channel, syncMessagesSince]);
+
+  usePageRecovery(() => {
+    void reconcileChannelState();
+  }, { minIntervalMs: 1500 });
 
   useEffect(() => {
     if (isNearBottomRef.current) {
@@ -275,29 +444,45 @@ export function MessageArea({
     }
   }, [hasMore, loadingMore, loadOlderMessages]);
 
+  async function verifyDmTargetActive() {
+    if (!channel || channel.type !== 'dm') return true;
+
+    const targetAgent = agentInfo ?? getDmTargetAgent(channel, Array.from(channelAgents.values()));
+    if (!targetAgent) {
+      setAgentInfo(null);
+      setDmAgentUnavailable(true);
+      return false;
+    }
+
+    const { data } = await supabase
+      .from('agents')
+      .select('id')
+      .eq('id', targetAgent.id)
+      .is('archived_at', null)
+      .maybeSingle();
+
+    if (data) return true;
+
+    setAgentInfo(null);
+    setDmAgentUnavailable(true);
+    return false;
+  }
+
   const doSend = useCallback(
     async (markdown: string) => {
       const content = markdown.trim();
       if (!content || !channel || !userId) return;
+      if (channel.type === 'dm' && dmAgentUnavailable) return;
+      if (channel.type === 'dm' && !(await verifyDmTargetActive())) return;
 
       setSending(true);
       setHasContent(false);
 
-      let shouldType = false;
-      if (channel.type === 'dm') {
-        shouldType = true;
-      } else if (channelAgents.size > 0) {
-        shouldType = Array.from(channelAgents.values()).some((a) => {
-          const pattern = new RegExp(
-            `@${a.display_name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=[\\s,.:!?，。！？]|$)`,
-            'i',
-          );
-          return pattern.test(content);
-        });
-      }
-      if (shouldType) {
+      const shouldExpectAgentResponse = channel.type === 'dm' ? Boolean(agentInfo) : channelAgents.size > 0;
+      if (shouldExpectAgentResponse) {
+        const startedAt = new Date().toISOString();
         setAgentTyping(true);
-        typingStartRef.current = new Date().toISOString();
+        typingStartRef.current = startedAt;
         if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
         typingTimeoutRef.current = setTimeout(() => {
           setAgentTyping(false);
@@ -343,8 +528,25 @@ export function MessageArea({
       setSending(false);
       inputRef.current?.focus();
     },
-    [channel, userId, supabase, channelAgents],
+    [channel, userId, supabase, channelAgents, agentInfo, dmAgentUnavailable],
   );
+
+  const contextMenuMessage = contextMenu ? messages.find((m) => m.id === contextMenu.messageId) : null;
+  const mentions = useMemo(() => {
+    const list: Array<{ id?: string; name: string; displayName: string; aliases?: string[] }> = Array.from(channelAgents.values()).map((a) => ({
+      id: a.id,
+      name: agentMentionHandle(a),
+      displayName: a.display_name,
+      aliases: [a.name],
+    }));
+    if (userId) {
+      list.push({ id: userId, name: userId, displayName: 'You' });
+    }
+    if (currentUserDisplayName) {
+      list.push({ name: currentUserDisplayName, displayName: 'You' });
+    }
+    return list;
+  }, [channelAgents, userId, currentUserDisplayName]);
 
   if (!channel) {
     return (
@@ -388,21 +590,6 @@ export function MessageArea({
     setContextMenu({ messageId, x, y });
   }
 
-  const contextMenuMessage = contextMenu ? messages.find((m) => m.id === contextMenu.messageId) : null;
-  const mentions = useMemo(() => {
-    const list = Array.from(channelAgents.values()).map((a) => ({
-      name: a.name,
-      displayName: a.display_name,
-    }));
-    if (userId) {
-      list.push({ name: userId, displayName: 'You' });
-    }
-    if (currentUserDisplayName) {
-      list.push({ name: currentUserDisplayName, displayName: 'You' });
-    }
-    return list;
-  }, [channelAgents, userId, currentUserDisplayName]);
-
   return (
     <div className="flex min-h-0 flex-1 bg-card max-w-full text-pretty">
       <div className="flex min-w-0 flex-1 flex-col">
@@ -414,7 +601,7 @@ export function MessageArea({
               <GeneratedAvatar id={agentInfo.id} name={agentInfo.display_name} size="md" />
               {(() => {
                 const act = agentActivities.get(agentInfo.id);
-                const isActive = act?.activity === 'thinking' || act?.activity === 'working';
+                const isActive = isChannelActivity(act, channel.id);
                 const isOnline = agentInfo.status === 'online' || agentInfo.status === 'active';
                 const dotColor = isActive
                   ? 'bg-green-500 animate-status-pulse'
@@ -437,7 +624,7 @@ export function MessageArea({
                 <h2 className="text-[14px] font-semibold">{agentInfo.display_name}</h2>
                 {(() => {
                   const act = agentActivities.get(agentInfo.id);
-                  if (!act || act.activity === 'idle' || act.activity === 'error') return null;
+                  if (!act || !isChannelActivity(act, channel.id)) return null;
                   const label = act.label || (act.activity === 'thinking' ? 'Thinking' : 'Working');
                   return (
                     <span className="flex items-center gap-1.5 text-[11px] text-primary">
@@ -472,9 +659,30 @@ export function MessageArea({
             </div>
             {channelAgents.size > 0 && (
               <div className="flex items-center gap-1">
-                {Array.from(channelAgents.values()).map((agent) => (
-                  <GeneratedAvatar key={agent.id} id={agent.id} name={agent.display_name} size="xs" />
-                ))}
+                {Array.from(channelAgents.values()).map((agent) => {
+                  const act = agentActivities.get(agent.id);
+                  const isActive = isChannelActivity(act, channel.id);
+                  const isOnline = agent.status === 'online' || agent.status === 'active';
+                  const dotColor = isActive
+                    ? 'bg-green-500 animate-status-pulse'
+                    : isOnline
+                      ? 'bg-green-500'
+                      : agent.status === 'sleeping'
+                        ? 'bg-yellow-500'
+                        : act?.activity === 'error'
+                          ? 'bg-red-500'
+                          : 'bg-gray-400';
+                  const title = act && (isActive || act.activity === 'error')
+                    ? `${agent.display_name}: ${act.label || act.activity}${act.detail ? ` · ${act.detail}` : ''}`
+                    : agent.display_name;
+
+                  return (
+                    <div key={agent.id} className="relative" title={title}>
+                      <GeneratedAvatar id={agent.id} name={agent.display_name} size="xs" />
+                      <div className={`absolute bottom-0 right-0 h-2 w-2 translate-x-[2px] translate-y-[2px] rounded-full border border-card ${dotColor}`} />
+                    </div>
+                  );
+                })}
               </div>
             )}
           </>
@@ -528,7 +736,18 @@ export function MessageArea({
                     <span className="text-[11px] text-muted-foreground">{formatTime(msg.created_at)}</span>
                   </div>
                 )}
-                <MessageBody content={msg.content} senderType={msg.sender_type} mentions={mentions} />
+                <MessageBody
+                  content={msg.content}
+                  senderType={msg.sender_type}
+                  mentions={mentions}
+                  tasksByNumber={tasksByNumber}
+                  onOpenTask={setSelectedTask}
+                />
+                <div className="absolute right-9 top-0 z-10 flex h-7 translate-y-1 items-center opacity-0 transition-all duration-150 group-hover:translate-y-0 group-hover:opacity-100 focus-within:translate-y-0 focus-within:opacity-100">
+                  <Button size="xs" variant="outline" onClick={() => setDeliveryMessageId(msg.id)}>
+                    Deliveries
+                  </Button>
+                </div>
                 <MessageActionMenu
                   replyCount={msg.reply_count ?? 0}
                   lastReplyAt={msg.last_reply_at ?? null}
@@ -558,17 +777,17 @@ export function MessageArea({
 
           if (channel?.type === 'dm' && agentInfo) {
             const act = agentActivities.get(agentInfo.id);
-            if (act?.activity === 'thinking' || act?.activity === 'working') {
+            if (act && isChannelActivity(act, channel.id)) {
               isActive = true;
               activeAgentName = agentInfo.display_name;
               activeAgentId = agentInfo.id;
               activityLabel = act.label || '';
               activityDetail = act.detail || '';
             }
-          } else if (channelAgents.size > 0) {
+          } else if (channel) {
             for (const [agentId, agent] of channelAgents) {
               const act = agentActivities.get(agentId);
-              if (act?.activity === 'thinking' || act?.activity === 'working') {
+              if (act && isChannelActivity(act, channel.id)) {
                 isActive = true;
                 activeAgentName = agent.display_name;
                 activeAgentId = agentId;
@@ -602,15 +821,15 @@ export function MessageArea({
                 {isTextOutput ? (
                   <p className="text-[13px] text-muted-foreground leading-relaxed line-clamp-2">{activityDetail}</p>
                 ) : (
-                  <div className="flex items-center gap-2">
-                    <div className="flex gap-1">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <div className="flex shrink-0 gap-1">
                       <div className="h-1.5 w-1.5 rounded-full bg-primary/60 animate-bounce [animation-delay:0ms]" />
                       <div className="h-1.5 w-1.5 rounded-full bg-primary/60 animate-bounce [animation-delay:150ms]" />
                       <div className="h-1.5 w-1.5 rounded-full bg-primary/60 animate-bounce [animation-delay:300ms]" />
                     </div>
-                    <span className="text-[12px] font-medium text-primary">{displayLabel}</span>
+                    <span className="shrink-0 text-[12px] font-medium text-primary">{displayLabel}</span>
                     {activityDetail && (
-                      <span className="text-[12px] text-muted-foreground truncate">{activityDetail}</span>
+                      <span className="min-w-0 flex-1 truncate text-[12px] text-muted-foreground">{activityDetail}</span>
                     )}
                   </div>
                 )}
@@ -628,9 +847,10 @@ export function MessageArea({
         {mentionQuery !== null &&
           channel.type !== 'dm' &&
           (() => {
-            const agents = Array.from(channelAgents.values()).filter((a) =>
-              a.display_name.toLowerCase().includes(mentionQuery.toLowerCase()),
-            );
+            const agents = Array.from(channelAgents.values()).filter((a) => {
+              const query = mentionQuery.toLowerCase();
+              return a.display_name.toLowerCase().includes(query) || agentMentionHandle(a).toLowerCase().includes(query);
+            });
             if (agents.length === 0) return null;
             return (
               <div className="absolute bottom-full left-4 right-4 mb-1 py-1 max-h-48 overflow-y-auto z-50 rounded-lg border bg-popover shadow-lg">
@@ -640,7 +860,7 @@ export function MessageArea({
                     type="button"
                     onMouseDown={(e) => {
                       e.preventDefault();
-                      inputRef.current?.replaceMention(mentionQuery, `@${agent.display_name} `);
+                      inputRef.current?.replaceMention(mentionQuery, `@${agentMentionHandle(agent)} `);
                       setMentionQuery(null);
                       setMentionIndex(0);
                       inputRef.current?.focus();
@@ -653,6 +873,7 @@ export function MessageArea({
                     <GeneratedAvatar id={agent.id} name={agent.display_name} size="xs" />
                     <div className="flex-1 min-w-0 text-left">
                       <div>{agent.display_name}</div>
+                      <div className="text-[10px] text-muted-foreground truncate">@{agentMentionHandle(agent)}</div>
                       {agent.description && (
                         <div className="text-[10px] text-muted-foreground truncate">{agent.description}</div>
                       )}
@@ -662,6 +883,11 @@ export function MessageArea({
               </div>
             );
           })()}
+        {dmAgentUnavailable ? (
+          <div className="mb-2 rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+            This DM is no longer active because the agent was archived.
+          </div>
+        ) : null}
         <div className="rounded-lg border bg-card shadow-xs/5 overflow-hidden focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/24 transition-shadow">
           <div className="px-4 pt-3 pb-1 text-[15px] leading-[1.54]">
             <TiptapMessageInput
@@ -671,7 +897,7 @@ export function MessageArea({
                   ? `Message ${agentInfo?.display_name || 'agent'}...`
                   : `@ to mention an agent in #${channel.name}...`
               }
-              disabled={sending}
+              disabled={sending || dmAgentUnavailable}
               onSend={doSend}
               onTextUpdate={(textBeforeCursor, fullText) => {
                 if (channel.type !== 'dm') {
@@ -687,13 +913,14 @@ export function MessageArea({
               }}
               onKeyDown={(event) => {
                 if (mentionQuery !== null && channel.type !== 'dm') {
-                  const agents = Array.from(channelAgents.values()).filter((a) =>
-                    a.display_name.toLowerCase().includes(mentionQuery.toLowerCase()),
-                  );
+                  const agents = Array.from(channelAgents.values()).filter((a) => {
+                    const query = mentionQuery.toLowerCase();
+                    return a.display_name.toLowerCase().includes(query) || agentMentionHandle(a).toLowerCase().includes(query);
+                  });
                   if (agents.length > 0) {
                     if (event.key === 'Enter' && !event.shiftKey) {
                       const agent = agents[mentionIndex];
-                      inputRef.current?.replaceMention(mentionQuery, `@${agent.display_name} `);
+                      inputRef.current?.replaceMention(mentionQuery, `@${agentMentionHandle(agent)} `);
                       setMentionQuery(null);
                       setMentionIndex(0);
                       return true;
@@ -708,7 +935,7 @@ export function MessageArea({
                     }
                     if (event.key === 'Tab') {
                       const agent = agents[mentionIndex];
-                      inputRef.current?.replaceMention(mentionQuery, `@${agent.display_name} `);
+                      inputRef.current?.replaceMention(mentionQuery, `@${agentMentionHandle(agent)} `);
                       setMentionQuery(null);
                       setMentionIndex(0);
                       return true;
@@ -733,7 +960,7 @@ export function MessageArea({
                   inputRef.current?.clear();
                 }
               }}
-              disabled={sending || !hasContent}
+              disabled={sending || !hasContent || dmAgentUnavailable}
               size="sm">
               {sending ? 'Sending...' : 'Send'}
             </Button>
@@ -741,7 +968,26 @@ export function MessageArea({
         </div>
       </div>
       </div>
-      <ThreadPanel parentMessageId={openThreadMessageId} userId={userId} mentions={mentions} onClose={() => setOpenThreadMessageId(null)} />
+      <ThreadPanel
+        parentMessageId={openThreadMessageId}
+        userId={userId}
+        mentions={mentions}
+        tasksByNumber={tasksByNumber}
+        onOpenTask={setSelectedTask}
+        onClose={() => setOpenThreadMessageId(null)}
+      />
+      <TaskDetailDrawer
+        task={selectedTask}
+        open={Boolean(selectedTask)}
+        onOpenChange={(open) => {
+          if (!open) setSelectedTask(null);
+        }}
+      />
+      <MessageDeliveryDrawer
+        messageId={deliveryMessageId}
+        open={Boolean(deliveryMessageId)}
+        onClose={() => setDeliveryMessageId(null)}
+      />
       {contextMenu && contextMenuMessage && (
         <ContextMenu
           x={contextMenu.x}

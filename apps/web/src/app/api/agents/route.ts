@@ -2,6 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
+function publicAgentHandle(displayName: string, fallback = "Agent") {
+  const handle = displayName
+    .trim()
+    .replace(/\s+/gu, "")
+    .replace(/[^\p{L}\p{N}_-]+/gu, "");
+  return handle || fallback;
+}
+
 async function recordAgentCreatedActivity(userId: string, agent: { id: string; display_name: string; server_id: string }) {
   try {
     const admin = createAdminClient();
@@ -18,7 +26,12 @@ async function recordAgentCreatedActivity(userId: string, agent: { id: string; d
       agent_id: agent.id,
       label: "Created agent",
       summary: `Created agent “${agent.display_name}”`,
-      metadata: { name: agent.display_name },
+      metadata: {
+        name: agent.display_name,
+        created_by_type: "human",
+        created_by_id: userId,
+        parent_agent_id: null,
+      },
       visibility: "server",
       dedupe_key: `agent:${agent.id}:created`,
     });
@@ -45,6 +58,7 @@ export async function GET() {
     .from("agents")
     .select("*")
     .eq("owner_id", user.id)
+    .is("archived_at", null)
     .order("created_at");
 
   if (error) {
@@ -75,14 +89,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Generate a unique agent name from display name + user id prefix + random suffix
-  const baseName = display_name
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
-  const randomSuffix = Math.random().toString(36).substring(2, 6);
-  const name = `${baseName}-${user.id.substring(0, 8)}-${randomSuffix}`;
+  const name = publicAgentHandle(display_name);
 
   // 1. Create the agent
   if (!server_id) {
@@ -93,6 +100,36 @@ export async function POST(request: NextRequest) {
   }
 
   const admin = createAdminClient();
+  const { data: currentMembership, error: membershipError } = await admin
+    .from("server_members")
+    .select("server_id")
+    .eq("server_id", server_id)
+    .eq("member_id", user.id)
+    .eq("member_type", "human")
+    .maybeSingle();
+
+  if (membershipError) {
+    return NextResponse.json({ error: membershipError.message }, { status: 500 });
+  }
+
+  if (!currentMembership) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const { data: existingAgent } = await admin
+    .from("agents")
+    .select("id")
+    .eq("server_id", server_id)
+    .eq("name", name)
+    .maybeSingle();
+
+  if (existingAgent) {
+    return NextResponse.json(
+      { error: `An agent with @${name} already exists in this workspace` },
+      { status: 409 }
+    );
+  }
+
   const { data: agent, error: agentError } = await admin
     .from("agents")
     .insert({
@@ -103,6 +140,14 @@ export async function POST(request: NextRequest) {
       status: "offline",
       owner_id: user.id,
       server_id,
+      created_by_id: user.id,
+      created_by_type: "human",
+      parent_agent_id: null,
+      creation_source: "human",
+      creation_reason: null,
+      creation_context: {},
+      provenance: { created_by_type: "human", created_by_id: user.id },
+      generation: 0,
     })
     .select()
     .single();

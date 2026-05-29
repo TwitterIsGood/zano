@@ -2,12 +2,37 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { usePageRecovery } from "@/hooks/use-page-recovery";
 import type { MemberActivityEvent, MemberType } from "@zano/shared";
 
 interface UseMemberActivityArgs {
   serverId: string;
   actorType: MemberType;
   actorId: string;
+}
+
+interface MemberActivityInsertPayload {
+  new: unknown;
+}
+
+const RUNTIME_ACTIVITY_TEXT: Record<string, string> = {
+  queued_gated: "Waiting for safe runtime boundary",
+  queued_compaction: "Waiting for compaction-safe boundary",
+  queued_busy_notification: "Pending message notification sent",
+  stdin_idle_delivery: "Delivered at idle boundary",
+};
+
+function normalizeRuntimeActivityText(value: string | null) {
+  if (!value) return value;
+  return RUNTIME_ACTIVITY_TEXT[value] ?? value;
+}
+
+function normalizeMemberActivityEvent(event: MemberActivityEvent): MemberActivityEvent {
+  return {
+    ...event,
+    label: normalizeRuntimeActivityText(event.label),
+    summary: normalizeRuntimeActivityText(event.summary),
+  };
 }
 
 export function useMemberActivity({ serverId, actorType, actorId }: UseMemberActivityArgs) {
@@ -35,7 +60,7 @@ export function useMemberActivity({ serverId, actorType, actorId }: UseMemberAct
         throw new Error(payload.error || "Failed to load activity");
       }
 
-      setEvents(payload.events ?? []);
+      setEvents((payload.events ?? []).map(normalizeMemberActivityEvent));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load activity");
     } finally {
@@ -51,6 +76,10 @@ export function useMemberActivity({ serverId, actorType, actorId }: UseMemberAct
     return () => window.clearTimeout(timeout);
   }, [reload]);
 
+  usePageRecovery(() => {
+    void reload();
+  }, { minIntervalMs: 1500 });
+
   useEffect(() => {
     const supabase = createClient();
     const channel = supabase
@@ -63,8 +92,8 @@ export function useMemberActivity({ serverId, actorType, actorId }: UseMemberAct
           table: "member_activity_events",
           filter: `actor_id=eq.${actorId}`,
         },
-        (payload) => {
-          const event = payload.new as MemberActivityEvent;
+        (payload: MemberActivityInsertPayload) => {
+          const event = normalizeMemberActivityEvent(payload.new as MemberActivityEvent);
           if (event.server_id !== serverId || event.actor_type !== actorType) return;
 
           setEvents((prev) => {

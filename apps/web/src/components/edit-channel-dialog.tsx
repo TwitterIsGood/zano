@@ -33,6 +33,10 @@ interface Channel {
   description: string | null;
 }
 
+interface ChannelMember {
+  member_id: string;
+}
+
 interface EditChannelDialogProps {
   channel: Channel;
   open: boolean;
@@ -54,15 +58,6 @@ export function EditChannelDialog({
   const [error, setError] = useState("");
   const supabase = createClient();
 
-  useEffect(() => {
-    if (open) {
-      setName(channel.name);
-      setDescription(channel.description || "");
-      setError("");
-      loadData();
-    }
-  }, [open, channel]);
-
   async function loadData() {
     const {
       data: { user },
@@ -73,6 +68,7 @@ export function EditChannelDialog({
       .from("agents")
       .select("id, display_name, description, status")
       .eq("owner_id", user.id)
+      .is("archived_at", null)
       .order("created_at");
 
     if (agents) setAllAgents(agents as Agent[]);
@@ -84,9 +80,24 @@ export function EditChannelDialog({
       .eq("member_type", "agent");
 
     if (members) {
-      setMemberAgentIds(new Set(members.map((m) => m.member_id)));
+      setMemberAgentIds(new Set((members as ChannelMember[]).map((m) => m.member_id)));
     }
   }
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setName(channel.name);
+      setDescription(channel.description || "");
+      setError("");
+      void loadData();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, channel]);
 
   function toggleAgent(agentId: string) {
     setMemberAgentIds((prev) => {
@@ -125,7 +136,7 @@ export function EditChannelDialog({
         .eq("member_type", "agent");
 
       const currentIds = new Set(
-        (currentMembers || []).map((m) => m.member_id)
+        ((currentMembers || []) as ChannelMember[]).map((m) => m.member_id)
       );
 
       const toAdd = Array.from(memberAgentIds).filter(

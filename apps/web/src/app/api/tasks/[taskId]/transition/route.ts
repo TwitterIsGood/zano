@@ -57,14 +57,25 @@ export async function POST(request: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "status required" }, { status: 400 });
   }
 
-  const { data: current, error: currentError } = await supabase.from("tasks").select("status").eq("id", taskId).single();
+  const { data: current, error: currentError } = await supabase.from("tasks").select("status, task_number").eq("id", taskId).single();
   if (currentError) return NextResponse.json({ error: currentError.message }, { status: 404 });
 
   const from = current.status as TaskStatus;
   const to = status as TaskStatus;
   const check = await checkTaskTransition(supabase, taskId, from, to);
   if (!check.allowed) {
-    return NextResponse.json({ error: check.reason }, { status: 409 });
+    if (to === "done" && check.context?.hasPassingVerification === false) {
+      return NextResponse.json({
+        error: check.reason,
+        code: "TASK_NEEDS_PASSING_VERIFICATION",
+        missing: ["passing_verification"],
+        nextAction: "Record a passing verification evidence item, then retry moving this task to done.",
+        agentCommand: `zano task verify --number ${current.task_number} --type test --check "what you ran or inspected" --passed --summary "result"`,
+        context: check.context,
+      }, { status: 409 });
+    }
+
+    return NextResponse.json({ error: check.reason, code: "INVALID_TASK_TRANSITION", context: check.context }, { status: 409 });
   }
 
   const patch: Record<string, unknown> = { status: to };

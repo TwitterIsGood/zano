@@ -1,8 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 import { Copy, File, Folder, FolderOpen, RefreshCw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -26,6 +28,9 @@ interface FileResponse {
   content?: string;
   error?: string;
 }
+
+type BridgeRpcFn = (action: string, extra?: Record<string, unknown>) => Promise<Record<string, unknown>>;
+type BridgeRpcResponse = { payload: Record<string, unknown> };
 
 interface MemberWorkspaceTabProps {
   memberType: "agent" | "human";
@@ -73,6 +78,8 @@ function FileRow({
 }
 
 export function MemberWorkspaceTab({ memberType, agentId }: MemberWorkspaceTabProps) {
+  const rpcChannelRef = useRef<RealtimeChannel | null>(null);
+  const rpcCallbacksRef = useRef(new Map<string, (payload: Record<string, unknown>) => void>());
   const [loading, setLoading] = useState(true);
   const [workspacePath, setWorkspacePath] = useState("");
   const [files, setFiles] = useState<FileEntry[]>([]);
@@ -82,6 +89,7 @@ export function MemberWorkspaceTab({ memberType, agentId }: MemberWorkspaceTabPr
   const [loadingFile, setLoadingFile] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copyLabel, setCopyLabel] = useState("Copy path");
+  const [useBridge, setUseBridge] = useState(false);
 
   const topLevelFiles = useMemo(() => sortEntries(files.filter((file) => file.type === "file")), [files]);
   const topLevelDirs = useMemo(
@@ -92,6 +100,57 @@ export function MemberWorkspaceTab({ memberType, agentId }: MemberWorkspaceTabPr
   const hasNotesDirectory = sortedNotesFiles.length > 0 || files.some((file) => file.name === "notes");
   const hasFiles = topLevelFiles.length > 0 || topLevelDirs.length > 0 || hasNotesDirectory;
 
+  useEffect(() => {
+    if (memberType !== "agent") return;
+
+    const supabase = createClient();
+    const channel = supabase
+      .channel("bridge-rpc")
+      .on("broadcast", { event: "rpc:response" }, ({ payload }: BridgeRpcResponse) => {
+        const requestId = payload.requestId;
+        if (typeof requestId !== "string") return;
+
+        const callback = rpcCallbacksRef.current.get(requestId);
+        if (!callback) return;
+        rpcCallbacksRef.current.delete(requestId);
+        callback(payload);
+      })
+      .subscribe();
+
+    rpcChannelRef.current = channel;
+
+    return () => {
+      channel.unsubscribe();
+      rpcChannelRef.current = null;
+      rpcCallbacksRef.current.clear();
+    };
+  }, [memberType]);
+
+  const bridgeRpc: BridgeRpcFn = useCallback(async (action, extra = {}) => {
+    const channel = rpcChannelRef.current;
+    if (!channel) throw new Error("bridge_offline");
+
+    const requestId = crypto.randomUUID();
+    return new Promise<Record<string, unknown>>((resolve, reject) => {
+      const timeout = window.setTimeout(() => {
+        rpcCallbacksRef.current.delete(requestId);
+        reject(new Error("bridge_offline"));
+      }, 8000);
+
+      rpcCallbacksRef.current.set(requestId, (payload) => {
+        window.clearTimeout(timeout);
+        if (payload.error) reject(new Error(String(payload.error)));
+        else resolve(payload);
+      });
+
+      channel.send({
+        type: "broadcast",
+        event: "rpc:request",
+        payload: { requestId, action, ...extra },
+      });
+    });
+  }, []);
+
   const loadWorkspace = useCallback(async () => {
     if (memberType !== "agent") return;
 
@@ -99,26 +158,42 @@ export function MemberWorkspaceTab({ memberType, agentId }: MemberWorkspaceTabPr
     setError(null);
     setSelectedFile(null);
     setFileContent(null);
+    setUseBridge(false);
 
     try {
       const res = await fetch(`/api/agents/${agentId}/workspace`);
       const data = (await res.json().catch(() => ({}))) as WorkspaceResponse;
 
-      if (!res.ok) {
-        throw new Error(data.message || data.error || "Failed to load workspace");
+      if (res.ok) {
+        setWorkspacePath(data.workspace_path || "");
+        setFiles(data.files || []);
+        setNotesFiles(data.notes_files || []);
+        return;
       }
 
-      setWorkspacePath(data.workspace_path || "");
-      setFiles(data.files || []);
-      setNotesFiles(data.notes_files || []);
+      if (data.error === "remote_workspace") {
+        setUseBridge(true);
+        const rpcData = await bridgeRpc("list", { agentId });
+        setWorkspacePath((rpcData.workspace_path as string) || "");
+        setFiles((rpcData.files as FileEntry[]) || []);
+        setNotesFiles((rpcData.notes_files as FileEntry[]) || []);
+        return;
+      }
+
+      throw new Error(data.message || data.error || "Failed to load workspace");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load workspace");
+      const message = err instanceof Error && err.message === "bridge_offline"
+        ? "Bridge is offline. Start the bridge to browse this agent workspace."
+        : err instanceof Error
+          ? err.message
+          : "Failed to load workspace";
+      setError(message);
       setFiles([]);
       setNotesFiles([]);
     } finally {
       setLoading(false);
     }
-  }, [agentId, memberType]);
+  }, [agentId, bridgeRpc, memberType]);
 
   async function loadFile(filePath: string) {
     setSelectedFile(filePath);
@@ -126,6 +201,12 @@ export function MemberWorkspaceTab({ memberType, agentId }: MemberWorkspaceTabPr
     setLoadingFile(true);
 
     try {
+      if (useBridge) {
+        const data = await bridgeRpc("read", { agentId, filePath });
+        setFileContent((data.content as string) || "");
+        return;
+      }
+
       const res = await fetch(`/api/agents/${agentId}/workspace?file=${encodeURIComponent(filePath)}`);
       const data = (await res.json().catch(() => ({}))) as FileResponse;
 

@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { MessageArea } from "@/components/message-area";
 import { AgentSettingsPanel } from "@/components/agent-settings-panel";
+import { createClient } from "@/lib/supabase/client";
 
 interface AgentInfo {
   id: string;
@@ -12,16 +13,45 @@ interface AgentInfo {
   description: string | null;
 }
 
+interface ChannelInfo {
+  id: string;
+  name: string;
+  type: "dm";
+  description: string | null;
+}
+
 export default function DmPage() {
   const params = useParams();
   const channelId = params.channelId as string;
   const [settingsAgent, setSettingsAgent] = useState<AgentInfo | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [channel, setChannel] = useState<ChannelInfo | null>(null);
 
-  const channel = useMemo(
-    () => ({ id: channelId, name: "", type: "dm" as const, description: null }),
-    [channelId]
-  );
+  useEffect(() => {
+    let cancelled = false;
+    const supabase = createClient();
+
+    void (async () => {
+      const { data } = await supabase
+        .from('channels')
+        .select('name,type,description')
+        .eq('id', channelId)
+        .eq('type', 'dm')
+        .maybeSingle();
+
+      if (cancelled || !data) return;
+      setChannel({
+        id: channelId,
+        name: data.name,
+        type: "dm",
+        description: data.description ?? null,
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [channelId]);
 
   const handleToggleSettings = useCallback((agent: AgentInfo | null) => {
     setSettingsAgent(agent);
@@ -37,11 +67,13 @@ export default function DmPage() {
     setRefreshKey((k) => k + 1);
   }, []);
 
+  const currentChannel = channel?.id === channelId ? channel : null;
+
   return (
     <>
       <MessageArea
         key={refreshKey}
-        channel={channel}
+        channel={currentChannel}
         onToggleSettings={handleToggleSettings}
         showSettings={!!settingsAgent}
       />

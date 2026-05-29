@@ -51,13 +51,19 @@ export function CreateAgentDialog({
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (open) {
+    if (!open) return;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
       setDisplayName("");
       setDescription("");
       setModel("opus");
       setSystemPrompt("");
       setError("");
-    }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [open]);
 
   async function handleSubmit(e: React.FormEvent) {

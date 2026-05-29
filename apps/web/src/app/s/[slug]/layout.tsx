@@ -48,7 +48,7 @@ export default async function ServerLayout({ children, params }: ServerLayoutPro
       .eq("user_id", user.id)
       .order("created_at"),
     admin.from("channel_members").select("channel_id").eq("member_id", user.id),
-    admin.from("agents").select("*").eq("server_id", server.id).order("created_at"),
+    admin.from("agents").select("*").eq("server_id", server.id).is("archived_at", null).order("created_at"),
     admin
       .from("server_members")
       .select("member_id, role, joined_at")
@@ -117,7 +117,7 @@ export default async function ServerLayout({ children, params }: ServerLayoutPro
   };
 
   return (
-    <AgentActivityProvider>
+    <AgentActivityProvider serverId={server.id}>
       <div className="flex h-full bg-background p-2">
         <Sidebar
           serverSlug={server.slug}

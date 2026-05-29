@@ -18,6 +18,7 @@ interface ConnectResponse {
     name: string;
     display_name: string;
     description: string | null;
+    auth_token?: string;
     model: string;
     status: string;
   }>;
@@ -105,6 +106,14 @@ async function authenticate(
   return res.json();
 }
 
+function agentAuthTokensFromConnect(creds: ConnectResponse): Record<string, string> {
+  return Object.fromEntries(
+    creds.agents
+      .filter((agent) => Boolean(agent.auth_token))
+      .map((agent) => [agent.id, agent.auth_token!])
+  );
+}
+
 async function main() {
   const { serverUrl, apiKey, agentsDir } = parseArgs();
 
@@ -136,12 +145,19 @@ async function main() {
     supabaseUrl: creds.supabaseUrl,
     supabaseKey: creds.supabaseAnonKey,
     authToken: creds.token,
+    agentAuthTokens: agentAuthTokensFromConnect(creds),
+    refreshCredentials: async () => {
+      const fresh = await authenticate(serverUrl, apiKey);
+      return { token: fresh.token, agentAuthTokens: agentAuthTokensFromConnect(fresh) };
+    },
     userId: creds.userId,
     serverId: creds.serverId,
+    serverName: creds.serverName,
     agentsDir,
     hostname: hostname(),
     platform: platform(),
     arch: arch(),
+    bridgeVersion: process.env.npm_package_version ?? "0.1.5",
   });
 
   bridge.start();
@@ -150,7 +166,7 @@ async function main() {
   const refreshInterval = setInterval(async () => {
     try {
       const fresh = await authenticate(serverUrl, apiKey);
-      await bridge.updateAuthToken(fresh.token);
+      await bridge.updateAuthToken(fresh.token, agentAuthTokensFromConnect(fresh));
       console.log("  Auth token refreshed.");
     } catch (err) {
       console.error(

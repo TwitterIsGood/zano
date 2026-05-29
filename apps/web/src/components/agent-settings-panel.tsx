@@ -35,6 +35,7 @@ interface AgentInfo {
   display_name: string;
   status: string;
   description: string | null;
+  archived_at?: string | null;
 }
 
 interface AgentFull {
@@ -45,6 +46,20 @@ interface AgentFull {
   system_prompt: string | null;
   model: string;
   status: string;
+  created_by_id: string | null;
+  created_by_type: 'human' | 'agent' | 'system';
+  parent_agent_id: string | null;
+  creation_reason: string | null;
+  generation: number;
+  archived_at: string | null;
+}
+
+interface AgentProvenanceInfo {
+  created_by_type: 'human' | 'agent' | 'system';
+  created_by_id: string | null;
+  parent_agent_id: string | null;
+  creation_reason: string | null;
+  generation: number;
 }
 
 interface Skill {
@@ -66,6 +81,23 @@ const MODEL_ITEMS = [
 ];
 
 type BridgeRpcFn = (action: string, extra?: Record<string, unknown>) => Promise<Record<string, unknown>>;
+type BridgeRpcResponse = { payload: Record<string, unknown> };
+
+function creatorLabel(createdByType: AgentProvenanceInfo['created_by_type']) {
+  if (createdByType === 'agent') return 'Agent';
+  if (createdByType === 'human') return 'Human';
+  return 'System';
+}
+
+function provenanceFromAgent(agent: AgentFull): AgentProvenanceInfo {
+  return {
+    created_by_type: agent.created_by_type,
+    created_by_id: agent.created_by_id,
+    parent_agent_id: agent.parent_agent_id,
+    creation_reason: agent.creation_reason,
+    generation: agent.generation,
+  };
+}
 
 export function AgentSettingsPanel({
   agent,
@@ -86,11 +118,14 @@ export function AgentSettingsPanel({
     const supabase = createClient();
     const channel = supabase
       .channel('bridge-rpc')
-      .on('broadcast', { event: 'rpc:response' }, ({ payload }) => {
-        const cb = rpcCallbacksRef.current.get(payload.requestId as string);
+      .on('broadcast', { event: 'rpc:response' }, ({ payload }: BridgeRpcResponse) => {
+        const requestId = payload.requestId;
+        if (typeof requestId !== 'string') return;
+
+        const cb = rpcCallbacksRef.current.get(requestId);
         if (cb) {
-          rpcCallbacksRef.current.delete(payload.requestId as string);
-          cb(payload as Record<string, unknown>);
+          rpcCallbacksRef.current.delete(requestId);
+          cb(payload);
         }
       })
       .subscribe();
@@ -180,10 +215,13 @@ function SettingsTab({
   const [description, setDescription] = useState('');
   const [model, setModel] = useState('opus');
   const [systemPrompt, setSystemPrompt] = useState('');
+  const [provenanceInfo, setProvenanceInfo] = useState<AgentProvenanceInfo | null>(null);
+  const [archivedAt, setArchivedAt] = useState<string | null>(agent.archived_at ?? null);
   const [skills, setSkills] = useState<Skill[]>([]);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [archiving, setArchiving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState('');
@@ -211,6 +249,8 @@ function SettingsTab({
       setDescription(a.description || '');
       setModel(a.model || 'opus');
       setSystemPrompt(a.system_prompt || '');
+      setArchivedAt(a.archived_at);
+      setProvenanceInfo(provenanceFromAgent(a));
     }
     setLoading(false);
   }
@@ -305,6 +345,38 @@ function SettingsTab({
     }
   }
 
+  async function handleArchive() {
+    setArchiving(true);
+    setError('');
+
+    try {
+      const res = await fetch(`/api/agents/${agent.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ archived: true }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to archive');
+      }
+
+      const { agent: updated } = await res.json();
+      await loadAgent();
+      onUpdated({
+        id: updated.id,
+        display_name: updated.display_name,
+        status: updated.status,
+        description: updated.description,
+        archived_at: updated.archived_at,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to archive');
+    } finally {
+      setArchiving(false);
+    }
+  }
+
   async function handleDelete() {
     if (!confirmDelete) {
       setConfirmDelete(true);
@@ -333,6 +405,8 @@ function SettingsTab({
   }
 
   const selectedModel = MODEL_ITEMS.find((m) => m.value === model) ?? MODEL_ITEMS[0];
+  const isChildAgent = Boolean(provenanceInfo?.parent_agent_id);
+  const canArchiveChildAgent = Boolean(isChildAgent && !archivedAt);
 
   if (loading) {
     return (
@@ -367,6 +441,34 @@ function SettingsTab({
           />
         </Field>
       </section>
+
+      {provenanceInfo ? (
+        <section className="rounded-lg border border-border bg-card p-3">
+          <div className="text-xs font-semibold text-muted-foreground">Provenance</div>
+          <div className="mt-2 space-y-1 text-sm">
+            <div>
+              <span className="text-muted-foreground">Created by: </span>
+              <span>{creatorLabel(provenanceInfo.created_by_type)}</span>
+            </div>
+            {provenanceInfo.parent_agent_id ? (
+              <div>
+                <span className="text-muted-foreground">Parent agent: </span>
+                <span>{provenanceInfo.parent_agent_id}</span>
+              </div>
+            ) : null}
+            {provenanceInfo.creation_reason ? (
+              <div>
+                <span className="text-muted-foreground">Reason: </span>
+                <span>{provenanceInfo.creation_reason}</span>
+              </div>
+            ) : null}
+            <div>
+              <span className="text-muted-foreground">Generation: </span>
+              <span>{provenanceInfo.generation}</span>
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       {/* Runtime & Model */}
       <section className="space-y-3">
@@ -465,32 +567,46 @@ function SettingsTab({
       <section className="space-y-3">
         <h3 className="text-[11px] font-medium uppercase tracking-wider text-destructive/70">Danger Zone</h3>
         <div className="space-y-2 rounded-lg border border-destructive/20 p-3">
-          <Button
-            onClick={handleReset}
-            loading={resetting}
-            variant="ghost"
-            className="w-full justify-start text-muted-foreground hover:text-destructive hover:bg-destructive/10">
-            <ArrowCounterClockwise size={16} />
-            Reset Conversation
-          </Button>
-          <Separator />
-          <Button
-            onClick={handleDelete}
-            loading={deleting}
-            variant={confirmDelete ? 'destructive' : 'ghost'}
-            className={
-              confirmDelete
-                ? 'w-full'
-                : 'w-full justify-start text-muted-foreground hover:text-destructive hover:bg-destructive/10'
-            }>
-            <Trash size={16} />
-            {confirmDelete ? 'Click again to confirm' : 'Delete Agent'}
-          </Button>
-          {confirmDelete && (
-            <p className="text-[11px] text-destructive">
-              This will permanently delete the agent and all conversation history.
-            </p>
-          )}
+          {!isChildAgent ? (
+            <>
+              <Button
+                onClick={handleReset}
+                loading={resetting}
+                variant="ghost"
+                className="w-full justify-start text-muted-foreground hover:text-destructive hover:bg-destructive/10">
+                <ArrowCounterClockwise size={16} />
+                Reset Conversation
+              </Button>
+              <Separator />
+              <Button
+                onClick={handleDelete}
+                loading={deleting}
+                variant={confirmDelete ? 'destructive' : 'ghost'}
+                className={
+                  confirmDelete
+                    ? 'w-full'
+                    : 'w-full justify-start text-muted-foreground hover:text-destructive hover:bg-destructive/10'
+                }>
+                <Trash size={16} />
+                {confirmDelete ? 'Click again to confirm' : 'Delete Agent'}
+              </Button>
+              {confirmDelete && (
+                <p className="text-[11px] text-destructive">
+                  This will permanently delete the agent and all conversation history.
+                </p>
+              )}
+            </>
+          ) : null}
+          {canArchiveChildAgent ? (
+            <Button
+              onClick={handleArchive}
+              loading={archiving}
+              variant="ghost"
+              className="w-full justify-start text-muted-foreground hover:text-destructive hover:bg-destructive/10">
+              <Trash size={16} />
+              Archive child agent
+            </Button>
+          ) : null}
         </div>
       </section>
 

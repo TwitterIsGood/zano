@@ -15,6 +15,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "test": "vitest run",
+    "verify:autonomous": "node scripts/verify-autonomous-bridge.mjs",
     "prepublishOnly": "npm run build"
   },
   "keywords": [

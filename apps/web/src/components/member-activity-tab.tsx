@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { ExternalLink } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -17,6 +17,15 @@ interface MemberActivityTabProps {
   serverSlug: string;
   memberType: MemberType;
   memberId: string;
+}
+
+interface RuntimeSession {
+  id: string;
+  state: string;
+  machine_id: string;
+  session_id: string | null;
+  prompt_hash: string;
+  last_active_at: string | null;
 }
 
 const EVENT_LABELS: Record<string, string> = {
@@ -58,6 +67,13 @@ function formatTime(value: string) {
 
 function toTitle(eventType: string) {
   return EVENT_LABELS[eventType] || eventType.split(".").map((part) => part[0]?.toUpperCase() + part.slice(1)).join(" ");
+}
+
+function eventTitle(event: MemberActivityEvent) {
+  if (event.event_type === "agent.created" && event.metadata?.creation_source === "agent") {
+    return "Created child agent";
+  }
+  return event.label || toTitle(event.event_type);
 }
 
 function getChannelPath(serverSlug: string, event: MemberActivityEvent) {
@@ -108,6 +124,52 @@ export function MemberActivityTab({ serverId, serverSlug, memberType, memberId }
   const agentActivity = memberType === "agent" ? agentActivities.get(memberId) : null;
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [taskDrawerOpen, setTaskDrawerOpen] = useState(false);
+  const [runtimeSessions, setRuntimeSessions] = useState<RuntimeSession[]>([]);
+  const [runtimeSessionsAgentId, setRuntimeSessionsAgentId] = useState<string | null>(null);
+  const [runtimeSessionsError, setRuntimeSessionsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (memberType !== "agent") return;
+
+    let cancelled = false;
+
+    async function loadRuntimeSessions() {
+      setRuntimeSessions([]);
+      setRuntimeSessionsAgentId(null);
+      setRuntimeSessionsError(null);
+
+      try {
+        const res = await fetch(`/api/daemon/sessions?agentId=${encodeURIComponent(memberId)}`);
+        const body = await res.json().catch(() => ({})) as { sessions?: RuntimeSession[]; error?: string };
+        if (cancelled) return;
+
+        if (!res.ok) {
+          setRuntimeSessions([]);
+          setRuntimeSessionsError(body.error || "Unable to load daemon runtime sessions.");
+          setRuntimeSessionsAgentId(memberId);
+          return;
+        }
+
+        setRuntimeSessions(body.sessions ?? []);
+        setRuntimeSessionsError(null);
+        setRuntimeSessionsAgentId(memberId);
+      } catch {
+        if (cancelled) return;
+        setRuntimeSessions([]);
+        setRuntimeSessionsError("Unable to load daemon runtime sessions.");
+        setRuntimeSessionsAgentId(memberId);
+      }
+    }
+
+    loadRuntimeSessions();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [memberId, memberType]);
+
+  const runtimeSessionsLoading = memberType === "agent" && runtimeSessionsAgentId !== memberId;
+  const visibleRuntimeSessions = runtimeSessionsLoading ? [] : runtimeSessions;
 
   async function openTask(taskId: string) {
     const res = await fetch(`/api/tasks/${taskId}`);
@@ -133,6 +195,31 @@ export function MemberActivityTab({ serverId, serverSlug, memberType, memberId }
               <span className="shrink-0 font-medium">{agentActivity.label || "Active"}</span>
               {agentActivity.detail ? <span className="min-w-0 max-w-full flex-1 break-words whitespace-pre-wrap text-muted-foreground">{agentActivity.detail}</span> : null}
             </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {memberType === "agent" ? (
+        <Card>
+          <CardContent className="py-4">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h3 className="text-sm font-medium">Daemon runtime</h3>
+              {visibleRuntimeSessions[0] ? <Badge variant={visibleRuntimeSessions[0].state === "error" ? "error" : "secondary"}>{visibleRuntimeSessions[0].state}</Badge> : null}
+            </div>
+            {runtimeSessionsLoading ? (
+              <p className="text-sm text-muted-foreground">Loading daemon runtime...</p>
+            ) : runtimeSessionsError ? (
+              <p className="text-sm text-destructive">{runtimeSessionsError}</p>
+            ) : visibleRuntimeSessions[0] ? (
+              <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
+                <div>machine={visibleRuntimeSessions[0].machine_id}</div>
+                <div>session={visibleRuntimeSessions[0].session_id?.slice(0, 8) ?? "none"}</div>
+                <div>prompt={visibleRuntimeSessions[0].prompt_hash.slice(0, 8)}</div>
+                <div>last active={visibleRuntimeSessions[0].last_active_at ? formatTime(visibleRuntimeSessions[0].last_active_at) : "never"}</div>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No daemon runtime sessions recorded.</p>
+            )}
           </CardContent>
         </Card>
       ) : null}
@@ -166,7 +253,7 @@ export function MemberActivityTab({ serverId, serverSlug, memberType, memberId }
                   <div className="mt-1 shrink-0 size-2 rounded-full bg-primary" />
                   <div className="min-w-0 max-w-full flex-1">
                     <div className="min-w-0 flex items-center gap-2">
-                      <h3 className="truncate text-sm font-medium">{event.label || toTitle(event.event_type)}</h3>
+                      <h3 className="truncate text-sm font-medium">{eventTitle(event)}</h3>
                       <span className="shrink-0 text-xs text-muted-foreground">{formatTime(event.occurred_at)}</span>
                     </div>
                     {event.summary ? (

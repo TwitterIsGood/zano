@@ -57,11 +57,18 @@ export function SetupWizard({ serverId, serverSlug, onComplete }: SetupWizardPro
 
   // Load API key from sessionStorage
   useEffect(() => {
-    const storedKey = sessionStorage.getItem("zano_setup_key");
-    if (storedKey) {
-      setApiKey(storedKey);
-      sessionStorage.removeItem("zano_setup_key");
-    }
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      const storedKey = sessionStorage.getItem("zano_setup_key");
+      if (storedKey) {
+        setApiKey(storedKey);
+        sessionStorage.removeItem("zano_setup_key");
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Poll for bridge connection (check if the key's last_used_at becomes non-null)

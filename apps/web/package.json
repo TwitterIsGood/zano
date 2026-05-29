@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "verify:agent-hierarchy": "node scripts/verify-agent-hierarchy-apis.mjs",
+    "verify:agent-sidebar-tree": "node scripts/verify-agent-sidebar-tree.mjs",
+    "verify:agent-provenance": "node scripts/verify-agent-provenance-ui.mjs",
+    "verify:agent-archive-ui": "node scripts/verify-agent-archive-ui.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",

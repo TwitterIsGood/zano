@@ -15,3 +15,11 @@ supabase/.branches/
 .DS_Store
 *.log
 .worktrees/
+
+# Local agent/tooling state
+.claude/
+.codex/
+data/store.json
+cdp-inspect.mjs
+port_scan.sh
+*-this-session-is-being-continued-from-a-previous-c.txt

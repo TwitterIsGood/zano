@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { deriveTaskVisibility } from "@/lib/task-activity";
+import {
+  enrichTaskCommentsWithAuthors,
+  type AgentCommentAuthor,
+  type HumanCommentAuthor,
+  type TaskCommentRow,
+} from "./task-comment-authors";
 
 async function recordTaskUpdatedActivity(userId: string, task: { id: string; channel_id: string; title: string }, changedFields: string[]) {
   try {
@@ -37,6 +43,30 @@ interface Params {
   params: Promise<{ taskId: string }>;
 }
 
+type ServerSupabase = Awaited<ReturnType<typeof createClient>>;
+
+async function attachCommentAuthors(supabase: ServerSupabase, comments: TaskCommentRow[]) {
+  const humanIds = [...new Set(comments.filter((comment) => comment.author_type === "human").map((comment) => comment.author_id))];
+  const agentIds = [...new Set(comments.filter((comment) => comment.author_type === "agent").map((comment) => comment.author_id))];
+
+  const [profilesResult, agentsResult] = await Promise.all([
+    humanIds.length
+      ? supabase.from("profiles").select("id, display_name, email, avatar_url").in("id", humanIds)
+      : Promise.resolve({ data: [] as HumanCommentAuthor[], error: null }),
+    agentIds.length
+      ? supabase.from("agents").select("id, name, display_name").in("id", agentIds)
+      : Promise.resolve({ data: [] as AgentCommentAuthor[], error: null }),
+  ]);
+
+  if (profilesResult.error) throw new Error(profilesResult.error.message);
+  if (agentsResult.error) throw new Error(agentsResult.error.message);
+
+  return enrichTaskCommentsWithAuthors(comments, {
+    humans: new Map(((profilesResult.data ?? []) as HumanCommentAuthor[]).map((profile) => [profile.id, profile])),
+    agents: new Map(((agentsResult.data ?? []) as AgentCommentAuthor[]).map((agent) => [agent.id, agent])),
+  });
+}
+
 export async function GET(_request: NextRequest, { params }: Params) {
   const { taskId } = await params;
   const supabase = await createClient();
@@ -56,9 +86,16 @@ export async function GET(_request: NextRequest, { params }: Params) {
     if (result.error) return NextResponse.json({ error: result.error.message }, { status: 500 });
   }
 
+  let commentsWithAuthors;
+  try {
+    commentsWithAuthors = await attachCommentAuthors(supabase, (comments.data ?? []) as TaskCommentRow[]);
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to load comment authors" }, { status: 500 });
+  }
+
   return NextResponse.json({
     task: task.data,
-    comments: comments.data ?? [],
+    comments: commentsWithAuthors,
     artifacts: artifacts.data ?? [],
     dependencies: dependencies.data ?? [],
     events: events.data ?? [],

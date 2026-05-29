@@ -49,16 +49,6 @@ export function CreateChannelDialog({
   const [error, setError] = useState("");
   const supabase = createClient();
 
-  useEffect(() => {
-    if (open) {
-      setName("");
-      setDescription("");
-      setSelectedAgentIds(new Set());
-      setError("");
-      loadAgents();
-    }
-  }, [open]);
-
   async function loadAgents() {
     const {
       data: { user },
@@ -69,10 +59,27 @@ export function CreateChannelDialog({
       .from("agents")
       .select("id, display_name, description, status")
       .eq("server_id", serverId)
+      .is("archived_at", null)
       .order("created_at");
 
     if (data) setAgents(data as Agent[]);
   }
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setName("");
+      setDescription("");
+      setSelectedAgentIds(new Set());
+      setError("");
+      void loadAgents();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   function toggleAgent(agentId: string) {
     setSelectedAgentIds((prev) => {
